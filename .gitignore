@@ -1,0 +1,18 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# OS and editor files
+.DS_Store
+
+# Generated outputs
+out/
+app/out/
+
+claude_code_zai_env.sh
