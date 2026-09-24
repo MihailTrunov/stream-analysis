@@ -6,7 +6,7 @@ Status: draft for review. This is a local planning artifact only; no Jira issue 
 
 Reconcile the architecture and implementation-readiness decisions captured in `CONTEXT.md` with the Charts documentation and Jira Stories `SCRUM-54` through `SCRUM-113`, plus `SCRUM-119` and `SCRUM-120`.
 
-The detector-rule review is deliberately bounded. Reconcile the agreed TrendLeg lifecycle and detector-runtime implications now; complete any remaining detector rule tables with their implementation fixtures.
+The detector-rule review is deliberately bounded. The structural protected-swing TrendLeg lifecycle in `CONTEXT.md` is approved and authoritative for MVP implementation; propagate it through architecture, Jira contracts, fixtures, and dependency ordering now. Complete any remaining detector-specific rule tables with their implementation fixtures.
 
 ## Source-of-truth changes
 
@@ -29,7 +29,7 @@ Add or clarify:
 - Dataset revisions are immutable: Parquet manifest format version, source and dataset checksums, provider/request/retrieval/normalization provenance, and no synthetic gap fill. Exact duplicate bars collapse; conflicting duplicates fail validation.
 - Configurations, presets, and runs are immutable/versioned. A run captures configuration-schema and calendar versions, dataset revision, detector versions, Git commit/build identity, and the clean-build gate.
 - Both walkthrough and autonomous evaluation drive the same deterministic per-bar pipeline and immutable `MarketState`. Intermediate per-bar state is recomputed, not normally persisted.
-- Extend the TrendLeg definition to distinguish an EMA-cross segment from the longer-lived structurally protected TrendLeg. Incorporate the agreed protected-swing lifecycle, qualification anchors, strict comparisons, and causal ordering. Keep remaining detector-specific rule-table detail out of this document.
+- Update the TrendLeg definition to the approved model that distinguishes an EMA-cross segment from the longer-lived structurally protected TrendLeg. Treat the protected-swing lifecycle, qualification anchors, strict comparisons, and causal ordering recorded in `CONTEXT.md` as authoritative. Keep remaining detector-specific rule-table detail out of this document.
 
 ### MVP Scope & Boundaries / Product Scope
 
@@ -50,7 +50,7 @@ Clarify:
 | `SCRUM-61`–`67` | Keep replay strictly causal, but describe live walkthrough as ephemeral/browser-local and driven by the shared pipeline. Configuration changes require stopping the walkthrough; fresh state is recomputed from warm-up. |
 | `SCRUM-68`, `77` | Enforce a deterministic component pipeline producing one immutable `MarketState` per completed bar. Add component-declared warm-up requirements and no infrastructure imports in core code. |
 | `SCRUM-71` | Replace implicit/session-local handling with a versioned IANA calendar contract. Exact OANDA account/instrument calendar values remain a verification task. |
-| `SCRUM-72`, `73`, `74`, `75` | Reconcile TrendLeg with the agreed structural protected-swing lifecycle. EMA crosses create raw EMA-cross segments and may be detector evidence; they do not end a TrendLeg. Preserve the already-agreed strict/causal/qualification rules. Revisit dependencies after this correction. |
+| `SCRUM-72`, `73`, `74`, `75` | Update TrendLeg contracts to the approved structural protected-swing lifecycle. EMA crosses create raw EMA-cross segments and may be detector evidence; they do not end a TrendLeg. Preserve the approved strict/causal/qualification rules and update dependencies to match. |
 | `SCRUM-78`–`82`, `86` | Registered code-defined detector versions only; no browser formula loading. Shared runtime accepts the same immutable state in walkthrough and evaluation. Expand fixtures for lifecycle, parity, and clean lineage. |
 | `SCRUM-83`, `85` | Apply the agreed active-qualified TrendLeg gating and independent competing-candidate behavior. Do not broaden unfinished detector tables; make remaining rule-table details an implementation/fixture prerequisite. |
 | `SCRUM-87`–`94` | Schema-driven editor; Chrome/macOS target; viewport-bounded charting with display aggregation; background status/queue UI via polling; ephemeral walkthrough; diagnostics; preserved manual annotations; no browser deletion of research records. |
@@ -77,7 +77,7 @@ Create only if the above Stories cannot absorb the work without becoming incoher
 6. Add durable autonomous queue, outcomes, exports, and UI job controls.
 7. Complete the remaining detector tables and production research fixtures; run benchmark and parity suites.
 
-`SCRUM-72/73` must be reconciled before downstream TrendLeg-dependent detector implementation. `SCRUM-104`, `109`, and `110` should verify the shared-pipeline result after the lifecycle correction.
+`SCRUM-72/73` and their dependencies must be updated to the approved TrendLeg model before downstream TrendLeg-dependent detector implementation begins. `SCRUM-104`, `109`, and `110` should verify the shared-pipeline result after the lifecycle update.
 
 ## Verification checklist before changing external sources
 
