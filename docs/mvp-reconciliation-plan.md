@@ -37,7 +37,7 @@ Clarify:
 
 - Network access is required only for OANDA import. Local immutable datasets support offline replay/evaluation.
 - Browser parameter editing is schema-driven and server-authoritatively validated; it cannot author formulas. Changed presets create a new revision.
-- Autonomous evaluations are durable queued jobs. A manual stop marks the current job `CANCELLED`, preserves incomplete output, and pauses queue auto-run until explicitly re-enabled. A crash marks a stale-heartbeat job `FAILED` and leaves auto-run disabled after restart.
+- Autonomous evaluations are durable queued jobs scheduled from the UI. Multiple runs may be queued, but exactly one evaluation executes at a time in queue order; parallel evaluation execution is outside MVP scope. A manual stop marks the current job `CANCELLED`, preserves incomplete output, and pauses queue auto-run until explicitly re-enabled. A crash marks a stale-heartbeat job `FAILED` and leaves auto-run disabled after restart.
 - A live walkthrough is an ephemeral browser session, one at a time in the UI, with browser-local range/cursor recovery. It does not prevent autonomous work.
 - Chart requests are viewport/range based; overly wide views receive deterministic display-only aggregates. Selected evaluations export event-level data, aggregate statistics, and a lineage manifest. Report building is post-MVP.
 - Include local diagnostics, bounded log rotation, manual backup/restore, and a seeded non-research demo dataset/preset.
