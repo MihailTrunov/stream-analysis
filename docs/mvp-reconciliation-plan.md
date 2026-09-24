@@ -6,6 +6,8 @@ Status: draft for review. This is a local planning artifact only; no Jira issue 
 
 Reconcile the architecture and implementation-readiness decisions captured in `CONTEXT.md` with the Charts documentation and Jira Stories `SCRUM-54` through `SCRUM-113`, plus `SCRUM-119` and `SCRUM-120`.
 
+Use the **Confirmed MVP behavior and research scope** and **Confirmed MVP architecture** sections of `CONTEXT.md` as committed requirements. Its **Deferred / post-MVP** section is excluded from MVP delivery; its **Open decisions** section identifies details to verify or specify at the relevant implementation step.
+
 The detector-rule review is deliberately bounded. The structural protected-swing TrendLeg lifecycle in `CONTEXT.md` is approved and authoritative for MVP implementation; propagate it through architecture, Jira contracts, fixtures, and dependency ordering now. Complete any remaining detector-specific rule tables with their implementation fixtures.
 
 ## Source-of-truth changes

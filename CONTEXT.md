@@ -2,6 +2,8 @@
 
 A research environment for defining observable market behaviour, replaying historical data, inspecting detector evidence, and evaluating subsequent outcomes.
 
+This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. Jira Stories and the Charts documents still need reconciliation with these approved local decisions.
+
 ## Language
 
 **EMA-cross segment**: A raw directional interval between opposing completed-bar EMA crossings, distinct from a TrendLeg.
@@ -37,7 +39,7 @@ A research environment for defining observable market behaviour, replaying histo
 - A run references an exact **dataset revision**; corrected data creates a new revision without changing the bars available to earlier runs.
 - A run records the **warm-up history** it processed as part of its reproducible inputs.
 
-## Confirmed MVP scope
+## Confirmed MVP behavior and research scope
 
 - The browser must support parameter editing. Confirmed during the implementation-readiness interview.
 - Configuration changes require stopping the current replay first; a paused replay is not sufficient. Do not apply edits to an active run or automatically restart it when parameters change.
@@ -61,12 +63,12 @@ A research environment for defining observable market behaviour, replaying histo
 - Default outcome statistics use one sample per pattern occurrence at its first confirmation, grouped by pattern and version. Candidate, reclaimed, invalidated, and expired lifecycle events remain inspectable but are not mixed into confirmation-based outcome samples; multiple transitions of one occurrence must not inflate the sample count.
 - The MVP results table supports drilling from an aggregate into its underlying eligible events, including unavailable-outcome reasons, and opening an event's chart context and detection-time evidence without requiring an export.
 - Completed evaluations have a clearly labelled Review mode showing subsequent bars within the outcome window alongside original detection-time evidence. Review is separate from progressive replay and does not change its cursor or analytical state; progressive replay continues to hide future bars.
-- Closing the browser does not stop a background batch evaluation. If the backend stops during evaluation, mark the interrupted run failed and preserve its partial output as incomplete; offer a new run from the beginning with the same pinned inputs. Automatic evaluation checkpoint recovery is outside MVP scope.
+- Closing the browser does not stop a background batch evaluation. If the backend stops during evaluation, mark the interrupted run failed and preserve its partial output as incomplete; offer a new run from the beginning with the same pinned inputs.
 - The routine evaluation workload target is one year of one-minute bars per instrument. Three initial detector implementations are not a platform limit; more detectors may be added through the versioned detector contracts.
 - The first MVP delivery commits to reversal, compression, and continuation detectors. Additional code-defined, versioned detectors use the same framework; adding one to the delivery scope requires its own specification and test fixtures.
 - The MVP evaluation turnaround target is at most five minutes per instrument for one year of one-minute data with the three initial detectors and default outcomes, measured from launch to persisted results and excluding data download. This is a target to validate on agreed reference hardware, not a measured performance claim.
 - The researcher's current development Mac is the reference machine for the MVP evaluation benchmark; its exact hardware specifications must be recorded before measurement.
-- MVP supports a UI-managed queue of autonomous evaluation runs. Researchers may schedule multiple evaluations from the browser; queued runs execute in sequence, with exactly one evaluation running at a time. Completed-result review remains available while the queue runs. Parallel evaluation execution is deferred.
+- MVP supports a UI-managed queue of autonomous evaluation runs. Researchers may schedule multiple evaluations from the browser; queued runs execute in sequence, with exactly one evaluation running at a time. Completed-result review remains available while the queue runs.
 - Retain all available OANDA trading hours in historical datasets rather than restricting acquisition to research sessions. Apply research-session filters when selecting events, preserving earlier history for analytical state and retaining the agreed trading-day cutoff for outcomes.
 - US30 and DAX have separate configuration presets, even when initial parameter values match. Point-based thresholds are explicit per instrument; editing one instrument's preset does not change the other's settings.
 - DAX research defaults were provisionally copied from the US30 30-bar / 70-point / 35-point baseline and are explicitly unvalidated for DAX. Subsequent structural-TrendLeg decisions retain the 30-bar and 70-point qualification gates; retracement is recorded evidence and an optional experiment filter rather than a default permanent qualification veto. Experiments use explicit preset revisions.
@@ -74,7 +76,7 @@ A research environment for defining observable market behaviour, replaying histo
 - For MVP, outcome trading-day boundaries follow OANDA's instrument-specific trading session, represented by a versioned, timezone-aware calendar rather than the browser's local midnight. Verify exact boundaries and holiday exceptions before implementation.
 - Manual review labels express agreement with the intended market pattern, not favourable/unfavourable outcomes or profitability. A correct detection can have an unfavourable outcome; this clarifies the existing research intent rather than adding scope.
 - MVP supports marking missed patterns directly on a chart interval, tied to the dataset revision, interval, and expected pattern. These are separate research annotations, not invented DetectorEvents, and do not enter detector-event counts.
-- Missed-pattern annotations support manual review and export in MVP. Automatic annotation-to-detection matching and recall scoring are deferred; occasional annotations are not treated as an exhaustive reference set.
+- Missed-pattern annotations support manual review and export in MVP. Occasional annotations are not treated as an exhaustive reference set.
 - Before implementing each detector, obtain the researcher's approval of its rule table and worked examples covering confirmation, invalidation, expiry, and simultaneous-condition precedence. Derive these from existing specifications and surface genuine ambiguities rather than reopening established principles.
 - Separate raw EMA-cross segments from the longer-lived TrendLeg. An opposing EMA cross alone does not automatically end the TrendLeg; a pullback across EMA followed by continuation can belong to the same leg.
 - End an UP TrendLeg on a confirmed close-break below its protected swing low; end a DOWN TrendLeg on a confirmed close-break above its protected swing high. EMA crossings or wick-only breaches do not terminate the leg.
@@ -96,11 +98,11 @@ A research environment for defining observable market behaviour, replaying histo
 - At continuation-candidate creation, freeze the prior directional swing reference and opposite protected swing reference for the entire candidate lifetime. Do not advance either reference as newer swings appear; any dynamic-reference behavior is a new semantic version.
 - A single opposing EMA cross may open independent reversal and continuation candidates when each detector's eligibility conditions hold. They are competing research hypotheses and do not suppress one another.
 
-## Possible post-MVP scope
+## Confirmed MVP architecture
 
-- MVP deployment is single-user and local to the researcher's Mac. A remotely operated service that ingests, computes, or streams live analysis without the local application running is explicitly post-MVP; keep boundaries suitable for it, but do not introduce cloud hosting, authentication, tenancy, or always-on operations into MVP delivery.
+- MVP deployment is single-user and local to the researcher's Mac.
 - MVP requires network access only to import OANDA history. Replays and evaluations operate entirely from locally stored, immutable dataset revisions and remain usable offline after import.
-- MVP has one supported local startup command using Docker Compose. It launches the database, API, worker, and browser UI as a coherent stack rather than requiring separately managed manual processes.
+- MVP has one supported local startup command using Docker Compose. It launches PostgreSQL, the API, the autonomous-evaluation worker, the import worker, and the browser UI as a coherent stack.
 - Autonomous evaluations run in a dedicated local worker service. The API creates and monitors the evaluation job; the worker performs the long-running work independently of the browser, preserving the path to later remote execution. Autonomous evaluation does not block the rest of the UI.
 - While a pattern evaluation is in progress, the evaluated pattern/configuration cannot be changed into a new version; it must be stopped first. Autonomous evaluation submissions pin their dataset revision and configuration snapshot, and may be placed in a user-defined queue that runs one evaluation at a time in that order. The UI shows the active evaluation and the queue; it does not allow mutation of the active pattern into a new version.
 - A live walkthrough is an interactive, bar-by-bar UI session. Only one live walkthrough may run in that UI at once; starting another is unavailable until the current walkthrough stops. This limitation does not make an autonomous evaluation block ordinary UI interaction.
@@ -109,7 +111,7 @@ A research environment for defining observable market behaviour, replaying histo
 - The UI may reorder or remove queued evaluations that have not started. These queue operations never change the already-frozen dataset revision or configuration snapshot; running jobs remain immutable. MVP browser target is the latest Chrome on macOS; Safari and other browsers are outside the supported scope.
 - Scheduled autonomous evaluations auto-run one after another by default. A user-initiated stop completes the current bounded chunk, marks that evaluation `CANCELLED` (not `FAILED`), preserves its partial output as incomplete, and disables queue auto-run until the user explicitly re-enables it. The user may manually start any scheduled evaluation; queue ordering and any skipped evaluations are their responsibility.
 - The evaluation queue is persisted in PostgreSQL, not browser-local state. Queue order and frozen job snapshots remain visible after refresh or stack restart, although auto-run remains disabled after an unexpected restart.
-- PostgreSQL's durable job table plus transactional job claiming implements the MVP evaluation/import queue. Do not add Redis, Celery, RabbitMQ, or another message broker; a later remote worker system may replace the implementation behind the same job interface.
+- PostgreSQL's durable job table plus transactional job claiming implements the MVP evaluation/import queue. No separate message broker is required for MVP.
 - If the app/backend stops unexpectedly, mark the interrupted evaluation `FAILED` with partial output preserved as incomplete. Keep queue auto-run disabled after restart until the user explicitly re-enables it; the restarted stack must not unexpectedly begin queued work.
 - When auto-run is disabled, manually starting a queued evaluation runs only that selected item and then leaves auto-run disabled. Re-enabling auto-run is the explicit action that resumes automatic progression through subsequent queued items.
 - For MVP, each detector is an explicitly registered, versioned code implementation. Configuration may enable and parameterize registered detectors, but cannot load detector logic or formulas from the browser.
@@ -121,18 +123,18 @@ A research environment for defining observable market behaviour, replaying histo
 - Live walkthrough and autonomous evaluation invoke the same deterministic analytical pipeline. They differ only in driver, pace, and persistence; they never use separate EMA, structural-state, or detector implementations.
 - A live walkthrough is an ephemeral browser session, not a persisted background job. Persist selected range/cursor in browser-local state for refresh recovery, then recompute from immutable dataset and configuration rather than maintaining a second durable walkthrough lifecycle.
 - The MVP browser observes evaluation status and progress by polling the API. Do not add WebSockets or server-sent events for the single-user local evaluation workflow.
-- OANDA credentials exist only in the local `.env` / Docker Compose environment. The browser never accepts or stores them, and PostgreSQL never persists them. Centralized secret provisioning is post-MVP.
-- MVP provides documented manual backup and restore commands. Backup creates a timestamped portable archive containing a consistent PostgreSQL dump, immutable dataset revisions and checksums, evaluation artifacts/exports, and a versioned manifest. It excludes `.env`, credentials, source code, images, and local environments; restore verifies checksums before data becomes usable. Automatic cloud backup is post-MVP.
+- OANDA credentials exist only in the local `.env` / Docker Compose environment. The browser never accepts or stores them, and PostgreSQL never persists them.
+- MVP provides documented manual backup and restore commands. Backup creates a timestamped portable archive containing a consistent PostgreSQL dump, immutable dataset revisions and checksums, evaluation artifacts/exports, and a versioned manifest. It excludes `.env`, credentials, source code, images, and local environments; restore verifies checksums before data becomes usable.
 - Alembic migrations are explicit, named, version-controlled scripts reviewed with the persistence-model change they support; Alembic never decides or invents mutations. Generated diffs are drafts requiring human review. Every migration is tested on an empty database and on a restored populated backup; irreversible or data-transforming migrations require that restored-backup test before release. Startup applies only these already-approved migrations in order.
 - Every saved configuration preset and immutable run snapshot carries an explicit configuration-schema version and calendar version. Future code reads prior versions through compatibility adapters; historical snapshots are never rewritten, and editing produces a new preset revision/configuration snapshot.
-- The MVP API is an internal, typed, documented, and tested contract between the local React UI and local Python services. It has no public-client compatibility promise, external authentication surface, or formal public API versioning until post-MVP.
+- The MVP API is an internal, typed, documented, and tested contract between the local React UI and local Python services.
 - The React client's API types are generated from FastAPI's OpenAPI schema. CI detects contract drift rather than allowing manually duplicated TypeScript models to silently diverge from Python request/response contracts.
 - OANDA imports use the same observable, retryable background-job lifecycle as evaluations. Permit one import and one autonomous evaluation concurrently, each with its own visible UI status; imports cannot alter a dataset revision already pinned by an evaluation. Do not permit a second concurrent import.
 - An import publishes a selectable immutable dataset revision only after complete fetch, normalization, gap validation, and checksum validation succeed. Failed or partial imports remain temporary worker state and are never selectable; retry begins a fresh revision attempt.
 - MVP automated tests use deterministic local fixtures for domain logic and replay parity, API/integration tests against an isolated PostgreSQL instance, and a small Playwright Chromium browser smoke suite. OANDA responses are represented by recorded fixtures; live-provider checks are manual import verification rather than flaky automated tests.
 - Routine CI uses GitHub-hosted `ubuntu-latest` runners, not self-hosted machines or charged larger/macOS runners. Keep artifacts small and short-lived, and do not upload historical datasets to GitHub Actions.
 - Each pull request and direct push to `master` runs linting, type checks, unit tests, PostgreSQL integration tests, and browser smoke tests on the routine CI path. One-year performance benchmarks run manually or as explicit release benchmarks, not on every change.
-- MVP uses structured local logs and persists a concise job failure summary plus relevant artifact paths. The UI exposes the actionable failure reason; full diagnostics are available through Docker Compose. Do not add hosted telemetry or monitoring services.
+- MVP uses structured local logs and persists a concise job failure summary plus relevant artifact paths. The UI exposes the actionable failure reason; full diagnostics are available through Docker Compose.
 - MVP omits browser-based deletion of datasets, runs, and configurations. Preserve evidence lineage by default; disk cleanup is an explicit documented local maintenance operation performed only after backup.
 - The API is authoritative for configuration normalization and validation before ConfigHash calculation and run creation. The browser provides immediate convenience validation only. Invalid requests create no run and return structured field-level errors; valid requests freeze the normalized, schema-versioned snapshot used for the hash.
 - The API exposes registered configuration schemas—supported fields, defaults, allowed ranges, and cross-field constraints—so the browser renders parameter editors from the same contract rather than duplicating detector-specific form rules. This does not permit browser-defined formulas or logic.
@@ -142,7 +144,7 @@ A research environment for defining observable market behaviour, replaying histo
 - MVP installation and updates use `git clone` / `git pull` followed by a local Docker Compose build. Do not publish Docker images or use a container registry; each local stack is tied directly to a reviewed Git commit. Nx is the project task runner and exposes the supported start, stop, backup, restore, test, and CI commands rather than a Makefile.
 - The Nx workspace uses `pnpm` for Node/React dependencies and `uv` for Python dependencies. Pin both tool versions in the repository for reproducible local and CI installs.
 - Nx caches only safe deterministic lint, type-check, unit-test, and build tasks. PostgreSQL integration tests, browser smoke tests, migrations, and performance benchmarks always execute rather than relying on cached results.
-- MVP uses only local Nx cache plus standard GitHub Actions dependency caches. Do not add Nx Cloud or another remote task-cache service unless later build-time evidence justifies it.
+- MVP uses only local Nx cache plus standard GitHub Actions dependency caches.
 - A fresh MVP install includes a small seeded demo dataset and preset so the local stack, walkthrough, and diagnostics can be verified offline before OANDA credentials are configured. Demo data is clearly non-research-grade.
 - Python and frontend dependencies are lockfile-pinned. CI fails when declared dependencies and their lockfiles disagree, so local Compose builds and GitHub Actions resolve the same dependency graph.
 - MVP targets Python 3.13. It is a mature supported release already present in the legacy environment; pin the container and tooling to it. This supersedes the older Python 3.12 reference in the architecture document, which is now security-fixes-only.
@@ -151,17 +153,16 @@ A research environment for defining observable market behaviour, replaying histo
 - MVP includes a simple local diagnostics screen/API showing app and database-schema versions, database health, worker availability, OANDA-import availability without exposing secrets, and local artifact/storage paths. It is a supportability aid, not hosted monitoring.
 - The browser requests bars, overlays, and events by visible time range/window from the API. Do not load a full year of one-minute history into the chart; replay/navigation scale with the viewport rather than total dataset size.
 - When a chart viewport would contain more than an implementation-measured bar cap, the API returns deterministic display-only higher-timeframe OHLC aggregates. Drilling into a region returns canonical one-minute bars; analytical state, detector decisions, and event evidence always remain one-minute.
-- The UI and API bind to localhost only by default, and PostgreSQL remains inaccessible outside the Docker Compose network. MVP has no authentication, so remote/LAN access is explicitly post-MVP.
-- MVP retains canonical normalized bars plus immutable import provenance: provider, request parameters, retrieval time, normalization version, and source/dataset checksums. It does not archive raw OANDA response payloads; raw-payload retention is post-MVP if audit needs require it.
-- Any post-MVP live feed enters through the same canonical bar-normalization, validation, and provenance interface as OANDA imports. It must not feed detectors directly or bypass historical data-quality controls.
+- The UI and API bind to localhost only by default, and PostgreSQL remains inaccessible outside the Docker Compose network. MVP has no authentication.
+- MVP retains canonical normalized bars plus immutable import provenance: provider, request parameters, retrieval time, normalization version, and source/dataset checksums. It does not archive raw OANDA response payloads.
 - Immutable normalized minute-bar dataset revisions live as Parquet files. PostgreSQL stores their metadata/checksums plus jobs, configurations, events, outcomes, and annotations; CSV is only a convenience export. Backup includes the Parquet files and PostgreSQL dump.
 - Each Parquet dataset manifest carries an explicit dataset-format version. The app refuses an unknown newer format and reads older supported formats through compatibility code; Parquet-file evolution is separate from Alembic/PostgreSQL migration.
 - All generated datasets, artifacts, and PostgreSQL volume data live under one configurable, Git-ignored local data root rather than tracked source directories. Backup/restore targets that root explicitly.
 - Imports preserve OANDA-provided UTC bar timestamps exactly and never synthesize missing bars. Gaps are recorded and handled by validation rather than filled, preserving source provenance and preventing invented analytical evidence.
 - An import fails validation when it contains conflicting duplicate bars for the same instrument, timeframe, and timestamp. Exact duplicates collapse deterministically; the system never silently chooses between conflicting provider values.
 - Each running import and evaluation persists a periodic worker heartbeat/lease. On recovery, startup identifies a stale lease and reliably marks that job failed with its preserved partial output, independent of browser state.
-- MVP autonomous imports/evaluations require the Mac to remain awake. Sleep pauses local work; only a process/backend stop invokes failed-job recovery. Always-on remote execution is post-MVP.
-- MVP exports a selected evaluation's event-level results and aggregate outcome statistics, accompanied by a machine-readable manifest of exact dataset/configuration/version lineage. A general report builder—templates, arbitrary chart composition, PDF/scheduling/sharing—is post-MVP.
+- MVP autonomous imports/evaluations require the Mac to remain awake. Sleep pauses local work; only a process/backend stop invokes failed-job recovery.
+- MVP exports a selected evaluation's event-level results and aggregate outcome statistics, accompanied by a machine-readable manifest of exact dataset/configuration/version lineage.
 - Application logs rotate with bounded retention in the local data root. Concise failure summaries remain persisted with their jobs, so routine diagnostics do not consume disk indefinitely.
 - The API permits browser requests only from its configured local UI origin, not a wildcard CORS policy. This is defense in depth alongside localhost-only binding; it is not authentication.
 - Every replay, evaluation, and export manifest records the app Git commit/build identifier, detector-definition versions, configuration-schema version, and dataset revision. ConfigHash alone is insufficient to identify implementation changes.
@@ -172,7 +173,27 @@ A research environment for defining observable market behaviour, replaying histo
 - Store bar, event, and job timestamps as UTC instants. Derive analytical trading-day and session boundaries only from versioned IANA timezone calendars, never the Mac or browser clock. The UI may render a chosen display timezone, which cannot change analytical semantics.
 - Instrument trading-session calendars are versioned files/configuration shipped with the app, not fetched dynamically at runtime. They define instrument-specific IANA timezone, local session/cutoff times, and holiday/exception rules; named zones such as `America/New_York` apply daylight-saving changes automatically when deriving UTC boundaries. Verify exact OANDA/instrument rules before implementation.
 - Import verifies the provider/account environment and exact instrument identifier against a known versioned calendar mapping. If no exact mapping exists, the app rejects session/outcome processing rather than silently applying generic market hours.
-- Browser authoring of new formulas or rule combinations may be needed later; it is not an MVP requirement or a committed future feature.
+
+## Deferred / post-MVP
+
+- Remotely operated ingestion, computation, or live analysis feeds that work while the local Mac is off; cloud hosting, always-on operations, authentication, tenancy, and remote/LAN access. A future live feed must use the canonical bar-normalization, validation, and provenance interface before detectors consume its data.
+- Automatic evaluation checkpoint recovery and automatic gap reset/recovery. Interrupted evaluations retain incomplete output; a new run starts from pinned inputs.
+- Automatic matching of missed-pattern annotations to detections and recall scoring.
+- Centralized secret provisioning for OANDA credentials; automatic cloud backups; and hosted telemetry or monitoring.
+- A public third-party API with formal versioning and external compatibility guarantees.
+- Parallel autonomous evaluation execution or a distributed worker/broker system. The MVP queue remains serial and PostgreSQL-backed.
+- A general report builder with reusable templates, arbitrary chart composition, PDF generation, scheduling, or sharing. MVP exports remain available.
+- Archiving raw OANDA response payloads, if a later audit requirement justifies the storage cost.
+- Remote task caching such as Nx Cloud, if measured build times justify it.
+- Browser authoring of new detector formulas or rule combinations is a possible later capability, not a committed post-MVP feature.
+
+## Open decisions
+
+- If the optional 35-point retracement filter is enabled in an experiment, define its reference point and detector-specific action in that experiment's rule table. This detail does not block the default MVP detector path; the 30-bar and 70-point qualification gates are confirmed.
+- Specify the exact editable fields, allowed values, and cross-field validation for the agreed browser parameter groups before implementation.
+- Specify each registered component's warm-up declaration and structural-initialization buffer before implementation; the API calculation method (maximum declared requirement plus buffer) is already confirmed.
+- Verify and specify each instrument's provider trading-day boundary, timezone, scheduled breaks, and holiday exceptions for the supported historical range.
+- Pin the benchmark's exact detector versions/configurations, default outcomes, dataset revision, and development Mac hardware specifications for the agreed one-year/five-minute target.
 
 ## Example dialogue
 
@@ -185,20 +206,11 @@ A research environment for defining observable market behaviour, replaying histo
 > **Researcher:** "A leg can retrace across EMA and then continue."
 > **Developer:** "The EMA-cross segment ends at the opposing cross, but that alone does not end the longer-lived TrendLeg."
 
-## Open decisions
-
-- Do not continue pre-implementation interrogation of individual detector formulas. Refine their remaining exact rules alongside their implementation and fixtures; resume the current review with architecture, integration, operational, and delivery gaps instead.
-- Define the optional 35-point retracement experiment's reference point and per-detector action. Revisit how the provisional 30/70/35 thresholds apply under this definition. The earlier proposal to qualify the just-ended EMA-cross leg before candidate creation is not approved.
-- Define the optional 35-point retracement experiment precisely if enabled. The proposal to remove all mandatory qualification gates was not approved; 30 bars and 70 points are retained to filter short episodic structures, and qualification persists once earned while the leg remains active.
-- Specify the exact editable fields, allowed values, and cross-field validation for the agreed browser parameter groups before implementation.
-- Specify the exact configuration-dependent warm-up calculation before implementation.
-- Verify and specify each instrument's provider trading-day boundary, timezone, scheduled breaks, and holiday exceptions for the supported historical range.
-- Pin the benchmark's exact detector versions/configurations, default outcomes, dataset revision, and development Mac hardware specifications for the agreed one-year/five-minute target.
-
 ## Implementation implications
 
 - The approved TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in SCRUM-72/73. The structural protected-swing TrendLeg lifecycle defined in this document is authoritative for MVP implementation. Update SCRUM-72/73, dependent detector stories, fixtures, dependency ordering, and the canonical Drive specifications to match it before TrendLeg-dependent implementation begins.
 - Align SCRUM-58 persistence/upsert semantics and SCRUM-60 dataset identity with immutable used dataset revisions; shared mutable bar rows must not change the contents of a revision referenced by an earlier run. This decision is recorded locally and has not yet been applied to Jira or the architecture document.
+- Complete remaining detector-specific rule tables alongside their implementation and fixtures; do not treat those details as settled by the architecture decisions above.
 
 ## Sources
 
