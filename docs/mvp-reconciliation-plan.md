@@ -1,6 +1,6 @@
 # MVP architecture reconciliation plan
 
-Status: approved reconciliation plan — pending propagation to Google Drive specifications and Jira.
+Status: approved and propagated — canonical Google Drive specifications and affected Jira Stories reconciled on 2026-09-24.
 
 ## Purpose
 
@@ -61,13 +61,13 @@ Clarify:
 | `SCRUM-105`–`108` | API-owned normalization/validation, configuration-schema version, generated editor schemas, immutable preset revisions with stale-write rejection, calendar version, Git/build identity, clean-build preflight, and config/build lineage in hashes/manifests. |
 | `SCRUM-109`–`113` | Extend leakage, cross-mode parity, primitive fixtures, structured logging, and annotation audit coverage to the revised pipeline, versioning, and lifecycle semantics. |
 
-## New or explicitly split backlog items
+## Added backlog items
 
-Create only if the above Stories cannot absorb the work without becoming incoherent:
+The three cross-cutting concerns were split into dedicated MVP Stories:
 
-1. **Establish local MVP runtime and developer workflow** — Nx, pinned toolchains, Docker Compose topology, local-only network binding, diagnostics, Chrome/macOS support, and GitHub Actions.
-2. **Implement durable local job scheduler** — PostgreSQL queue/claim/heartbeat, evaluation serialisation, independent import slot, stop/crash semantics, and queue UI contract. This should not be hidden inside detector execution.
-3. **Implement immutable Parquet dataset store and local operations** — data-root layout, manifest versioning, backup/restore verification, retention/log rotation, and seeded demo data. Split from `SCRUM-58` only if that Story is otherwise too broad.
+1. **SCRUM-122 — Establish local MVP runtime and developer workflow** — Nx, pinned toolchains, Docker Compose topology, local-only network binding, diagnostics, Chrome/macOS support, and GitHub Actions.
+2. **SCRUM-123 — Implement durable local evaluation job scheduler** — PostgreSQL queue/claim/heartbeat, serial evaluation execution, stop/crash semantics, queue controls, and preflight.
+3. **SCRUM-124 — Implement immutable Parquet dataset store and local data operations** — data-root layout, dataset manifests/versioning, immutable revisions, backup/restore verification, duplicate/conflict policy, and seeded/offline operation support.
 
 ## Dependency/order changes
 
@@ -79,7 +79,7 @@ Create only if the above Stories cannot absorb the work without becoming incoher
 6. Add durable autonomous queue, outcomes, exports, and UI job controls.
 7. Complete the remaining detector tables and production research fixtures; run benchmark and parity suites.
 
-`SCRUM-72/73` and their dependencies must be updated to the approved TrendLeg model before downstream TrendLeg-dependent detector implementation begins. `SCRUM-104`, `109`, and `110` should verify the shared-pipeline result after the lifecycle update.
+`SCRUM-72/73` and their dependencies have been updated to the approved TrendLeg model. SCRUM-72 now depends on the canonical swing primitives needed for structural establishment/protection. `SCRUM-104`, `109`, and `110` verify the shared-pipeline result after the lifecycle update.
 
 ## Verification checklist before changing external sources
 
@@ -87,4 +87,4 @@ Create only if the above Stories cannot absorb the work without becoming incoher
 - Confirm the actual OANDA account environment and canonical identifiers for US30 and DAX, then verify session/holiday rules before publishing calendar values.
 - Choose the reference Mac and pin the benchmark dataset/configuration/detector versions.
 - Decide the exact browser-editable fields by registered schema; do not allow arbitrary formula creation.
-- Update the Drive architecture documents before or alongside Jira, then re-check Jira dependency links against the corrected implementation order.
+- Canonical Drive documents and affected Jira descriptions were reconciled on 2026-09-24. Re-check dependency links when implementation work is scheduled into sprints.
