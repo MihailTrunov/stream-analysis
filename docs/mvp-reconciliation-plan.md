@@ -1,6 +1,6 @@
 # MVP architecture reconciliation plan
 
-Status: draft for review. This is a local planning artifact only; no Jira issue or Google Drive document has been changed.
+Status: approved reconciliation plan — pending propagation to Google Drive specifications and Jira.
 
 ## Purpose
 
