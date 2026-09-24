@@ -197,7 +197,7 @@ A research environment for defining observable market behaviour, replaying histo
 
 ## Implementation implications
 
-- The agreed TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in SCRUM-72/73. Reconcile their contracts, dependent detector stories, fixtures, and dependency ordering after the new lifecycle rules are approved; these analytical contracts are not yet implementation-ready. No Jira or Drive specifications have been changed by this local clarification.
+- The approved TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in SCRUM-72/73. The structural protected-swing TrendLeg lifecycle defined in this document is authoritative for MVP implementation. Update SCRUM-72/73, dependent detector stories, fixtures, dependency ordering, and the canonical Drive specifications to match it before TrendLeg-dependent implementation begins.
 - Align SCRUM-58 persistence/upsert semantics and SCRUM-60 dataset identity with immutable used dataset revisions; shared mutable bar rows must not change the contents of a revision referenced by an earlier run. This decision is recorded locally and has not yet been applied to Jira or the architecture document.
 
 ## Sources
