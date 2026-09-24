@@ -2,7 +2,7 @@
 
 A research environment for defining observable market behaviour, replaying historical data, inspecting detector evidence, and evaluating subsequent outcomes.
 
-This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. Jira Stories and the Charts documents still need reconciliation with these approved local decisions.
+This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. The canonical Charts documents and affected Jira Stories were reconciled with these approved decisions on 2026-09-24; remaining Open decisions are still to be specified at the relevant implementation step.
 
 ## Language
 
@@ -209,7 +209,7 @@ This record distinguishes confirmed MVP commitments from deferred capabilities a
 ## Implementation implications
 
 - The approved TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in SCRUM-72/73. The structural protected-swing TrendLeg lifecycle defined in this document is authoritative for MVP implementation. Update SCRUM-72/73, dependent detector stories, fixtures, dependency ordering, and the canonical Drive specifications to match it before TrendLeg-dependent implementation begins.
-- Align SCRUM-58 persistence/upsert semantics and SCRUM-60 dataset identity with immutable used dataset revisions; shared mutable bar rows must not change the contents of a revision referenced by an earlier run. This decision is recorded locally and has not yet been applied to Jira or the architecture document.
+- SCRUM-58/SCRUM-60 and the canonical architecture now reflect immutable used dataset revisions; shared mutable bar rows must not change the contents of a revision referenced by an earlier run. SCRUM-124 owns the immutable Parquet dataset store and local data operations.
 - Complete remaining detector-specific rule tables alongside their implementation and fixtures; do not treat those details as settled by the architecture decisions above.
 
 ## Sources
