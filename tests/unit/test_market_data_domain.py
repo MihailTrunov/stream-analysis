@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -33,6 +35,15 @@ def test_bar_normalizes_timezone_and_round_trips() -> None:
     payload = dict(bar.to_canonical_dict())
     assert payload["timestamp"] == "2026-01-02T14:30:00Z"
     assert Bar.from_canonical_dict(payload) == bar
+
+
+def test_demo_bars_are_loadable_canonical_completed_bars() -> None:
+    payloads = json.loads(Path("tests/fixtures/demo_bars.json").read_text())
+    bars = [Bar.from_canonical_dict(payload) for payload in payloads]
+
+    assert len(bars) == 2
+    assert all(bar.is_complete for bar in bars)
+    assert [bar.timestamp for bar in bars] == sorted(bar.timestamp for bar in bars)
 
 
 def test_equivalent_numeric_inputs_normalize_to_equal_bar_values() -> None:

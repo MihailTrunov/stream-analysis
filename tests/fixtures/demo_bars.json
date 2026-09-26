@@ -1,4 +1,4 @@
 [
-  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:30:00Z","open":"42000.0","high":"42005.0","low":"41998.0","close":"42003.0"},
-  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:31:00Z","open":"42003.0","high":"42008.0","low":"42001.0","close":"42007.0"}
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:30:00Z","open":"42000.0","high":"42005.0","low":"41998.0","close":"42003.0","volume":null,"source_id":"seeded-demo","is_complete":true,"quality_flags":[]},
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:31:00Z","open":"42003.0","high":"42008.0","low":"42001.0","close":"42007.0","volume":null,"source_id":"seeded-demo","is_complete":true,"quality_flags":[]}
 ]
