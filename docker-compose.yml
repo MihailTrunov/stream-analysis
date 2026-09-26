@@ -14,6 +14,15 @@ services:
       - ${STREAM_ANALYSIS_DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
     networks: [internal]
 
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [internal]
+
   api:
     build: .
     command: ["python", "-m", "uvicorn", "market_analysis.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -25,7 +34,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
     volumes:
       - ${STREAM_ANALYSIS_DATA_ROOT:-./data}:/data
     networks: [internal]
@@ -37,7 +46,7 @@ services:
       STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
       STREAM_ANALYSIS_DATA_ROOT: /data
     depends_on:
-      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
     volumes:
       - ${STREAM_ANALYSIS_DATA_ROOT:-./data}:/data
     networks: [internal]
@@ -50,7 +59,7 @@ services:
       STREAM_ANALYSIS_DATA_ROOT: /data
       OANDA_TOKEN: ${OANDA_TOKEN:-}
     depends_on:
-      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
     volumes:
       - ${STREAM_ANALYSIS_DATA_ROOT:-./data}:/data
     networks: [internal]

@@ -34,3 +34,5 @@ jobs:
       - run: ruff check src tests
       - run: mypy
       - run: pytest
+        env:
+          STREAM_ANALYSIS_TEST_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@localhost:5432/market_analysis_test
