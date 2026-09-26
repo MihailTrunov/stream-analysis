@@ -24,6 +24,7 @@ dist/
 
 # Node / frontend
 node_modules/
+.nx/
 web/node_modules/
 web/dist/
 web/.vite/

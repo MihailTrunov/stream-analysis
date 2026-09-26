@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -37,3 +38,9 @@ def test_exported_requirements_cover_resolved_python_graph() -> None:
         if package["name"] != "stream-analysis"
     }
     assert resolved.items() <= _exported_pins().items()
+
+
+def test_nx_is_installed_from_the_workspace_lock() -> None:
+    package = json.loads(Path("package.json").read_text())
+    assert package["devDependencies"]["nx"] == "21.5.3"
+    assert all("pnpm dlx" not in command for command in package["scripts"].values())
