@@ -160,6 +160,8 @@ class Bar:
             raise DomainValidationError("high must be >= low")
         if not isinstance(self.source_id, str) or not self.source_id.strip():
             raise DomainValidationError("source_id must be non-empty")
+        if not isinstance(self.is_complete, bool):
+            raise DomainValidationError("is_complete must be a boolean")
         quality_flags = frozenset(self.quality_flags)
         if any(
             not isinstance(flag, str) or not flag.strip()

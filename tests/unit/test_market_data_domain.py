@@ -97,6 +97,21 @@ def test_naive_timestamp_and_non_finite_price_are_rejected() -> None:
         )
 
 
+@pytest.mark.parametrize("completion", ["false", 1, None])
+def test_bar_rejects_non_boolean_completion(completion: object) -> None:
+    with pytest.raises(DomainValidationError, match="is_complete must be a boolean"):
+        Bar(
+            "US30",
+            Timeframe.M1,
+            datetime(2026, 1, 2, tzinfo=UTC),
+            "1",
+            "1",
+            "1",
+            "1",
+            is_complete=completion,  # type: ignore[arg-type]
+        )
+
+
 def test_instrument_is_hashable_and_provider_mapping_is_unambiguous() -> None:
     instrument = Instrument(
         instrument_id="US30",
