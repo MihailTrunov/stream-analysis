@@ -1,6 +1,6 @@
 # MVP architecture reconciliation plan
 
-Status: approved and propagated — canonical Google Drive specifications and affected Jira Stories reconciled on 2026-09-24.
+Status: approved and propagated — canonical Google Drive specifications and affected Jira Stories reconciled on 2026-09-24; post-reconciliation provisional research defaults were propagated to the canonical Google Drive documents on 2026-09-26, with corresponding Jira updates deferred to the relevant implementation work.
 
 ## Purpose
 
