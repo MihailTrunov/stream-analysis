@@ -6,6 +6,7 @@ import math
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from io import TextIOWrapper
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,26 @@ class ResearchLogger(logging.LoggerAdapter[logging.Logger]):
         return msg, kwargs
 
 
+class PrivateRotatingFileHandler(RotatingFileHandler):
+    def _open(self) -> TextIOWrapper:
+        descriptor = os.open(
+            self.baseFilename,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o600,
+        )
+        try:
+            os.fchmod(descriptor, 0o600)
+            return os.fdopen(
+                descriptor,
+                "a",
+                encoding=self.encoding,
+                errors=self.errors,
+            )
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+
 def configure_logging(
     *,
     data_root: str | Path | None = None,
@@ -91,7 +112,7 @@ def configure_logging(
     if enable_file:
         log_dir = root / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        rotating = RotatingFileHandler(
+        rotating = PrivateRotatingFileHandler(
             log_dir / "application.jsonl",
             maxBytes=5 * 1024 * 1024,
             backupCount=5,
@@ -99,10 +120,6 @@ def configure_logging(
         )
         rotating.setFormatter(formatter)
         rotating.setLevel(level)
-        try:
-            os.chmod(log_dir / "application.jsonl", 0o600)
-        except OSError:
-            pass
         logger.addHandler(rotating)
     return logger
 

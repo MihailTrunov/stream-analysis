@@ -3,8 +3,11 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
+import stat
 from datetime import UTC, datetime
 from decimal import Decimal
+from logging.handlers import RotatingFileHandler
 
 from market_analysis.application.logging import (
     ResearchLogger,
@@ -67,6 +70,21 @@ def test_reconfiguration_is_idempotent_and_file_logging_is_bounded(tmp_path) -> 
     assert len(second.handlers) == 2
     second.info("hello")
     assert (tmp_path / "logs" / "application.jsonl").exists()
+
+
+def test_rotated_log_remains_private(tmp_path) -> None:
+    logger = configure_logging(data_root=tmp_path, enable_file=True)
+    handler = next(item for item in logger.handlers if isinstance(item, RotatingFileHandler))
+    handler.maxBytes = 128
+    original_umask = os.umask(0o022)
+    try:
+        logger.info("first log record")
+        logger.info("x" * 200)
+    finally:
+        os.umask(original_umask)
+
+    active_log = tmp_path / "logs" / "application.jsonl"
+    assert stat.S_IMODE(active_log.stat().st_mode) == 0o600
 
 
 def test_logging_does_not_mutate_domain_state() -> None:
