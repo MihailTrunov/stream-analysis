@@ -27,6 +27,7 @@ class StalePresetRevisionError(ConfigurationError):
 
 
 Identifier = Annotated[str, Field(min_length=1, pattern=r".*\S.*")]
+ConfigValue = str | bool | int | Decimal | datetime
 
 
 class ImmutableModel(BaseModel):
@@ -35,7 +36,7 @@ class ImmutableModel(BaseModel):
 
 class ConfigParameter(ImmutableModel):
     name: Identifier
-    value: str | bool | int | Decimal | datetime
+    value: ConfigValue
 
     @field_validator("value", mode="before")
     @classmethod
@@ -107,7 +108,7 @@ class PatternSelection(ImmutableModel):
             pattern_id=definition.pattern_id,
             pattern_version=definition.pattern_version,
             parameters=tuple(
-                ConfigParameter(name=name, value=value)
+                ConfigParameter(name=name, value=_config_value(value))
                 for name, value in sorted(resolved.items())
             ),
         )
@@ -290,6 +291,14 @@ class ConfigurationPresetRevision(ImmutableModel):
             instrument_id=self.instrument_id,
             detection_config=detection_config,
         )
+
+
+def _config_value(value: object) -> ConfigValue:
+    if isinstance(value, str | bool | int | Decimal | datetime):
+        return value
+    raise ConfigurationError(
+        f"unsupported resolved configuration value: {type(value).__name__}"
+    )
 
 
 def _selection_payload(

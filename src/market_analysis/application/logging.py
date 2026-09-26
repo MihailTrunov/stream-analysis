@@ -68,7 +68,11 @@ def configure_logging(
     enable_file: bool = True,
 ) -> logging.Logger:
     """Configure bounded local JSON logging and return the application logger."""
-    configured_root = data_root or os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")
+    configured_root: str | Path
+    if data_root is None:
+        configured_root = os.environ.get("STREAM_ANALYSIS_DATA_ROOT", "./data")
+    else:
+        configured_root = data_root
     root = Path(configured_root).expanduser().resolve()
     logger = logging.getLogger("market_analysis")
     logger.setLevel(level)
