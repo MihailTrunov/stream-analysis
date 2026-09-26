@@ -1,5 +1,6 @@
 """Immutable analytical configuration contracts."""
 
+from .hashing import detection_config_hash, evaluation_plan_hash
 from .models import (
     ComponentSelection,
     ConfigParameter,
@@ -24,4 +25,6 @@ __all__ = [
     "PatternSelection",
     "SegmentSelection",
     "StalePresetRevisionError",
+    "detection_config_hash",
+    "evaluation_plan_hash",
 ]
