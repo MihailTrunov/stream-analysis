@@ -132,6 +132,7 @@ def test_instrument_is_hashable_and_provider_mapping_is_unambiguous() -> None:
     )
     assert instrument.provider_symbol("OANDA", environment="PRACTICE") == "US30_USD"
     assert hash(instrument)
+    assert Instrument.from_canonical_dict(instrument.to_canonical_dict()) == instrument
 
     with pytest.raises(DomainValidationError, match="mappings must be unique"):
         Instrument(
@@ -156,6 +157,22 @@ def test_provider_mapping_order_does_not_change_instrument_value() -> None:
     assert ordered == reversed_order
     assert hash(ordered) == hash(reversed_order)
     assert ordered.to_canonical_dict() == reversed_order.to_canonical_dict()
+
+
+def test_instrument_deserialization_rejects_invalid_precision_and_mapping() -> None:
+    instrument = Instrument("US30", "US 30", "calendar", 1, Decimal("1"))
+    payload = dict(instrument.to_canonical_dict())
+    payload["price_precision"] = True
+    with pytest.raises(DomainValidationError, match="price_precision must be an integer"):
+        Instrument.from_canonical_dict(payload)
+
+    payload["price_precision"] = 1
+    payload["provider_symbols"] = [{"provider": "oanda", "symbol": "US30", "environment": 1}]
+    with pytest.raises(DomainValidationError, match="environment must be a string or null"):
+        Instrument.from_canonical_dict(payload)
+
+    with pytest.raises(DomainValidationError, match="non-negative integer"):
+        Instrument("US30", "US 30", "calendar", True, Decimal("1"))
 
 
 def test_unsupported_timeframe_is_rejected() -> None:

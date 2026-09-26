@@ -51,8 +51,12 @@ class Instrument:
             raise DomainValidationError("display_name must be non-empty")
         if not self.calendar_id.strip():
             raise DomainValidationError("calendar_id must be non-empty")
-        if self.price_precision < 0:
-            raise DomainValidationError("price_precision must be >= 0")
+        if (
+            isinstance(self.price_precision, bool)
+            or not isinstance(self.price_precision, int)
+            or self.price_precision < 0
+        ):
+            raise DomainValidationError("price_precision must be a non-negative integer")
         point_size = _decimal(self.point_size, "point_size")
         if point_size <= 0:
             raise DomainValidationError("point_size must be > 0")
@@ -120,6 +124,34 @@ class Instrument:
             ],
         }
         return MappingProxyType(payload)
+
+    @classmethod
+    def from_canonical_dict(cls, payload: Mapping[str, object]) -> Instrument:
+        mappings = payload.get("provider_symbols")
+        if not isinstance(mappings, list):
+            raise DomainValidationError("provider_symbols must be a list")
+        provider_symbols = []
+        for mapping in mappings:
+            if not isinstance(mapping, Mapping):
+                raise DomainValidationError("provider symbol mapping must be an object")
+            environment = mapping.get("environment")
+            if environment is not None and not isinstance(environment, str):
+                raise DomainValidationError("environment must be a string or null")
+            provider_symbols.append(
+                ProviderSymbolMapping(
+                    provider=_required_str(mapping, "provider"),
+                    symbol=_required_str(mapping, "symbol"),
+                    environment=environment,
+                )
+            )
+        return cls(
+            instrument_id=_required_str(payload, "instrument_id"),
+            display_name=_required_str(payload, "display_name"),
+            calendar_id=_required_str(payload, "calendar_id"),
+            price_precision=_required_int(payload, "price_precision"),
+            point_size=_required_decimal(payload, "point_size"),
+            provider_symbols=tuple(provider_symbols),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +308,13 @@ def _required_bool(payload: Mapping[str, object], key: str) -> bool:
     value = payload.get(key)
     if not isinstance(value, bool):
         raise DomainValidationError(f"{key} must be a boolean")
+    return value
+
+
+def _required_int(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DomainValidationError(f"{key} must be an integer")
     return value
 
 
