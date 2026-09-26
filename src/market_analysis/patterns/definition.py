@@ -242,6 +242,8 @@ class PatternDefinition:
             for group in self.condition_groups
             for condition_id in group.condition_ids
         }
+        transition_targets: dict[tuple[str, str], str] = {}
+        outgoing_triggers: dict[str, set[str]] = {}
         for transition in self.transitions:
             if (
                 transition.from_state not in states
@@ -253,6 +255,23 @@ class PatternDefinition:
             if transition.trigger_id not in conditions:
                 raise PatternDefinitionError(
                     "transition triggers must be declared conditions"
+                )
+            transition_key = (transition.from_state, transition.trigger_id)
+            prior_target = transition_targets.get(transition_key)
+            if prior_target is not None and prior_target != transition.to_state:
+                raise PatternDefinitionError(
+                    "ambiguous transition from one state and trigger"
+                )
+            transition_targets[transition_key] = transition.to_state
+            outgoing_triggers.setdefault(transition.from_state, set()).add(
+                transition.trigger_id
+            )
+        for triggers in outgoing_triggers.values():
+            if len(triggers) > 1 and not triggers.issubset(
+                self.simultaneous_precedence
+            ):
+                raise PatternDefinitionError(
+                    "precedence must cover competing transitions"
                 )
         if set(self.rationale_condition_ids) - conditions:
             raise PatternDefinitionError(

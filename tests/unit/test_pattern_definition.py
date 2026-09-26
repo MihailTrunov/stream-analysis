@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -207,6 +208,24 @@ def test_transition_and_rationale_ids_must_be_declared() -> None:
             (),
             (),
             (),
+        )
+
+
+def test_same_state_and_trigger_cannot_have_two_targets() -> None:
+    base = definition()
+    with pytest.raises(PatternDefinitionError, match="ambiguous transition"):
+        replace(
+            base,
+            transitions=base.transitions
+            + (TransitionSpec("candidate", "expired", "protected_swing_break"),),
+        )
+
+
+def test_competing_transitions_require_declared_precedence() -> None:
+    with pytest.raises(PatternDefinitionError, match="precedence must cover"):
+        replace(
+            definition(),
+            simultaneous_precedence=("protected_swing_break",),
         )
 
 
