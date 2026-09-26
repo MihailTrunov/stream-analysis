@@ -2,7 +2,7 @@
 
 A research environment for defining observable market behaviour, replaying historical data, inspecting detector evidence, and evaluating subsequent outcomes.
 
-This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. The canonical Charts documents and affected Jira Stories were reconciled with the decisions recorded by 2026-09-24. The provisional choices added afterward in this document have not yet been propagated to those sources; remaining Open decisions are specified when their affected implementation work starts.
+This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. The canonical Charts documents and affected Jira Stories were reconciled with the decisions recorded by 2026-09-24. The provisional choices added afterward were propagated to the canonical Charts documents on 2026-09-26; affected Jira updates remain deferred until those implementation areas begin. Remaining Open decisions are specified when their affected implementation work starts.
 
 ## Language
 
@@ -256,7 +256,7 @@ These details are deliberately resolved when their affected implementation work 
 - The approved TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in the original SCRUM-72/73 drafts. The structural protected-swing TrendLeg lifecycle defined here is authoritative for MVP implementation; the 2026-09-24 reconciliation propagated it to the affected Jira and canonical Drive specifications. Keep implementation fixtures and dependency ordering aligned with that contract.
 - SCRUM-58/SCRUM-60 and the canonical architecture now reflect immutable used dataset revisions; shared mutable bar rows must not change the contents of a revision referenced by an earlier run. SCRUM-124 owns the immutable Parquet dataset store and local data operations.
 - Complete remaining detector-specific rule tables alongside their implementation and fixtures; do not treat those details as settled by the architecture decisions above.
-- Reconcile the provisional retracement reference, browser field groups, and warm-up policy recorded here with affected Charts specifications and Jira Stories when implementing those areas; this local revision does not itself update external sources.
+- The provisional retracement reference, browser field groups, and warm-up policy recorded here were reconciled into the affected canonical Charts specifications on 2026-09-26. Propagate them to affected Jira Stories when those implementation areas begin; this does not block unrelated MVP work.
 
 ## Sources
 
