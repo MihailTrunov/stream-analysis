@@ -24,6 +24,7 @@ class DiagnosticsResponse(BaseModel):
     schema_version: str | None
     evaluation_worker_available: bool
     import_worker_available: bool
+    oanda_credentials_configured: bool
     oanda_import_available: bool
     data_root: str
 
@@ -40,7 +41,8 @@ def diagnostics_snapshot() -> DiagnosticsResponse:
         schema_version=schema_version,
         evaluation_worker_available=read_worker_heartbeat(data_root, "evaluation"),
         import_worker_available=read_worker_heartbeat(data_root, "import"),
-        oanda_import_available=bool(os.getenv("OANDA_TOKEN")),
+        oanda_credentials_configured=bool(os.getenv("OANDA_TOKEN")),
+        oanda_import_available=False,
         data_root=str(data_root),
     )
 

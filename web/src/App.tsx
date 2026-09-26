@@ -14,6 +14,7 @@ interface DiagnosticsResponse {
   database_healthy: boolean;
   evaluation_worker_available: boolean;
   import_worker_available: boolean;
+  oanda_credentials_configured: boolean;
   oanda_import_available: boolean;
   data_root: string;
 }
@@ -83,7 +84,8 @@ export function App() {
             <dt>Database</dt><dd>{diagnostics.database_healthy ? 'Healthy' : 'Unavailable'}</dd>
             <dt>Evaluation worker</dt><dd>{diagnostics.evaluation_worker_available ? 'Available' : 'Unavailable'}</dd>
             <dt>Import worker</dt><dd>{diagnostics.import_worker_available ? 'Available' : 'Unavailable'}</dd>
-            <dt>OANDA import</dt><dd>{diagnostics.oanda_import_available ? 'Configured' : 'Unavailable without credentials'}</dd>
+            <dt>OANDA credentials</dt><dd>{diagnostics.oanda_credentials_configured ? 'Configured' : 'Not configured'}</dd>
+            <dt>OANDA import</dt><dd>{diagnostics.oanda_import_available ? 'Available' : 'Not implemented'}</dd>
             <dt>Local data root</dt><dd>{diagnostics.data_root}</dd>
           </dl>
         ) : <p>Loading diagnostics…</p>}

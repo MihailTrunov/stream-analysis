@@ -8,7 +8,8 @@ def test_diagnostics_does_not_expose_oanda_token(monkeypatch) -> None:
     monkeypatch.setenv("OANDA_TOKEN", "super-secret")
     snapshot = diagnostics_snapshot()
     payload = snapshot.model_dump()
-    assert payload["oanda_import_available"] is True
+    assert payload["oanda_credentials_configured"] is True
+    assert payload["oanda_import_available"] is False
     assert "super-secret" not in repr(payload)
 
 

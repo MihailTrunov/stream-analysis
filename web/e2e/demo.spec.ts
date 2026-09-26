@@ -14,5 +14,5 @@ test('seeded walkthrough reveals one bar at a time and shows diagnostics', async
   await expect(page.getByText('Bar 1 of 2')).toBeVisible();
   await expect(page.getByText('2026-01-02T14:31:00Z')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Local diagnostics' })).toBeVisible();
-  await expect(page.getByText('Unavailable without credentials')).toBeVisible();
+  await expect(page.getByText('Not implemented', { exact: true })).toBeVisible();
 });
