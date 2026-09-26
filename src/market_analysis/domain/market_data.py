@@ -259,7 +259,10 @@ def _decimal(value: object, field_name: str) -> Decimal:
 
 
 def _decimal_text(value: Decimal) -> str:
-    return format(value, "f")
+    if value == 0:
+        return "0"
+    text = format(value, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def _required_str(payload: Mapping[str, object], key: str) -> str:

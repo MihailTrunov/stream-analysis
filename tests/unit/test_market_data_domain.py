@@ -62,6 +62,15 @@ def test_equivalent_numeric_inputs_normalize_to_equal_bar_values() -> None:
     assert from_strings.identity == ("US30", Timeframe.M1, timestamp)
 
 
+def test_equal_bar_decimals_have_identical_canonical_serialization() -> None:
+    timestamp = datetime(2026, 1, 2, 14, 30, tzinfo=UTC)
+    compact = Bar("US30", Timeframe.M1, timestamp, "1.0", "1.0", "0", "-0")
+    padded = Bar("US30", Timeframe.M1, timestamp, "1.00", "1.00", "0.000", "-0.000")
+
+    assert compact == padded
+    assert compact.to_canonical_dict() == padded.to_canonical_dict()
+
+
 @pytest.mark.parametrize(
     ("high", "low", "message"),
     [
