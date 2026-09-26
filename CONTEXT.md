@@ -2,7 +2,7 @@
 
 A research environment for defining observable market behaviour, replaying historical data, inspecting detector evidence, and evaluating subsequent outcomes.
 
-This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. The canonical Charts documents and affected Jira Stories were reconciled with these approved decisions on 2026-09-24; remaining Open decisions are still to be specified at the relevant implementation step.
+This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. The canonical Charts documents and affected Jira Stories were reconciled with the decisions recorded by 2026-09-24. The provisional choices added afterward in this document have not yet been propagated to those sources; remaining Open decisions are specified when their affected implementation work starts.
 
 ## Language
 
@@ -50,13 +50,14 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 - After editing configuration, the next replay starts as a new run from the beginning of the selected interval, with analytical state initialized for the new configuration; it does not resume at the stopped cursor.
 - Configurations can be saved as named, reusable presets. Saving edits to an existing preset creates a new revision; previous runs retain their original configuration.
 - The MVP browser editor exposes supported settings for indicators, structural components, detectors, and outcome horizons, with validation and documented defaults. New formulas or rule combinations require tested code/version changes rather than browser authoring.
+- For MVP, every registered detector exposes an enable/disable control, its code version, and only the thresholds, bar counts, expiry values, or filter switches that its implementation actually declares; do not invent universal fields that have no meaning for that detector. Shared editable groups include EMA and ATR periods, SwingPoint confirmation widths, SwingStructure hysteresis, TrendLeg qualification bars/points, and outcome horizons. The optional 35-point retracement filter is off by default and appears only for detectors whose approved rule table defines its effect. Protected-swing termination and detector formulas are not browser-editable.
 
 ### Historical data, warm-up, and outcome windows
 
 - Historical datasets become immutable once used by a run. Provider corrections create a new dataset revision, while existing runs remain reproducible against the original prices.
 - Replay processes a defined, recorded period of warm-up history before the selected interval. Visible replay and research event selection begin at the selected interval start, not at the warm-up start.
 - If the dataset lacks the required warm-up history, block the run with a clear explanation and offer a later start time or importing more history; do not silently shorten warm-up.
-- Calculate minimum warm-up from the selected indicators' and detectors' documented requirements. Show the required bar count before launch and allow the researcher to increase, but not reduce, it.
+- Calculate minimum warm-up from the selected components' documented requirements using the provisional MVP policy below. Show the required completed-bar count before launch and allow the researcher to increase, but not reduce, it.
 - Meeting the required warm-up history permits replay even if structural state is still unavailable. Detectors requiring that structure remain inactive and visibly marked as waiting for structure until their prerequisites become available; other detectors operate normally.
 - Controlled comparisons use the same warm-up start for both runs, satisfying the larger configuration-dependent requirement. Comparing existing runs with different warm-up histories shows a warning without changing either run.
 - Select research events by detection_time within the selected interval. Carry detector state across the interval start without resetting it: a pattern begun during warm-up can produce an included confirmation inside the interval, retaining its earlier history. Events detected entirely during warm-up remain outside the selected results.
@@ -86,7 +87,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 - The MVP evaluation turnaround target is at most five minutes per instrument for one year of one-minute data with the three initial detectors and default outcomes, measured from launch to persisted results and excluding data download. This is a target to validate on agreed reference hardware, not a measured performance claim.
 - The researcher's current development Mac is the reference machine for the MVP evaluation benchmark; its exact hardware specifications must be recorded before measurement.
 - US30 and DAX have separate configuration presets, even when initial parameter values match. Point-based thresholds are explicit per instrument; editing one instrument's preset does not change the other's settings.
-- DAX research defaults were provisionally copied from the US30 30-bar / 70-point / 35-point baseline and are explicitly unvalidated for DAX. Subsequent structural-TrendLeg decisions retain the 30-bar and 70-point qualification gates; retracement is recorded evidence and an optional experiment filter rather than a default permanent qualification veto. Experiments use explicit preset revisions.
+- DAX research defaults were provisionally copied from the US30 30-bar / 70-point / 35-point baseline and are explicitly unvalidated for DAX. Subsequent structural-TrendLeg decisions retain the 30-bar and 70-point qualification gates; the 35-point retracement value is recorded evidence and a disabled-by-default experimental filter, not a permanent qualification veto. Experiments use explicit preset revisions.
 - Before implementing each detector, obtain the researcher's approval of its rule table and worked examples covering confirmation, invalidation, expiry, and simultaneous-condition precedence. Derive these from existing specifications and surface genuine ambiguities rather than reopening established principles.
 
 ### TrendLeg structure and qualification
@@ -102,7 +103,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 - On a completed bar that both closes through the current protected swing and would otherwise allow a newer protected-swing update, evaluate the break first. The break ends the TrendLeg and discards the same-bar protection advance; a failed leg is not retroactively rescued by later structural processing of that bar.
 - Once a TrendLeg ends, do not establish its opposite on the same completed bar, even if same-bar structural events could otherwise appear to satisfy the opposite pattern. Begin a fresh opposite sequence after termination: its first corrective swing and subsequent confirming directional swing must be observed after the termination.
 - TrendLeg structural comparisons are strict: equal-valued swings are neither higher nor lower and therefore cannot establish or advance a TrendLeg. Existing protection remains in force across equal highs or lows.
-- The 35-point retracement is an always-recorded TrendLeg evidence field and, when used, a detector-specific experimental eligibility filter. It never changes structural TrendLeg validity or revokes qualification already earned.
+- A TrendLeg records its furthest favorable price extreme on completed bars (highest high for UP, lowest low for DOWN) and close-to-extreme retracement depth in points (UP: highest high minus current close; DOWN: current close minus lowest low). For the provisional 35-point filter, a detector candidate captures the source leg's furthest extreme reached before its retracement trigger as its reference; it is not an EMA-cross price or the protected swing. The filter is off by default, and its detector-specific action belongs in that detector's approved rule table. It never changes structural TrendLeg validity or revokes qualification already earned.
 
 ### Detector candidate behavior
 
@@ -134,7 +135,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 - The React client's API types are generated from FastAPI's OpenAPI schema. CI detects contract drift rather than allowing manually duplicated TypeScript models to silently diverge from Python request/response contracts.
 - The API is authoritative for configuration normalization and validation before ConfigHash calculation and run creation. The browser provides immediate convenience validation only. Invalid requests create no run and return structured field-level errors; valid requests freeze the normalized, schema-versioned snapshot used for the hash.
 - The API exposes registered configuration schemas—supported fields, defaults, allowed ranges, and cross-field constraints—so the browser renders parameter editors from the same contract rather than duplicating detector-specific form rules. This does not permit browser-defined formulas or logic.
-- Each enabled indicator, structural component, and detector declares its own warm-up requirement. The API calculates the launch requirement as the maximum plus any declared structural-initialization buffer, then displays it before launch; no fragile global warm-up constant is used.
+- Each enabled indicator, structural component, and detector declares a warm-up requirement in its versioned configuration schema. The provisional MVP rule is 5 × period for EMA, 5 × period + 1 completed bars for ATR, and the largest declared historical lookback for other enabled components. Take the maximum of those base requirements, then add 2 × (left + right + 1) completed bars when SwingPoint confirmation widths are enabled (otherwise add zero). The API shows this minimum before launch; it is an experimental starting policy, not a guarantee that structural state has formed. Changes to the policy apply only to new versioned configurations/runs.
 - Saving a changed named preset always creates a new immutable revision. The browser sends the revision it edited, and the API rejects stale overwrite attempts; runs retain their exact preset revision/configuration snapshot.
 
 ### Walkthrough, chart, and analytical pipeline
@@ -233,17 +234,16 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 
 ## Open decisions
 
-- If the optional 35-point retracement filter is enabled in an experiment, define its reference point and detector-specific action in that experiment's rule table. This detail does not block the default MVP detector path; the 30-bar and 70-point qualification gates are confirmed.
-- Specify the exact editable fields, allowed values, and cross-field validation for the agreed browser parameter groups before implementation.
-- Specify each registered component's warm-up declaration and structural-initialization buffer before implementation; the API calculation method (maximum declared requirement plus buffer) is already confirmed.
-- Verify and specify each instrument's provider trading-day boundary, timezone, scheduled breaks, and holiday exceptions for the supported historical range.
-- Choose and record the chart viewport aggregation bar cap from measured performance on the supported Chrome/Mac setup before implementing aggregation.
-- Pin the benchmark's exact detector versions/configurations, default outcomes, dataset revision, and development Mac hardware specifications for the agreed one-year/five-minute target.
+These details are deliberately resolved when their affected implementation work starts; they do not block unrelated MVP work. Provisional detector fields and warm-up rules above may be refined through versioned schemas and fixtures without changing prior runs.
+
+- During calendar/import/outcome implementation, decide and verify each instrument's OANDA trading-day boundary and IANA zone, how scheduled breaks and holidays/exceptions are represented and maintained within the locally shipped versioned calendar, and the historical fixtures that test daylight-saving transitions. Preserve the confirmed UTC storage, versioned calendar identity, and instrument-specific outcome semantics.
+- During chart implementation, choose the viewport bar cap from measured Chrome/Mac performance and specify aggregation bucket size/alignment and partial-bucket handling. Aggregates remain display-only; one-minute canonical bars drive analysis.
+- During benchmark implementation, pin the detector versions/configurations, default outcomes, dataset revision, and development Mac hardware specifications for the agreed one-year/five-minute target.
 
 ## Example dialogue
 
 > **Researcher:** "I want to edit parameters through the browser."
-> **Developer:** "The MVP must include browser parameter editing; the remaining experiment workflow still needs clarification."
+> **Developer:** "The MVP editor exposes registered parameters with validation; stop the current replay before changing them."
 >
 > **Researcher:** "Stop replay if configuration needs to change."
 > **Developer:** "Configuration editing requires stopping first, even when replay is paused."
@@ -253,9 +253,10 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 
 ## Implementation implications
 
-- The approved TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in SCRUM-72/73. The structural protected-swing TrendLeg lifecycle defined in this document is authoritative for MVP implementation. Update SCRUM-72/73, dependent detector stories, fixtures, dependency ordering, and the canonical Drive specifications to match it before TrendLeg-dependent implementation begins.
+- The approved TrendLeg/EMA-cross-segment distinction supersedes the crossing-ends-TrendLeg interpretation in the original SCRUM-72/73 drafts. The structural protected-swing TrendLeg lifecycle defined here is authoritative for MVP implementation; the 2026-09-24 reconciliation propagated it to the affected Jira and canonical Drive specifications. Keep implementation fixtures and dependency ordering aligned with that contract.
 - SCRUM-58/SCRUM-60 and the canonical architecture now reflect immutable used dataset revisions; shared mutable bar rows must not change the contents of a revision referenced by an earlier run. SCRUM-124 owns the immutable Parquet dataset store and local data operations.
 - Complete remaining detector-specific rule tables alongside their implementation and fixtures; do not treat those details as settled by the architecture decisions above.
+- Reconcile the provisional retracement reference, browser field groups, and warm-up policy recorded here with affected Charts specifications and Jira Stories when implementing those areas; this local revision does not itself update external sources.
 
 ## Sources
 
