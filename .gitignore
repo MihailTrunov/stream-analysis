@@ -28,6 +28,8 @@ node_modules/
 web/node_modules/
 web/dist/
 web/.vite/
+web/test-results/
+web/playwright-report/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

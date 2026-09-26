@@ -29,10 +29,10 @@ jobs:
           version: "0.10.0"
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-      - run: uv pip install --system --require-hashes -r requirements.lock
-      - run: ruff check src tests
-      - run: mypy
-      - run: pytest
+          python-version: "3.13.7"
+      - run: uv sync --locked --all-groups
+      - run: pnpm run ci
         env:
           STREAM_ANALYSIS_TEST_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@localhost:5432/market_analysis_test
+      - run: pnpm --filter stream-analysis-web exec playwright install --with-deps chrome
+      - run: pnpm run smoke
