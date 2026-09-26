@@ -4,20 +4,32 @@ import json
 import logging
 import math
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 _RESERVED = frozenset(logging.makeLogRecord({}).__dict__)
-_SENSITIVE_MARKERS = ("token", "secret", "password", "api_key", "apikey", "authorization")
+_SENSITIVE_MARKERS = (
+    "token",
+    "secret",
+    "password",
+    "api_key",
+    "apikey",
+    "authorization",
+)
 
 
 class StructuredJsonFormatter(logging.Formatter):
     """Stable JSON-line formatter for local operational diagnostics."""
 
     def format(self, record: logging.LogRecord) -> str:
-        timestamp = datetime.fromtimestamp(record.created, tz=UTC).isoformat().replace("+00:00", "Z")
+        timestamp = (
+            datetime.fromtimestamp(record.created, tz=UTC)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
         payload: dict[str, object] = {
             "timestamp": timestamp,
             "severity": record.levelname,
@@ -30,7 +42,13 @@ class StructuredJsonFormatter(logging.Formatter):
             payload[key] = _safe_value(key, value)
         if record.exc_info:
             payload["exception"] = _redact_text(self.formatException(record.exc_info))
-        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        return json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
 
 
 class ResearchLogger(logging.LoggerAdapter[logging.Logger]):
@@ -50,7 +68,8 @@ def configure_logging(
     enable_file: bool = True,
 ) -> logging.Logger:
     """Configure bounded local JSON logging and return the application logger."""
-    root = Path(data_root or os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")).expanduser().resolve()
+    configured_root = data_root or os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")
+    root = Path(configured_root).expanduser().resolve()
     logger = logging.getLogger("market_analysis")
     logger.setLevel(level)
     logger.propagate = False
@@ -111,17 +130,20 @@ def research_logger(
 def _safe_value(key: str, value: object) -> object:
     if _is_sensitive_key(key):
         return "[REDACTED]"
-    if value is None or isinstance(value, (str, int, bool)):
+    if value is None or isinstance(value, str | int | bool):
         return _redact_text(value) if isinstance(value, str) else value
     if isinstance(value, float):
         return value if math.isfinite(value) else str(value)
     if isinstance(value, Mapping):
-        return {str(item_key): _safe_value(str(item_key), item_value) for item_key, item_value in value.items()}
-    if isinstance(value, (list, tuple)):
+        return {
+            str(item_key): _safe_value(str(item_key), item_value)
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list | tuple):
         return [_safe_value(key, item) for item in value]
-    if isinstance(value, (set, frozenset)):
+    if isinstance(value, set | frozenset):
         normalized = [_safe_value(key, item) for item in value]
-        return sorted(normalized, key=lambda item: repr(item))
+        return sorted(normalized, key=repr)
     return _redact_text(str(value))
 
 

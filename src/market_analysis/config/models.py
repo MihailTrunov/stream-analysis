@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Annotated, Any, Mapping, Self
+from typing import Annotated, Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from market_analysis.domain import Timeframe
 from market_analysis.patterns import PatternDefinition
@@ -35,23 +42,29 @@ class ConfigParameter(ImmutableModel):
     def normalize_value(cls, value: Any) -> Any:
         if isinstance(value, datetime):
             if value.tzinfo is None or value.utcoffset() is None:
-                raise ValueError("configuration timestamps must be timezone-aware")
+                raise ValueError(
+                    "configuration timestamps must be timezone-aware"
+                )
             return value.astimezone(UTC)
         if isinstance(value, Decimal):
             if not value.is_finite():
                 raise ValueError("configuration decimal must be finite")
             return value
-        if isinstance(value, (str, bool, int)):
+        if isinstance(value, str | bool | int):
             return value
         if isinstance(value, float):
             try:
                 result = Decimal(str(value))
             except InvalidOperation as exc:
-                raise ValueError("configuration decimal must be finite") from exc
+                raise ValueError(
+                    "configuration decimal must be finite"
+                ) from exc
             if not result.is_finite():
                 raise ValueError("configuration decimal must be finite")
             return result
-        raise ValueError(f"unsupported configuration value type: {type(value).__name__}")
+        raise ValueError(
+            f"unsupported configuration value type: {type(value).__name__}"
+        )
 
 
 class ComponentSelection(ImmutableModel):
@@ -62,7 +75,10 @@ class ComponentSelection(ImmutableModel):
 
     @model_validator(mode="after")
     def unique_parameters(self) -> Self:
-        _ensure_unique("component parameter", (item.name for item in self.parameters))
+        _ensure_unique(
+            "component parameter",
+            (item.name for item in self.parameters),
+        )
         return self
 
 
@@ -74,19 +90,25 @@ class PatternSelection(ImmutableModel):
 
     @model_validator(mode="after")
     def unique_parameters(self) -> Self:
-        _ensure_unique("pattern parameter", (item.name for item in self.parameters))
+        _ensure_unique(
+            "pattern parameter",
+            (item.name for item in self.parameters),
+        )
         return self
 
     @classmethod
     def from_definition(
-        cls, definition: PatternDefinition, overrides: Mapping[str, object] | None = None
+        cls,
+        definition: PatternDefinition,
+        overrides: Mapping[str, object] | None = None,
     ) -> PatternSelection:
         resolved = definition.resolve_parameters(overrides)
         return cls(
             pattern_id=definition.pattern_id,
             pattern_version=definition.pattern_version,
             parameters=tuple(
-                ConfigParameter(name=name, value=value) for name, value in sorted(resolved.items())
+                ConfigParameter(name=name, value=value)
+                for name, value in sorted(resolved.items())
             ),
         )
 
@@ -101,18 +123,32 @@ class DetectionAnalysisConfig(ImmutableModel):
 
     @model_validator(mode="after")
     def unique_selections(self) -> Self:
-        _ensure_unique("component", (item.component_id for item in self.components))
-        _ensure_unique("pattern", (item.pattern_id for item in self.patterns))
+        _ensure_unique(
+            "component",
+            (item.component_id for item in self.components),
+        )
+        _ensure_unique(
+            "pattern",
+            (item.pattern_id for item in self.patterns),
+        )
         return self
 
     def canonical_dict(self) -> dict[str, object]:
+        components = sorted(
+            self.components,
+            key=lambda value: value.component_id,
+        )
+        patterns = sorted(
+            self.patterns,
+            key=lambda value: value.pattern_id,
+        )
         return {
             "schema_version": self.schema_version,
             "instrument_id": self.instrument_id,
             "timeframe": self.timeframe.value,
             "calendar_id": self.calendar_id,
-            "components": [_selection_payload(item) for item in sorted(self.components, key=lambda value: value.component_id)],
-            "patterns": [_selection_payload(item) for item in sorted(self.patterns, key=lambda value: value.pattern_id)],
+            "components": [_selection_payload(item) for item in components],
+            "patterns": [_selection_payload(item) for item in patterns],
         }
 
     def canonical_json(self) -> str:
@@ -126,7 +162,10 @@ class OutcomeSelection(ImmutableModel):
 
     @model_validator(mode="after")
     def unique_parameters(self) -> Self:
-        _ensure_unique("outcome parameter", (item.name for item in self.parameters))
+        _ensure_unique(
+            "outcome parameter",
+            (item.name for item in self.parameters),
+        )
         return self
 
 
@@ -137,7 +176,10 @@ class SegmentSelection(ImmutableModel):
 
     @model_validator(mode="after")
     def unique_parameters(self) -> Self:
-        _ensure_unique("segment parameter", (item.name for item in self.parameters))
+        _ensure_unique(
+            "segment parameter",
+            (item.name for item in self.parameters),
+        )
         return self
 
 
@@ -153,20 +195,62 @@ class EvaluationPlan(ImmutableModel):
     @model_validator(mode="after")
     def validate_identity(self) -> Self:
         _ensure_unique("context field", self.context_fields)
-        _ensure_unique("outcome", ((item.outcome_id, item.outcome_version) for item in self.outcomes))
-        _ensure_unique("segment", ((item.segment_id, item.segment_version) for item in self.segments))
-        _ensure_unique("export setting", (item.name for item in self.export_settings))
+        _ensure_unique(
+            "outcome",
+            (
+                (item.outcome_id, item.outcome_version)
+                for item in self.outcomes
+            ),
+        )
+        _ensure_unique(
+            "segment",
+            (
+                (item.segment_id, item.segment_version)
+                for item in self.segments
+            ),
+        )
+        _ensure_unique(
+            "export setting",
+            (item.name for item in self.export_settings),
+        )
         return self
 
     def canonical_dict(self) -> dict[str, object]:
+        outcomes = sorted(
+            self.outcomes,
+            key=lambda value: (
+                value.outcome_id,
+                value.outcome_version,
+            ),
+        )
+        segments = sorted(
+            self.segments,
+            key=lambda value: (
+                value.segment_id,
+                value.segment_version,
+            ),
+        )
+        export_settings = sorted(
+            self.export_settings,
+            key=lambda value: value.name,
+        )
         return {
             "schema_version": self.schema_version,
             "detection_config_hash": self.detection_config_hash,
             "context_schema_version": self.context_schema_version,
             "context_fields": sorted(self.context_fields),
-            "outcomes": [_named_selection_payload(item, "outcome") for item in sorted(self.outcomes, key=lambda value: (value.outcome_id, value.outcome_version))],
-            "segments": [_named_selection_payload(item, "segment") for item in sorted(self.segments, key=lambda value: (value.segment_id, value.segment_version))],
-            "export_settings": [_parameter_payload(item) for item in sorted(self.export_settings, key=lambda value: value.name)],
+            "outcomes": [
+                _named_selection_payload(item, "outcome")
+                for item in outcomes
+            ],
+            "segments": [
+                _named_selection_payload(item, "segment")
+                for item in segments
+            ],
+            "export_settings": [
+                _parameter_payload(item)
+                for item in export_settings
+            ],
         }
 
     def canonical_json(self) -> str:
@@ -186,14 +270,20 @@ class ConfigurationPresetRevision(ImmutableModel):
         return self
 
     def next_revision(
-        self, *, edited_revision: int, detection_config: DetectionAnalysisConfig
+        self,
+        *,
+        edited_revision: int,
+        detection_config: DetectionAnalysisConfig,
     ) -> ConfigurationPresetRevision:
         if edited_revision != self.revision:
             raise StalePresetRevisionError(
-                f"stale preset revision: edited {edited_revision}, current {self.revision}"
+                "stale preset revision: "
+                f"edited {edited_revision}, current {self.revision}"
             )
         if detection_config.instrument_id != self.instrument_id:
-            raise ConfigurationError("cannot change preset instrument across revisions")
+            raise ConfigurationError(
+                "cannot change preset instrument across revisions"
+            )
         return ConfigurationPresetRevision(
             preset_id=self.preset_id,
             revision=self.revision + 1,
@@ -202,27 +292,47 @@ class ConfigurationPresetRevision(ImmutableModel):
         )
 
 
-def _selection_payload(value: ComponentSelection | PatternSelection) -> dict[str, object]:
-    identity_key = "component_version" if isinstance(value, ComponentSelection) else "pattern_version"
-    id_key = "component_id" if isinstance(value, ComponentSelection) else "pattern_id"
+def _selection_payload(
+    value: ComponentSelection | PatternSelection,
+) -> dict[str, object]:
+    if isinstance(value, ComponentSelection):
+        identity_key = "component_version"
+        id_key = "component_id"
+    else:
+        identity_key = "pattern_version"
+        id_key = "pattern_id"
+    parameters = sorted(
+        value.parameters,
+        key=lambda item: item.name,
+    )
     return {
         id_key: getattr(value, id_key),
         identity_key: getattr(value, identity_key),
         "enabled": value.enabled,
-        "parameters": [_parameter_payload(item) for item in sorted(value.parameters, key=lambda item: item.name)],
+        "parameters": [_parameter_payload(item) for item in parameters],
     }
 
 
-def _named_selection_payload(value: OutcomeSelection | SegmentSelection, prefix: str) -> dict[str, object]:
+def _named_selection_payload(
+    value: OutcomeSelection | SegmentSelection,
+    prefix: str,
+) -> dict[str, object]:
+    parameters = sorted(
+        value.parameters,
+        key=lambda item: item.name,
+    )
     return {
         f"{prefix}_id": getattr(value, f"{prefix}_id"),
         f"{prefix}_version": getattr(value, f"{prefix}_version"),
-        "parameters": [_parameter_payload(item) for item in sorted(value.parameters, key=lambda item: item.name)],
+        "parameters": [_parameter_payload(item) for item in parameters],
     }
 
 
 def _parameter_payload(value: ConfigParameter) -> dict[str, object]:
-    return {"name": value.name, "value": _canonical_value(value.value)}
+    return {
+        "name": value.name,
+        "value": _canonical_value(value.value),
+    }
 
 
 def _canonical_value(value: object) -> object:
@@ -234,7 +344,12 @@ def _canonical_value(value: object) -> object:
 
 
 def _canonical_json(payload: Mapping[str, object]) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 def _ensure_unique(label: str, values: Any) -> None:
