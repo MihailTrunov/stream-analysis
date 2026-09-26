@@ -138,6 +138,17 @@ def test_instrument_is_hashable_and_provider_mapping_is_unambiguous() -> None:
         )
 
 
+def test_provider_mapping_order_does_not_change_instrument_value() -> None:
+    first = ProviderSymbolMapping("oanda", "US30_USD", "practice")
+    second = ProviderSymbolMapping("other", "INDEX_US30")
+    ordered = Instrument("US30", "US 30", "calendar", 1, Decimal("1"), (first, second))
+    reversed_order = Instrument("US30", "US 30", "calendar", 1, Decimal("1"), (second, first))
+
+    assert ordered == reversed_order
+    assert hash(ordered) == hash(reversed_order)
+    assert ordered.to_canonical_dict() == reversed_order.to_canonical_dict()
+
+
 def test_unsupported_timeframe_is_rejected() -> None:
     with pytest.raises(DomainValidationError, match="unsupported timeframe"):
         Bar(  # type: ignore[arg-type]

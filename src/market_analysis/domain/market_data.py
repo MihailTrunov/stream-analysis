@@ -63,7 +63,6 @@ class Instrument:
             raise DomainValidationError(
                 "provider_symbols must contain ProviderSymbolMapping values"
             )
-        object.__setattr__(self, "provider_symbols", provider_symbols)
         keys = [
             (item.provider.casefold(), (item.environment or "").casefold())
             for item in provider_symbols
@@ -72,6 +71,19 @@ class Instrument:
             raise DomainValidationError(
                 "provider/environment mappings must be unique"
             )
+        object.__setattr__(
+            self,
+            "provider_symbols",
+            tuple(
+                sorted(
+                    provider_symbols,
+                    key=lambda value: (
+                        value.provider.casefold(),
+                        (value.environment or "").casefold(),
+                    ),
+                )
+            ),
+        )
 
     def provider_symbol(
         self,
@@ -104,13 +116,7 @@ class Instrument:
                     "symbol": item.symbol,
                     "environment": item.environment,
                 }
-                for item in sorted(
-                    self.provider_symbols,
-                    key=lambda value: (
-                        value.provider.casefold(),
-                        (value.environment or "").casefold(),
-                    ),
-                )
+                for item in self.provider_symbols
             ],
         }
         return MappingProxyType(payload)
