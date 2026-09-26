@@ -67,3 +67,23 @@ The isolated defects from the second pass and the concrete domain/transition def
 | Unlocked Nx task-runner installation | `e311e77` |
 
 `pnpm exec nx run platform:ci` passed after these fixes: 41 tests, Ruff, and mypy over 19 source files. A frozen pnpm install and a hash-verified `uv pip` dry run also passed. These commits do **not** complete the broader Story-level gaps below: `SCRUM-122` still lacks a working offline walkthrough/evaluation smoke path and real DB/schema/worker diagnostics; CI still lacks frontend, PostgreSQL integration, and browser smoke checks; `SCRUM-105` still needs enforced fully resolved run snapshots and persistence; and `SCRUM-112` still needs logging integrated into actual replay/evaluation work. The same-version default-only registry concern remains a design question, not a confirmed defect.
+
+### Story-gap implementation follow-up — 2026-09-26
+
+After the user explicitly included the larger Story gaps in scope, the following were implemented in separate commits:
+
+| Scope | Commit |
+| --- | --- |
+| Live DB/schema probe and worker heartbeats in diagnostics | `c3d08ac` |
+| Versioned config-hash prerequisite for snapshots | `459d5ba` |
+| Explicit Alembic migration and durable replay/evaluation run-config snapshots | `5110d5f` |
+| Registered component/pattern default resolution at snapshot write boundary | `e3a9a92` |
+| Packaged canonical, non-research demo bars and read-only API | `0215cce` |
+| React/Vite installation walkthrough and diagnostics screen | `1ad2874` |
+| PostgreSQL/Chromium/frontend Nx and GitHub Actions checks | `342a6b3` |
+| API/worker and run-snapshot structured logging integration | `55e25a5` |
+| Credential configuration distinguished from actual OANDA import availability | `36e6e45` |
+
+The final local `pnpm run ci` passed 56 Python tests (one PostgreSQL test skipped without its URL), Ruff, mypy, frontend type/lint/unit checks, and the Vite build. `pnpm run smoke` passed in Chrome. Docker Compose was then started against a fresh local data directory: PostgreSQL was healthy, the migration service exited successfully at schema `20260926_01`, the API reported healthy DB and fresh evaluation/import worker heartbeats, and the Nginx proxy served the seeded bars. The Chrome smoke passed against the built Compose stack. A separate disposable `market_analysis_test` database ran the PostgreSQL migration/snapshot integration test successfully (1 passed); that test database was dropped, and the Compose containers/network were stopped without deleting the app data directory. A remote GitHub Actions run was not observed.
+
+These are platform and persistence foundations, **not** completion of the research loop. The demo walkthrough only reveals two local bars; it intentionally creates no DetectorEvents and does not constitute autonomous evaluation. The evaluation/import workers still have no job-processing implementation. Full offline replay/evaluation smoke, actual replay/evaluation log lines, and binding snapshots to active jobs depend on the causal market-state/detector pipeline, immutable dataset store, and durable scheduler owned by subsequent Stories (`SCRUM-61`–`80`, `SCRUM-95`, `SCRUM-123`, `SCRUM-124`). The same-version default-only registry question remains open. Those gaps must not be marked complete merely because the installation/UI smoke passes.
