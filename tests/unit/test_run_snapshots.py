@@ -8,7 +8,13 @@ from sqlalchemy.exc import IntegrityError
 
 from alembic import command
 from alembic.config import Config
-from market_analysis.config import DetectionAnalysisConfig, EvaluationPlan, detection_config_hash
+from market_analysis.config import (
+    ComponentSelection,
+    DetectionAnalysisConfig,
+    EvaluationPlan,
+    detection_config_hash,
+)
+from market_analysis.patterns import ParameterSpec, ParameterType
 from market_analysis.persistence.runs import (
     create_run_snapshot,
     load_run_snapshot,
@@ -97,3 +103,36 @@ def test_snapshot_rejects_mismatched_plan_and_duplicate_run_id() -> None:
         create_run_snapshot(connection, **values)
         with pytest.raises(IntegrityError):
             create_run_snapshot(connection, **values)
+
+
+def test_snapshot_expands_registered_component_defaults_before_persisting() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    config = DetectionAnalysisConfig(
+        instrument_id="US30",
+        calendar_id="demo-v1",
+        components=(ComponentSelection(component_id="atr", component_version="1"),),
+    )
+    with engine.begin() as connection:
+        with pytest.raises(ValueError, match="unregistered component"):
+            create_run_snapshot(
+                connection,
+                run_id=uuid4(),
+                dataset_revision_id="demo-rev-1",
+                calendar_version="demo-v1",
+                build_id="test-build",
+                detection_config=config,
+            )
+        record = create_run_snapshot(
+            connection,
+            run_id=uuid4(),
+            dataset_revision_id="demo-rev-1",
+            calendar_version="demo-v1",
+            build_id="test-build",
+            detection_config=config,
+            component_parameters={
+                ("atr", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)
+            },
+        )
+        assert '"name":"period"' in record.detection_config_json
+        assert '"value":14' in record.detection_config_json

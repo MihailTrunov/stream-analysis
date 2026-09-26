@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from uuid import UUID
 
@@ -20,7 +21,9 @@ from market_analysis.config import (
     EvaluationPlan,
     detection_config_hash,
     evaluation_plan_hash,
+    resolve_detection_config,
 )
+from market_analysis.patterns import ParameterSpec, PatternDefinition
 
 metadata = MetaData()
 run_snapshots = Table(
@@ -80,6 +83,8 @@ def create_run_snapshot(
     evaluation_plan: EvaluationPlan | None = None,
     preset_id: str | None = None,
     preset_revision: int | None = None,
+    component_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
+    pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
 ) -> RunSnapshotRecord:
     for name, value in (
         ("dataset_revision_id", dataset_revision_id),
@@ -92,6 +97,11 @@ def create_run_snapshot(
         raise ValueError("preset ID and revision must be supplied together")
     if preset_revision is not None and preset_revision < 1:
         raise ValueError("preset revision must be positive")
+    detection_config = resolve_detection_config(
+        detection_config,
+        component_parameters=component_parameters,
+        pattern_definitions=pattern_definitions,
+    )
     config_hash = detection_config_hash(detection_config)
     if evaluation_plan is not None and evaluation_plan.detection_config_hash != config_hash:
         raise ValueError("evaluation plan references a different detection config")
