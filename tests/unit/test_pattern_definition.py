@@ -244,28 +244,32 @@ def test_contract_supports_compression_and_continuation_context_without_framewor
                 3,
             ),
         ),
-        ("idle", "active"),
+        ("idle", "candidate", "active", "completed"),
         (
             TransitionSpec(
                 "idle",
-                "active",
+                "candidate",
                 "compression_entry_pass",
             ),
+            TransitionSpec("candidate", "active", "persistence_met"),
+            TransitionSpec("active", "completed", "compression_released"),
         ),
         (
             ConditionGroup(
                 "formation",
-                ("compression_entry_pass",),
+                ("compression_entry_pass", "persistence_met"),
             ),
+            ConditionGroup("completion", ("compression_released",)),
         ),
-        ("compression_entry_pass",),
+        ("compression_entry_pass", "persistence_met", "compression_released"),
         (
             ContextFieldSpec(
                 "qualifying_count",
                 "int",
             ),
+            ContextFieldSpec("active_since", "datetime"),
         ),
-        ("compression_entry_pass",),
+        ("compression_entry_pass", "persistence_met", "compression_released"),
     )
     continuation = PatternDefinition(
         "trend-continuation",
@@ -284,6 +288,7 @@ def test_contract_supports_compression_and_continuation_context_without_framewor
         (
             "idle",
             "candidate",
+            "reclaimed",
             "confirmed",
         ),
         (
@@ -294,9 +299,10 @@ def test_contract_supports_compression_and_continuation_context_without_framewor
             ),
             TransitionSpec(
                 "candidate",
-                "confirmed",
+                "reclaimed",
                 "ema_reclaim",
             ),
+            TransitionSpec("reclaimed", "confirmed", "continuation_break"),
         ),
         (
             ConditionGroup(
@@ -305,10 +311,10 @@ def test_contract_supports_compression_and_continuation_context_without_framewor
             ),
             ConditionGroup(
                 "confirmation",
-                ("ema_reclaim",),
+                ("ema_reclaim", "continuation_break"),
             ),
         ),
-        ("ema_reclaim",),
+        ("ema_reclaim", "continuation_break"),
         (
             ContextFieldSpec(
                 "frozen_directional_swing",
@@ -318,14 +324,30 @@ def test_contract_supports_compression_and_continuation_context_without_framewor
                 "frozen_protected_swing",
                 "event_ref",
             ),
+            ContextFieldSpec("reclaimed_at", "datetime"),
         ),
         (
             "opposing_ema_cross",
             "ema_reclaim",
+            "continuation_break",
         ),
     )
-    assert compression.context_schema[0].field_id == "qualifying_count"
-    assert len(continuation.context_schema) == 2
+    assert compression.lifecycle_states == (
+        "idle", "candidate", "active", "completed"
+    )
+    assert {field.field_id for field in compression.context_schema} == {
+        "qualifying_count", "active_since"
+    }
+    assert continuation.lifecycle_states == (
+        "idle", "candidate", "reclaimed", "confirmed"
+    )
+    assert {field.field_id for field in continuation.context_schema} == {
+        "frozen_directional_swing", "frozen_protected_swing", "reclaimed_at"
+    }
+    assert continuation.transitions[-2:] == (
+        TransitionSpec("candidate", "reclaimed", "ema_reclaim"),
+        TransitionSpec("reclaimed", "confirmed", "continuation_break"),
+    )
 
 
 def test_documentation_and_default_only_changes_do_not_change_semantics() -> None:
