@@ -1,0 +1,13 @@
+{
+  "name": "stream-analysis-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "engines": {"node": ">=22 <23"},
+  "scripts": {
+    "nx": "pnpm dlx nx@21.5.3",
+    "start": "pnpm dlx nx@21.5.3 run platform:start",
+    "stop": "pnpm dlx nx@21.5.3 run platform:stop",
+    "test": "pnpm dlx nx@21.5.3 run-many -t test",
+    "ci": "pnpm dlx nx@21.5.3 run platform:ci"
+  }
+}

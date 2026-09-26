@@ -1,0 +1,13 @@
+# Runtime and development dependency pins for the bootstrap environment.
+# Keep direct declarations synchronized with pyproject.toml.
+alembic==1.18.4
+fastapi==0.128.2
+httpx==0.28.1
+mypy==1.17.1
+psycopg[binary]==3.2.10
+pydantic==2.13.4
+pytest==9.0.2
+pytest-cov==7.0.0
+ruff==0.12.12
+sqlalchemy==2.0.50
+uvicorn==0.48.0

@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: market_analysis_test
+          POSTGRES_USER: market_analysis
+          POSTGRES_PASSWORD: market_analysis
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U market_analysis -d market_analysis_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: uv pip install --system -r requirements.lock
+      - run: ruff check src tests
+      - run: mypy
+      - run: pytest

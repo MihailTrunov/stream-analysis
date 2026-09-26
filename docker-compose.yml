@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: market_analysis
+      POSTGRES_USER: market_analysis
+      POSTGRES_PASSWORD: market_analysis
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U market_analysis -d market_analysis"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ${STREAM_ANALYSIS_DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
+    networks: [internal]
+
+  api:
+    build: .
+    command: ["python", "-m", "uvicorn", "market_analysis.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
+      STREAM_ANALYSIS_DATA_ROOT: /data
+      STREAM_ANALYSIS_BUILD_ID: ${STREAM_ANALYSIS_BUILD_ID:-development}
+      OANDA_TOKEN: ${OANDA_TOKEN:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - ${STREAM_ANALYSIS_DATA_ROOT:-./data}:/data
+    networks: [internal]
+
+  evaluation-worker:
+    build: .
+    command: ["python", "-m", "market_analysis.application.worker", "evaluation"]
+    environment:
+      STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
+      STREAM_ANALYSIS_DATA_ROOT: /data
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - ${STREAM_ANALYSIS_DATA_ROOT:-./data}:/data
+    networks: [internal]
+
+  import-worker:
+    build: .
+    command: ["python", "-m", "market_analysis.application.worker", "import"]
+    environment:
+      STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
+      STREAM_ANALYSIS_DATA_ROOT: /data
+      OANDA_TOKEN: ${OANDA_TOKEN:-}
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - ${STREAM_ANALYSIS_DATA_ROOT:-./data}:/data
+    networks: [internal]
+
+  web:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    ports:
+      - "127.0.0.1:5173:80"
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
