@@ -65,11 +65,13 @@ services:
     networks: [internal]
 
   web:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./web:/usr/share/nginx/html:ro
+    build:
+      context: .
+      dockerfile: web/Dockerfile
     ports:
       - "127.0.0.1:5173:80"
+    depends_on:
+      api: {condition: service_started}
     networks: [internal]
 
 networks:

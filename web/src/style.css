@@ -1,0 +1,11 @@
+:root { font-family: system-ui, sans-serif; color: #182430; background: #f7f9fb; }
+body { margin: 0; }
+main { max-width: 960px; margin: 0 auto; padding: 2rem; }
+header { border-bottom: 1px solid #bac5ce; margin-bottom: 2rem; }
+section { background: white; border: 1px solid #d5dde3; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
+button { margin-right: .75rem; padding: .5rem .75rem; }
+table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+th, td { border: 1px solid #d5dde3; padding: .5rem; text-align: left; }
+dl { display: grid; grid-template-columns: 12rem 1fr; gap: .5rem; }
+dt { font-weight: 600; }
+dd { margin: 0; }

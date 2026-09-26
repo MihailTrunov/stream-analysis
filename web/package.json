@@ -2,5 +2,27 @@
   "name": "stream-analysis-web",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@10.17.1"
+  "packageManager": "pnpm@10.17.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "@vitejs/plugin-react": "4.4.1",
+    "eslint": "9.34.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.40.0",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  }
 }
