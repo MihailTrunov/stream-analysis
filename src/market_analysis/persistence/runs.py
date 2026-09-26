@@ -16,6 +16,7 @@ from sqlalchemy import (
     select,
 )
 
+from market_analysis.application.logging import research_logger
 from market_analysis.config import (
     DetectionAnalysisConfig,
     EvaluationPlan,
@@ -102,8 +103,16 @@ def create_run_snapshot(
         component_parameters=component_parameters,
         pattern_definitions=pattern_definitions,
     )
+    logger = research_logger(
+        run_id=str(run_id),
+        dataset_id=dataset_revision_id,
+        instrument=detection_config.instrument_id,
+        component="run-snapshot",
+        build_id=build_id,
+    )
     config_hash = detection_config_hash(detection_config)
     if evaluation_plan is not None and evaluation_plan.detection_config_hash != config_hash:
+        logger.error("evaluation plan references a different detection config")
         raise ValueError("evaluation plan references a different detection config")
     record = RunSnapshotRecord(
         run_id=str(run_id),
@@ -124,6 +133,7 @@ def create_run_snapshot(
         ),
     )
     connection.execute(run_snapshots.insert().values(**asdict(record)))
+    logger.info("run snapshot inserted", extra={"run_kind": record.run_kind})
     return record
 
 

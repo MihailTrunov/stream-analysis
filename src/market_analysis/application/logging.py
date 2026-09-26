@@ -6,6 +6,7 @@ import math
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from io import TextIOWrapper
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -155,9 +156,11 @@ def _safe_value(key: str, value: object) -> object:
         return _redact_text(value) if isinstance(value, str) else value
     if isinstance(value, float):
         return value if math.isfinite(value) else str(value)
+    if isinstance(value, Decimal):
+        return format(value, "f") if value.is_finite() else str(value)
     if isinstance(value, Mapping):
         return {
-            str(item_key): _safe_value(str(item_key), item_value)
+            _safe_mapping_key(item_key): _safe_value(_safe_mapping_key(item_key), item_value)
             for item_key, item_value in value.items()
         }
     if isinstance(value, list | tuple):
@@ -165,7 +168,15 @@ def _safe_value(key: str, value: object) -> object:
     if isinstance(value, set | frozenset):
         normalized = [_safe_value(key, item) for item in value]
         return sorted(normalized, key=repr)
-    return _redact_text(str(value))
+    return f"[UNSERIALIZABLE:{type(value).__name__}]"
+
+
+def _safe_mapping_key(value: object) -> str:
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, int | bool):
+        return str(value)
+    return f"[KEY:{type(value).__name__}]"
 
 
 def _is_sensitive_key(key: str) -> bool:

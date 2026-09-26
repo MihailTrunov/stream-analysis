@@ -106,3 +106,16 @@ def test_non_finite_float_and_set_extras_remain_valid_deterministic_json() -> No
     payload = json.loads(formatter.format(record))
     assert payload["non_finite"] == "nan"
     assert payload["tags"] == ["a", "b"]
+
+
+def test_unknown_object_does_not_leak_str_or_memory_address() -> None:
+    class Dangerous:
+        def __str__(self) -> str:
+            return "secret-not-in-environment"
+
+    formatter = StructuredJsonFormatter()
+    record = logging.LogRecord("market_analysis", logging.INFO, __file__, 1, "ok", (), None)
+    record.custom = Dangerous()
+    payload = json.loads(formatter.format(record))
+    assert payload["custom"] == "[UNSERIALIZABLE:Dangerous]"
+    assert "secret-not-in-environment" not in json.dumps(payload)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -8,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from market_analysis import __version__
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
+from market_analysis.application.logging import configure_logging, research_logger
 from market_analysis.demo.data import load_demo_bars
 
 
@@ -42,7 +45,21 @@ def diagnostics_snapshot() -> DiagnosticsResponse:
     )
 
 
-app = FastAPI(title="Stream Analysis", version=__version__)
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
+    logger = research_logger(
+        component="api",
+        build_id=os.getenv("STREAM_ANALYSIS_BUILD_ID", "development"),
+    )
+    logger.info("API started")
+    try:
+        yield
+    finally:
+        logger.info("API stopped")
+
+
+app = FastAPI(title="Stream Analysis", version=__version__, lifespan=lifespan)
 
 
 @app.get("/health")
@@ -57,7 +74,12 @@ def diagnostics() -> DiagnosticsResponse:
 
 @app.get("/demo/bars")
 def demo_bars() -> dict[str, object]:
+    bars = load_demo_bars()
+    research_logger(component="api", instrument="US30").info(
+        "seeded demo bars served",
+        extra={"bar_count": len(bars), "non_research_grade": True},
+    )
     return {
         "non_research_grade": True,
-        "bars": [dict(bar.to_canonical_dict()) for bar in load_demo_bars()],
+        "bars": [dict(bar.to_canonical_dict()) for bar in bars],
     }

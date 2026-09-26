@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import pytest
@@ -8,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from alembic import command
 from alembic.config import Config
+from market_analysis.application.logging import configure_logging
 from market_analysis.config import (
     ComponentSelection,
     DetectionAnalysisConfig,
@@ -136,3 +138,33 @@ def test_snapshot_expands_registered_component_defaults_before_persisting() -> N
         )
         assert '"name":"period"' in record.detection_config_json
         assert '"value":14' in record.detection_config_json
+
+
+def test_snapshot_error_log_contains_run_context_without_changing_record(tmp_path) -> None:
+    configure_logging(data_root=tmp_path)
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    config = DetectionAnalysisConfig(instrument_id="US30", calendar_id="demo-v1")
+    wrong_plan = EvaluationPlan(
+        detection_config_hash="wrong",
+        context_schema_version="context-v1",
+    )
+    run_id = uuid4()
+    with engine.begin() as connection:
+        with pytest.raises(ValueError, match="different detection config"):
+            create_run_snapshot(
+                connection,
+                run_id=run_id,
+                dataset_revision_id="demo-rev-1",
+                calendar_version="demo-v1",
+                build_id="test-build",
+                detection_config=config,
+                evaluation_plan=wrong_plan,
+            )
+        assert load_run_snapshot(connection, run_id) is None
+    records = (tmp_path / "logs" / "application.jsonl").read_text().splitlines()
+    payload = json.loads(records[-1])
+    assert payload["run_id"] == str(run_id)
+    assert payload["instrument"] == "US30"
+    assert payload["component"] == "run-snapshot"
+    assert payload["severity"] == "ERROR"
