@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from market_analysis import __version__
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
+from market_analysis.demo.data import load_demo_bars
 
 
 class DiagnosticsResponse(BaseModel):
@@ -52,3 +53,11 @@ def health() -> dict[str, str]:
 @app.get("/diagnostics", response_model=DiagnosticsResponse)
 def diagnostics() -> DiagnosticsResponse:
     return diagnostics_snapshot()
+
+
+@app.get("/demo/bars")
+def demo_bars() -> dict[str, object]:
+    return {
+        "non_research_grade": True,
+        "bars": [dict(bar.to_canonical_dict()) for bar in load_demo_bars()],
+    }
