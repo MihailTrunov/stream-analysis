@@ -46,6 +46,23 @@ def test_detection_config_is_immutable_forbids_unknowns_and_serializes_canonical
         )
 
 
+def test_distinct_parameter_types_have_distinct_canonical_configs() -> None:
+    def config_with(value: str | Decimal) -> DetectionAnalysisConfig:
+        return DetectionAnalysisConfig(
+            instrument_id="US30",
+            calendar_id="cal",
+            components=(
+                ComponentSelection(
+                    component_id="threshold",
+                    component_version="1",
+                    parameters=(ConfigParameter(name="value", value=value),),
+                ),
+            ),
+        )
+
+    assert config_with(Decimal("1.20")).canonical_json() != config_with("1.20").canonical_json()
+
+
 def test_pattern_defaults_are_fully_resolved_before_config_snapshot() -> None:
     definition = PatternDefinition(
         "compression",

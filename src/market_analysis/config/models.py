@@ -338,9 +338,21 @@ def _named_selection_payload(
 
 
 def _parameter_payload(value: ConfigParameter) -> dict[str, object]:
+    parameter_value = value.value
+    if isinstance(parameter_value, bool):
+        value_type = "boolean"
+    elif isinstance(parameter_value, int):
+        value_type = "integer"
+    elif isinstance(parameter_value, Decimal):
+        value_type = "decimal"
+    elif isinstance(parameter_value, datetime):
+        value_type = "timestamp"
+    else:
+        value_type = "string"
     return {
         "name": value.name,
-        "value": _canonical_value(value.value),
+        "value_type": value_type,
+        "value": _canonical_value(parameter_value),
     }
 
 
