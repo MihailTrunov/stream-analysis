@@ -8,6 +8,7 @@ from market_analysis.config.resolution import resolve_detection_config, resolve_
 from market_analysis.patterns import ParameterSpec, PatternDefinition
 
 HASH_ALGORITHM = "sha256"
+CANONICALIZATION_VERSION = "resolved-normalized-v1"
 DETECTION_HASH_VERSION = "detection-config-v1"
 EVALUATION_HASH_VERSION = "evaluation-plan-v1"
 

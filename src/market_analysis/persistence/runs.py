@@ -26,6 +26,7 @@ from market_analysis.config import (
     resolve_evaluation_plan,
 )
 from market_analysis.config.hashing import (
+    CANONICALIZATION_VERSION,
     DETECTION_HASH_VERSION,
     EVALUATION_HASH_VERSION,
     HASH_ALGORITHM,
@@ -46,19 +47,23 @@ run_snapshots = Table(
     Column("config_schema_version", String(100), nullable=False),
     Column("detection_hash_algorithm", String(20), nullable=False),
     Column("detection_hash_version", String(100), nullable=False),
+    Column("detection_canonicalization_version", String(100), nullable=False),
     Column("detection_config_hash", String(64), nullable=False),
     Column("detection_config_json", Text, nullable=False),
     Column("evaluation_hash_algorithm", String(20)),
     Column("evaluation_hash_version", String(100)),
+    Column("evaluation_canonicalization_version", String(100)),
     Column("evaluation_plan_hash", String(64)),
     Column("evaluation_plan_json", Text),
     CheckConstraint("run_kind IN ('replay', 'evaluation')", name="ck_run_kind"),
     CheckConstraint(
         "(run_kind = 'replay' AND evaluation_plan_json IS NULL AND evaluation_plan_hash IS NULL "
-        "AND evaluation_hash_algorithm IS NULL AND evaluation_hash_version IS NULL) "
+        "AND evaluation_hash_algorithm IS NULL AND evaluation_hash_version IS NULL "
+        "AND evaluation_canonicalization_version IS NULL) "
         "OR (run_kind = 'evaluation' AND evaluation_plan_json IS NOT NULL "
         "AND evaluation_plan_hash IS NOT NULL AND evaluation_hash_algorithm IS NOT NULL "
-        "AND evaluation_hash_version IS NOT NULL)",
+        "AND evaluation_hash_version IS NOT NULL "
+        "AND evaluation_canonicalization_version IS NOT NULL)",
         name="ck_run_plan",
     ),
     CheckConstraint(
@@ -81,10 +86,12 @@ class RunSnapshotRecord:
     config_schema_version: str
     detection_hash_algorithm: str
     detection_hash_version: str
+    detection_canonicalization_version: str
     detection_config_hash: str
     detection_config_json: str
     evaluation_hash_algorithm: str | None
     evaluation_hash_version: str | None
+    evaluation_canonicalization_version: str | None
     evaluation_plan_hash: str | None
     evaluation_plan_json: str | None
 
@@ -153,10 +160,14 @@ def create_run_snapshot(
         config_schema_version=detection_config.schema_version,
         detection_hash_algorithm=HASH_ALGORITHM,
         detection_hash_version=DETECTION_HASH_VERSION,
+        detection_canonicalization_version=CANONICALIZATION_VERSION,
         detection_config_hash=config_hash,
         detection_config_json=detection_config.canonical_json(),
         evaluation_hash_algorithm=(HASH_ALGORITHM if evaluation_plan is not None else None),
         evaluation_hash_version=(EVALUATION_HASH_VERSION if evaluation_plan is not None else None),
+        evaluation_canonicalization_version=(
+            CANONICALIZATION_VERSION if evaluation_plan is not None else None
+        ),
         evaluation_plan_hash=(
             evaluation_plan_hash(
                 evaluation_plan,

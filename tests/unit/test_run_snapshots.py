@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+from decimal import Decimal
+from hashlib import sha256
 from uuid import uuid4
 
 import pytest
@@ -47,7 +49,44 @@ def test_hash_metadata_migration_backfills_existing_snapshots(monkeypatch, tmp_p
     command.upgrade(config, "20260927_01")
     engine = create_engine(url)
     run_id = uuid4()
+    canonical = DetectionAnalysisConfig(
+        instrument_id="US30", calendar_id="demo-v1",
+        components=(ComponentSelection(
+            component_id="atr", component_version="1",
+            parameters=(ConfigParameter(name="threshold", value=Decimal("1.20")),),
+        ),),
+    ).canonical_json()
+    legacy_payload = canonical.replace('"value":"1.2"', '"value":"1.20"')
+    assert legacy_payload != canonical
+    legacy_digest = sha256(f"detection-config-v1\n{legacy_payload}".encode()).hexdigest()
+    current_digest = sha256(f"detection-config-v1\n{canonical}".encode()).hexdigest()
+    assert legacy_digest != current_digest
     with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO run_snapshots (run_id, run_kind, dataset_revision_id, "
+                "calendar_version, build_id, config_schema_version, detection_config_hash, "
+                "detection_config_json, evaluation_plan_hash, evaluation_plan_json) "
+                "VALUES (:run_id, 'evaluation', 'dataset-1', 'calendar-1', 'build-1', "
+                "'detection-config-v1', :digest, :payload, :digest, '{}')"
+            ),
+            {"run_id": str(run_id), "digest": legacy_digest, "payload": legacy_payload},
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        record = load_run_snapshot(connection, run_id)
+    assert record is not None
+    assert record.detection_hash_algorithm == "sha256"
+    assert record.detection_hash_version == "detection-config-v1"
+    assert record.detection_canonicalization_version == "legacy-v1"
+    assert record.detection_config_json == legacy_payload
+    assert record.detection_config_hash == legacy_digest
+    assert record.evaluation_hash_algorithm == "sha256"
+    assert record.evaluation_hash_version == "evaluation-plan-v1"
+    assert record.evaluation_canonicalization_version == "legacy-v1"
+    assert record.calendar_version == "calendar-1"
+    assert record.build_id == "build-1"
+    with engine.begin() as connection, pytest.raises(IntegrityError):
         connection.execute(
             text(
                 "INSERT INTO run_snapshots (run_id, run_kind, dataset_revision_id, "
@@ -56,18 +95,8 @@ def test_hash_metadata_migration_backfills_existing_snapshots(monkeypatch, tmp_p
                 "VALUES (:run_id, 'evaluation', 'dataset-1', 'calendar-1', 'build-1', "
                 "'detection-config-v1', :digest, '{}', :digest, '{}')"
             ),
-            {"run_id": str(run_id), "digest": "a" * 64},
+            {"run_id": str(uuid4()), "digest": legacy_digest},
         )
-    command.upgrade(config, "head")
-    with engine.connect() as connection:
-        record = load_run_snapshot(connection, run_id)
-    assert record is not None
-    assert record.detection_hash_algorithm == "sha256"
-    assert record.detection_hash_version == "detection-config-v1"
-    assert record.evaluation_hash_algorithm == "sha256"
-    assert record.evaluation_hash_version == "evaluation-plan-v1"
-    assert record.calendar_version == "calendar-1"
-    assert record.build_id == "build-1"
     engine.dispose()
 
 
@@ -106,13 +135,16 @@ def test_replay_and_evaluation_snapshots_preserve_exact_resolved_config() -> Non
     assert replay.run_kind == "replay"
     assert replay.detection_hash_algorithm == "sha256"
     assert replay.detection_hash_version == "detection-config-v1"
+    assert replay.detection_canonicalization_version == "resolved-normalized-v1"
     assert replay.detection_config_json == config.canonical_json()
     assert replay.evaluation_plan_json is None
     assert replay.evaluation_hash_algorithm is None
     assert replay.evaluation_hash_version is None
+    assert replay.evaluation_canonicalization_version is None
     assert evaluation.run_kind == "evaluation"
     assert evaluation.evaluation_hash_algorithm == "sha256"
     assert evaluation.evaluation_hash_version == "evaluation-plan-v1"
+    assert evaluation.evaluation_canonicalization_version == "resolved-normalized-v1"
     assert evaluation.detection_config_hash == replay.detection_config_hash
     assert evaluation.evaluation_plan_json == plan.canonical_json()
 
