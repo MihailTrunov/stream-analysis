@@ -1,6 +1,6 @@
 # MVP architecture reconciliation plan
 
-Status: approved and propagated — canonical Google Drive specifications and affected Jira Stories reconciled on 2026-09-24; post-reconciliation provisional research defaults were propagated to the canonical Google Drive documents on 2026-09-26, with corresponding Jira updates deferred to the relevant implementation work.
+Status: approved and propagated — specifications and affected Jira Stories reconciled on 2026-09-24; post-reconciliation provisional research defaults were propagated on 2026-09-26. On 2026-09-27 the four canonical Google Docs were migrated to `docs/core/`, which is now the authoritative specification location. Corresponding Jira updates remain deferred to the relevant implementation work.
 
 ## Purpose
 
@@ -87,4 +87,4 @@ The three cross-cutting concerns were split into dedicated MVP Stories:
 - Confirm the actual OANDA account environment and canonical identifiers for US30 and DAX, then verify session/holiday rules before publishing calendar values.
 - Choose the reference Mac and pin the benchmark dataset/configuration/detector versions.
 - Decide the exact browser-editable fields by registered schema; do not allow arbitrary formula creation.
-- Canonical Drive documents and affected Jira descriptions were reconciled on 2026-09-24. Re-check dependency links when implementation work is scheduled into sprints.
+- The canonical specifications and affected Jira descriptions were reconciled on 2026-09-24. The specifications now live in `docs/core/`. Re-check dependency links when implementation work is scheduled into sprints.
