@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from market_analysis.application.historical_bars import iter_historical_bars
 from market_analysis.domain import (
     Bar,
     DomainValidationError,
+    HistoricalDataError,
     HistoricalDataPage,
     HistoricalDataRequest,
     HistoricalDataSource,
@@ -109,8 +111,9 @@ def test_invalid_requests_and_pages_are_rejected() -> None:
 
 
 def test_core_contract_has_no_provider_imports() -> None:
-    domain = Path("src/market_analysis/domain")
-    for path in domain.glob("*.py"):
+    paths = (*Path("src/market_analysis/domain").glob("*.py"),
+             Path("src/market_analysis/application/historical_bars.py"))
+    for path in paths:
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
@@ -121,3 +124,32 @@ def test_core_contract_has_no_provider_imports() -> None:
                     not alias.name.startswith("market_analysis.providers")
                     for alias in node.names
                 )
+
+
+def test_acquisition_consumer_reads_all_pages_without_provider_dependency() -> None:
+    source: HistoricalDataSource = InMemoryHistoricalDataSource(
+        (bar(2), bar(0), bar(1)), page_size=1,
+    )
+    assert tuple(iter_historical_bars(source, request())) == (bar(0), bar(1), bar(2))
+    assert tuple(iter_historical_bars(source, request(start=START, end=START))) == ()
+
+
+def test_acquisition_consumer_propagates_provider_failure() -> None:
+    source: HistoricalDataSource = InMemoryHistoricalDataSource(
+        (bar(0),), error=ProviderError("unavailable"),
+    )
+    with pytest.raises(ProviderError, match="unavailable"):
+        tuple(iter_historical_bars(source, request()))
+
+
+def test_acquisition_consumer_rejects_cross_page_reordering() -> None:
+    class ReorderedSource:
+        def get_bars(self, selected: HistoricalDataRequest) -> HistoricalDataPage:
+            if selected.page_token is None:
+                return HistoricalDataPage(selected, (bar(1),),
+                                          HistoricalSource("memory", "US30_TEST", "memory"), "more")
+            return HistoricalDataPage(selected, (bar(0),),
+                                      HistoricalSource("memory", "US30_TEST", "memory"))
+
+    with pytest.raises(HistoricalDataError, match="ordered across pages"):
+        tuple(iter_historical_bars(ReorderedSource(), request()))
