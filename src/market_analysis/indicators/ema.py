@@ -24,9 +24,13 @@ EMA_PRECISION = 34
 class EmaState(IncrementalMarketState):
     """One independently configured EMA selected in the immutable run config."""
 
-    def __init__(self, run_config: DetectionAnalysisConfig, *, component_id: str = "ema") -> None:
+    def __init__(self, run_config: DetectionAnalysisConfig, *, instance_id: str = "ema") -> None:
         selection = next(
-            (item for item in run_config.components if item.component_id == component_id), None
+            (
+                item for item in run_config.components
+                if item.component_id == "ema" and item.effective_instance_id == instance_id
+            ),
+            None,
         )
         if selection is None or not selection.enabled or selection.component_version != "1":
             raise MarketStateError("enabled EMA v1 selection is required")
@@ -36,7 +40,7 @@ class EmaState(IncrementalMarketState):
         period = parameters["period"]
         if isinstance(period, bool) or not isinstance(period, int) or period < 1:
             raise MarketStateError("EMA period must be a positive integer")
-        self.component_id = component_id
+        self.instance_id = instance_id
         self.period = period
         with localcontext() as context:
             context.prec = EMA_PRECISION
@@ -61,7 +65,8 @@ class EmaState(IncrementalMarketState):
 
     def _state_values(self) -> Mapping[str, object]:
         return {
-            "component_id": self.component_id,
+            "component_id": "ema",
+            "instance_id": self.instance_id,
             "period": self.period,
             "alpha": self.alpha,
             "seed_method": "sma_period_closes",

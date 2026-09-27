@@ -5,12 +5,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from market_analysis import __version__
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
 from market_analysis.application.logging import configure_logging, research_logger
+from market_analysis.config import (
+    DetectionAnalysisConfig,
+    detection_config_hash,
+    resolve_detection_config,
+)
+from market_analysis.config.component_registry import component_definition_schema
 from market_analysis.demo.data import load_demo_bars
 
 
@@ -84,4 +90,23 @@ def demo_bars() -> dict[str, object]:
     return {
         "non_research_grade": True,
         "bars": [dict(bar.to_canonical_dict()) for bar in bars],
+    }
+
+
+@app.get("/component-definitions")
+def component_definitions() -> dict[str, object]:
+    """Expose editable schemas; accepting a configuration remains server-authoritative."""
+    return {"components": component_definition_schema()}
+
+
+@app.post("/config/preview")
+def preview_detection_config(config: DetectionAnalysisConfig) -> dict[str, object]:
+    """Resolve and hash a proposed config; never change a running snapshot."""
+    try:
+        resolved = resolve_detection_config(config)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "detection_config": resolved.canonical_dict(),
+        "detection_config_hash": detection_config_hash(resolved),
     }

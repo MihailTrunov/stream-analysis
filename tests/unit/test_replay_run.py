@@ -19,6 +19,7 @@ from market_analysis.config import (
     DetectionAnalysisConfig,
     detection_config_hash,
 )
+from market_analysis.config.component_registry import BUILTIN_COMPONENT_PARAMETERS
 from market_analysis.domain import (
     BAR_CHECKSUM_VERSION,
     Bar,
@@ -30,7 +31,6 @@ from market_analysis.domain import (
     ValidationStatus,
     canonical_bar_checksum,
 )
-from market_analysis.patterns import ParameterSpec, ParameterType
 from market_analysis.persistence.market_data import (
     DatasetMembership,
     DatasetRevision,
@@ -48,7 +48,7 @@ from market_analysis.persistence.replay_runs import (
 from market_analysis.persistence.runs import load_run_snapshot, metadata
 
 START = datetime(2026, 9, 27, 12, tzinfo=UTC)
-SPECS = {("ema", "1"): (ParameterSpec("period", ParameterType.INTEGER, 45),)}
+SPECS = BUILTIN_COMPONENT_PARAMETERS
 SEED_BARS = (
     Bar("US30", Timeframe.M1, START, Decimal("100"), Decimal("101"),
         Decimal("99"), Decimal("100")),
@@ -279,4 +279,38 @@ def test_replay_clock_step_and_completion_match_pinned_snapshot() -> None:
         )
         assert finished.status is ReplayStatus.COMPLETED
         assert finished.cursor_index == 1
+    engine.dispose()
+
+
+def test_replay_snapshot_pins_multiple_instances_of_one_ema_definition() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    configured = DetectionAnalysisConfig(
+        instrument_id="US30", calendar_id="cal-v1",
+        components=(
+            ComponentSelection(component_id="ema", component_version="1",
+                               instance_id="trend_ema"),
+            ComponentSelection(component_id="ema", component_version="1",
+                               instance_id="fast_ema",
+                               parameters=(ConfigParameter(name="period", value=9),)),
+        ),
+    )
+    with engine.begin() as connection:
+        prepare(connection)
+        created = create_replay_run(
+            connection, run_id=run_id, dataset_revision_id="rev-1",
+            detection_config=configured, selected_start=START,
+            selected_end=START + timedelta(minutes=2), created_at=START,
+            build_id="build-1",
+        )
+        loaded = load_replay_context(connection, run_id)
+        assert loaded == created
+        assert loaded is not None
+        assert [item.effective_instance_id for item in loaded.detection_config.components] == [
+            "fast_ema", "trend_ema"
+        ]
+        assert [item.parameters[0].value for item in loaded.detection_config.components] == [
+            9, 45
+        ]
     engine.dispose()

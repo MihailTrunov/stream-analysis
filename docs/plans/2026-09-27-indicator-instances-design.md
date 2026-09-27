@@ -23,7 +23,10 @@ with immutable, hashed resolved configuration for each run.
 ## Contract
 
 - An omitted `instance_id` means the legacy effective instance ID is
-  `component_id`. Explicit instance IDs are unique within a detection config.
+  `component_id`. An explicit ID equal to `component_id` normalizes to the
+  omitted form. Effective instance IDs are unique within a detection config.
+  Explicit IDs are machine-safe lowercase slugs; a display label can be added
+  separately by the preset UI.
 - Definitions are registered once by `(component_id, component_version)`;
   parameter defaults and bounds are applied independently to every instance.
 - The built-in EMA v1 definition declares an integer `period`, default 45,

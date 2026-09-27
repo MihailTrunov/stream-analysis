@@ -236,7 +236,6 @@ def test_outcome_version_configuration_and_context_mutate_only_plan_hash() -> No
 
 def test_selection_and_parameter_order_do_not_change_resolved_hashes() -> None:
     specs = {
-        ("ema", "1"): (ParameterSpec("period", ParameterType.INTEGER, 45),),
         ("atr", "1"): (
             ParameterSpec("period", ParameterType.INTEGER, 14),
             ParameterSpec("enabled", ParameterType.BOOLEAN, True),

@@ -27,6 +27,7 @@ class StalePresetRevisionError(ConfigurationError):
 
 
 Identifier = Annotated[str, Field(min_length=1, pattern=r".*\S.*")]
+InstanceIdentifier = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*$")]
 ConfigValue = str | bool | int | Decimal | datetime | None
 
 
@@ -73,8 +74,24 @@ class ConfigParameter(ImmutableModel):
 class ComponentSelection(ImmutableModel):
     component_id: Identifier
     component_version: Identifier
+    instance_id: InstanceIdentifier | None = None
     enabled: bool = True
     parameters: tuple[ConfigParameter, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_instance_id(cls, value: Any) -> Any:
+        if (
+            isinstance(value, Mapping)
+            and value.get("instance_id") == value.get("component_id")
+        ):
+            return {**value, "instance_id": None}
+        return value
+
+    @property
+    def effective_instance_id(self) -> str:
+        """Legacy selections use their component type as the instance ID."""
+        return self.component_id if self.instance_id is None else self.instance_id
 
     @model_validator(mode="after")
     def unique_parameters(self) -> Self:
@@ -127,8 +144,8 @@ class DetectionAnalysisConfig(ImmutableModel):
     @model_validator(mode="after")
     def unique_selections(self) -> Self:
         _ensure_unique(
-            "component",
-            (item.component_id for item in self.components),
+            "component instance",
+            (item.effective_instance_id for item in self.components),
         )
         _ensure_unique(
             "pattern",
@@ -139,7 +156,7 @@ class DetectionAnalysisConfig(ImmutableModel):
     def canonical_dict(self) -> dict[str, object]:
         components = sorted(
             self.components,
-            key=lambda value: value.component_id,
+            key=lambda value: value.effective_instance_id,
         )
         patterns = sorted(
             self.patterns,
@@ -371,12 +388,15 @@ def _selection_payload(
         value.parameters,
         key=lambda item: item.name,
     )
-    return {
+    payload = {
         id_key: getattr(value, id_key),
         identity_key: getattr(value, identity_key),
         "enabled": value.enabled,
         "parameters": [_parameter_payload(item) for item in parameters],
     }
+    if isinstance(value, ComponentSelection) and value.instance_id is not None:
+        payload["instance_id"] = value.instance_id
+    return payload
 
 
 def _named_selection_payload(

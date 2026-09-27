@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from market_analysis.config.component_registry import BUILTIN_COMPONENT_PARAMETERS
 from market_analysis.config.models import (
     ComponentSelection,
     ConfigParameter,
@@ -24,7 +25,11 @@ def resolve_detection_config(
     pattern_definitions: Mapping[DefinitionKey, PatternDefinition] | None = None,
 ) -> DetectionAnalysisConfig:
     """Expand and type-check all registered defaults before a run is persisted."""
-    component_specs = component_parameters or {}
+    component_specs = dict(BUILTIN_COMPONENT_PARAMETERS)
+    for key, specs in (component_parameters or {}).items():
+        if key in component_specs and specs != component_specs[key]:
+            raise ConfigurationError(f"cannot override registered component definition: {key}")
+        component_specs[key] = specs
     definitions = pattern_definitions or {}
     components = []
     for component_selection in config.components:
@@ -36,6 +41,7 @@ def resolve_detection_config(
             ComponentSelection(
                 component_id=component_selection.component_id,
                 component_version=component_selection.component_version,
+                instance_id=component_selection.instance_id,
                 enabled=component_selection.enabled,
                 parameters=component_values,
             )
