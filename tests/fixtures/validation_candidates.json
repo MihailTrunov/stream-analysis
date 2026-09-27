@@ -1,0 +1,7 @@
+[
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:30:00Z","open":"10","high":"12","low":"9","close":"11","volume":null,"source_id":"memory","is_complete":true,"quality_flags":[]},
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:31:00Z","open":"10","high":"9","low":"8","close":"11","volume":null,"source_id":"memory","is_complete":true,"quality_flags":[]},
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:32:00Z","open":"10","high":"12","low":"9","close":"11","volume":null,"source_id":"other","is_complete":false,"quality_flags":["suspect"]},
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:32:00Z","open":"10","high":"12","low":"9","close":"11","volume":null,"source_id":"memory","is_complete":true,"quality_flags":[]},
+  {"instrument_id":"US30","timeframe":"1m","timestamp":"2026-01-02T14:30:00Z","open":"10","high":"12","low":"9","close":"11","volume":null,"source_id":"memory","is_complete":true,"quality_flags":[]}
+]

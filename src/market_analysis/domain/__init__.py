@@ -1,5 +1,14 @@
 """Provider-independent domain contracts."""
 
+from .dataset_validation import (
+    Check,
+    ExpectedSlotCalendar,
+    Finding,
+    Severity,
+    ValidationReport,
+    ValidationStatus,
+    validate_dataset,
+)
 from .historical_data import (
     HistoricalDataError,
     HistoricalDataPage,
@@ -19,7 +28,10 @@ from .market_data import (
 
 __all__ = [
     "Bar",
+    "Check",
     "DomainValidationError",
+    "ExpectedSlotCalendar",
+    "Finding",
     "HistoricalDataError",
     "HistoricalDataPage",
     "HistoricalDataRequest",
@@ -29,5 +41,9 @@ __all__ = [
     "Instrument",
     "ProviderError",
     "ProviderSymbolMapping",
+    "Severity",
     "Timeframe",
+    "ValidationReport",
+    "ValidationStatus",
+    "validate_dataset",
 ]
