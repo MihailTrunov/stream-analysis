@@ -7,7 +7,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, text
 
-from market_analysis.application.replay_run import create_replay_run, load_replay_context
+from market_analysis.application.replay_run import (
+    complete_replay,
+    create_replay_run,
+    load_replay_context,
+    step_replay,
+)
 from market_analysis.config import (
     ComponentSelection,
     ConfigParameter,
@@ -17,8 +22,10 @@ from market_analysis.config import (
 from market_analysis.domain import (
     BAR_CHECKSUM_VERSION,
     Bar,
+    BarSequence,
     DatasetLineage,
     Instrument,
+    SimulationClock,
     Timeframe,
     ValidationStatus,
     canonical_bar_checksum,
@@ -232,4 +239,44 @@ def test_replay_rejects_missing_dataset_and_tampered_hash() -> None:
         )
         with pytest.raises(ReplayRunError, match="hash differs"):
             load_replay_context(connection, run_id, component_parameters=SPECS)
+    engine.dispose()
+
+
+def test_replay_clock_step_and_completion_match_pinned_snapshot() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        context = create_replay_run(
+            connection, run_id=run_id, dataset_revision_id="rev-1",
+            detection_config=config(), selected_start=START + timedelta(minutes=1),
+            selected_end=START + timedelta(minutes=2), created_at=START,
+            build_id="build-1", component_parameters=SPECS,
+        )
+        clock = SimulationClock(
+            BarSequence(context.lineage, SEED_BARS),
+            selected_start=context.lifecycle.selected_start,
+            selected_end=context.lifecycle.selected_end,
+        )
+        wrong = SimulationClock(BarSequence(context.lineage, SEED_BARS))
+        transition_replay_run(connection, run_id, ReplayStatus.RUNNING, at=START)
+        with pytest.raises(ReplayRunError, match="does not match"):
+            step_replay(connection, run_id, wrong, component_parameters=SPECS)
+        with pytest.raises(ReplayRunError, match="not exhausted"):
+            complete_replay(
+                connection, run_id, clock, at=START, component_parameters=SPECS
+            )
+        step_replay(connection, run_id, clock, component_parameters=SPECS)
+        assert not clock.current.is_visible
+        step_replay(connection, run_id, clock, component_parameters=SPECS)
+        assert clock.current.is_visible
+        with pytest.raises(ReplayRunError, match="no next"):
+            step_replay(connection, run_id, clock, component_parameters=SPECS)
+        finished = complete_replay(
+            connection, run_id, clock, at=START + timedelta(minutes=2),
+            component_parameters=SPECS,
+        )
+        assert finished.status is ReplayStatus.COMPLETED
+        assert finished.cursor_index == 1
     engine.dispose()

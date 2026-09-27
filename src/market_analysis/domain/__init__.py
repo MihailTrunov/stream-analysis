@@ -32,6 +32,7 @@ from .market_data import (
     ProviderSymbolMapping,
     Timeframe,
 )
+from .simulation_clock import ObservableBars, SimulationClock, SimulationClockError
 
 __all__ = [
     "Bar",
@@ -48,10 +49,13 @@ __all__ = [
     "HistoricalDataSource",
     "HistoricalSource",
     "MappingUnavailableError",
+    "ObservableBars",
     "Instrument",
     "ProviderError",
     "ProviderSymbolMapping",
     "Severity",
+    "SimulationClock",
+    "SimulationClockError",
     "Timeframe",
     "ValidationReport",
     "ValidationStatus",

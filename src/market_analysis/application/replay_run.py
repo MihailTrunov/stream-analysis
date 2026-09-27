@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import Connection
 
 from market_analysis.config import DetectionAnalysisConfig, resolve_detection_config
-from market_analysis.domain import DatasetLineage, ValidationStatus
+from market_analysis.domain import DatasetLineage, SimulationClock, ValidationStatus
 from market_analysis.patterns import ParameterSpec, PatternDefinition
 from market_analysis.persistence.market_data import (
     load_dataset_lineage,
@@ -23,8 +23,10 @@ from market_analysis.persistence.replay_runs import (
     ReplayRunError,
     ReplayRunRecord,
     ReplayStatus,
+    advance_replay_cursor,
     insert_replay_run,
     load_replay_run,
+    transition_replay_run,
 )
 from market_analysis.persistence.runs import (
     RunSnapshotRecord,
@@ -171,3 +173,60 @@ def load_replay_context(
     if lineage.bar_count != lifecycle.source_bar_count:
         raise ReplayRunError("replay source bar count differs from pinned lineage")
     return ReplayRunContext(snapshot, lifecycle, lineage, resolved)
+
+
+def _validate_replay_clock(context: ReplayRunContext, clock: SimulationClock) -> None:
+    if (
+        clock.dataset_revision_id != context.snapshot.dataset_revision_id
+        or clock.source_dataset_id != context.lineage.source_dataset_id
+        or clock.canonical_checksum != context.lineage.canonical_checksum
+        or clock.source_bar_count != context.lifecycle.source_bar_count
+        or clock.selected_start != context.lifecycle.selected_start
+        or clock.selected_end != context.lifecycle.selected_end
+        or clock.index != context.lifecycle.cursor_index
+    ):
+        raise ReplayRunError("clock does not match pinned replay context and cursor")
+
+
+def step_replay(
+    connection: Connection,
+    run_id: UUID,
+    clock: SimulationClock,
+    *,
+    component_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
+    pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
+) -> None:
+    """Advance a matched clock and persisted cursor by exactly one bar."""
+    context = load_replay_context(
+        connection, run_id, component_parameters=component_parameters,
+        pattern_definitions=pattern_definitions,
+    )
+    if context is None:
+        raise ReplayRunError("replay run does not exist")
+    _validate_replay_clock(context, clock)
+    if not clock.has_next:
+        raise ReplayRunError("clock has no next observable bar")
+    advance_replay_cursor(connection, run_id, clock.index + 1)
+    clock.step()
+
+
+def complete_replay(
+    connection: Connection,
+    run_id: UUID,
+    clock: SimulationClock,
+    *,
+    at: datetime,
+    component_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
+    pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
+) -> ReplayRunRecord:
+    """Complete only after the selected clock interval has been exhausted."""
+    context = load_replay_context(
+        connection, run_id, component_parameters=component_parameters,
+        pattern_definitions=pattern_definitions,
+    )
+    if context is None:
+        raise ReplayRunError("replay run does not exist")
+    _validate_replay_clock(context, clock)
+    if clock.has_next:
+        raise ReplayRunError("clock has not exhausted the selected interval")
+    return transition_replay_run(connection, run_id, ReplayStatus.COMPLETED, at=at, exhausted=True)
