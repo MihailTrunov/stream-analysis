@@ -32,12 +32,22 @@ from .market_data import (
     ProviderSymbolMapping,
     Timeframe,
 )
+from .session_calendar import (
+    CalendarException,
+    CalendarRegistry,
+    SessionCalendarError,
+    SessionState,
+    SessionWindow,
+    TradingCalendar,
+)
 from .simulation_clock import ObservableBars, SimulationClock, SimulationClockError
 
 __all__ = [
     "Bar",
     "BarSequence",
     "BAR_CHECKSUM_VERSION",
+    "CalendarException",
+    "CalendarRegistry",
     "Check",
     "DomainValidationError",
     "DatasetLineage",
@@ -54,9 +64,13 @@ __all__ = [
     "ProviderError",
     "ProviderSymbolMapping",
     "Severity",
+    "SessionCalendarError",
+    "SessionState",
+    "SessionWindow",
     "SimulationClock",
     "SimulationClockError",
     "Timeframe",
+    "TradingCalendar",
     "ValidationReport",
     "ValidationStatus",
     "validate_dataset",
