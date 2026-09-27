@@ -157,6 +157,33 @@ class DetectionAnalysisConfig(ImmutableModel):
     def canonical_json(self) -> str:
         return _canonical_json(self.canonical_dict())
 
+    @classmethod
+    def from_canonical_json(cls, source: str) -> DetectionAnalysisConfig:
+        """Reconstruct typed resolved values without losing canonical identity."""
+        try:
+            payload = json.loads(source)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError("invalid canonical detection JSON") from exc
+        if not isinstance(payload, dict):
+            raise ConfigurationError("canonical detection JSON must be an object")
+        for group in ("components", "patterns"):
+            selections = payload.get(group)
+            if not isinstance(selections, list):
+                raise ConfigurationError(f"canonical {group} must be a list")
+            for selection in selections:
+                if not isinstance(selection, dict) or not isinstance(
+                    selection.get("parameters"), list
+                ):
+                    raise ConfigurationError(f"canonical {group} selection is invalid")
+                selection["parameters"] = [
+                    _parse_canonical_parameter(parameter)
+                    for parameter in selection["parameters"]
+                ]
+        result = cls.model_validate(payload)
+        if result.canonical_json() != source:
+            raise ConfigurationError("canonical detection JSON changed on reload")
+        return result
+
 
 class OutcomeSelection(ImmutableModel):
     outcome_id: Identifier
@@ -301,6 +328,34 @@ def _config_value(value: object) -> ConfigValue:
     raise ConfigurationError(
         f"unsupported resolved configuration value: {type(value).__name__}"
     )
+
+
+def _parse_canonical_parameter(parameter: object) -> dict[str, object]:
+    if not isinstance(parameter, dict) or set(parameter) != {"name", "value", "value_type"}:
+        raise ConfigurationError("canonical parameter must have name, value and value_type")
+    value = parameter["value"]
+    value_type = parameter["value_type"]
+    if value_type == "boolean" and isinstance(value, bool):
+        parsed: object = value
+    elif value_type == "null" and value is None:
+        parsed = None
+    elif value_type == "integer" and isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+    elif value_type == "decimal" and isinstance(value, str):
+        try:
+            parsed = Decimal(value)
+        except InvalidOperation as exc:
+            raise ConfigurationError("invalid canonical decimal") from exc
+    elif value_type == "timestamp" and isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ConfigurationError("invalid canonical timestamp") from exc
+    elif value_type == "string" and isinstance(value, str):
+        parsed = value
+    else:
+        raise ConfigurationError(f"canonical parameter type mismatch: {value_type!r}")
+    return {"name": parameter["name"], "value": parsed}
 
 
 def _selection_payload(

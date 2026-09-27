@@ -21,12 +21,12 @@ def test_migration_and_snapshot_roundtrip_on_postgres(monkeypatch) -> None:
     url = os.environ["STREAM_ANALYSIS_TEST_DATABASE_URL"]
     monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
-    assert database_status(url) == (True, "20260927_03")
+    assert database_status(url) == (True, "20260927_04")
     engine = create_engine(url)
     run_id = uuid4()
     config = DetectionAnalysisConfig(instrument_id="US30", calendar_id="demo-v1")
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_03"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_04"
         expected = create_run_snapshot(
             connection,
             run_id=run_id,

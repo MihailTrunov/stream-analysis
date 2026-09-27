@@ -12,6 +12,8 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from alembic import command
 from alembic.config import Config
+from market_analysis.application.replay_run import create_replay_run, load_replay_context
+from market_analysis.config import DetectionAnalysisConfig
 from market_analysis.domain import BAR_CHECKSUM_VERSION, DatasetLineage, ValidationStatus
 from market_analysis.domain.market_data import Instrument, ProviderSymbolMapping, Timeframe
 from market_analysis.persistence.market_data import (
@@ -25,6 +27,7 @@ from market_analysis.persistence.market_data import (
     register_dataset_revision,
     register_instrument,
 )
+from market_analysis.persistence.replay_runs import ReplayStatus, transition_replay_run
 
 
 @pytest.mark.skipif(
@@ -83,7 +86,7 @@ def test_market_metadata_migration_and_repository_on_postgres(monkeypatch) -> No
         try:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260927_03"
+                == "20260927_04"
             )
             assert register_instrument(connection, instrument) == instrument
             assert load_instrument(connection, instrument_id) == instrument
@@ -97,6 +100,25 @@ def test_market_metadata_migration_and_repository_on_postgres(monkeypatch) -> No
             assert load_dataset_lineage(
                 connection, revision_id, instrument_id, Timeframe.M1
             ) == lineage
+            run_id = uuid4()
+            replay = create_replay_run(
+                connection, run_id=run_id, dataset_revision_id=revision_id,
+                detection_config=DetectionAnalysisConfig(
+                    instrument_id=instrument_id, calendar_id="calendar-v1"
+                ),
+                selected_start=start, selected_end=start + timedelta(hours=1),
+                created_at=start + timedelta(seconds=2), build_id="test-build",
+            )
+            assert load_replay_context(connection, run_id) == replay
+            assert transition_replay_run(
+                connection, run_id, ReplayStatus.RUNNING, at=start + timedelta(seconds=2)
+            ).status is ReplayStatus.RUNNING
+            with pytest.raises(DBAPIError, match="run snapshot is immutable"):
+                with connection.begin_nested():
+                    connection.execute(
+                        text("UPDATE run_snapshots SET build_id = 'changed' WHERE run_id = :id"),
+                        {"id": str(run_id)},
+                    )
             with pytest.raises(DBAPIError, match="market metadata is immutable"):
                 with connection.begin_nested():
                     connection.execute(

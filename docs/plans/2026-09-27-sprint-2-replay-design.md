@@ -15,7 +15,8 @@ adds selected half-open range, CREATED/RUNNING/PAUSED/COMPLETED/FAILED/ABORTED
 status, current cursor, timestamps and optional failure reason. Creation is
 transactional and verifies that the selected revision has matching dataset
 lineage. Reload checks the immutable snapshot and hash. Status transitions
-are explicit and invalid transitions fail without mutation. Reset means a
+are explicit and invalid transitions fail without mutation. Completion requires
+the clock/cursor driver to assert exhaustion of the selected interval. Reset means a
 new run ID and fresh analytical state, never rewriting an old snapshot.
 
 The immutable run context carries lineage and resolved configuration but no
