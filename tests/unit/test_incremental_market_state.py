@@ -27,6 +27,51 @@ class FakeComponent(IncrementalMarketState):
         return {"observed": {"closes": self.closes}}
 
 
+class EmaShapedComponent(IncrementalMarketState):
+    """Contract fixture, not the SCRUM-69 EMA formula."""
+
+    def _reset_state(self) -> None:
+        self.value: Decimal | None = None
+
+    def _update_completed_bar(self, bar: Bar) -> None:
+        self.value = bar.close if self.value is None else (self.value + bar.close) / 2
+
+    def _state_values(self) -> dict[str, object]:
+        return {"value": self.value}
+
+
+class AtrShapedComponent(IncrementalMarketState):
+    """Contract fixture for a component retaining the prior observable close."""
+
+    def _reset_state(self) -> None:
+        self.prior_close: Decimal | None = None
+        self.last_range: Decimal | None = None
+
+    def _update_completed_bar(self, bar: Bar) -> None:
+        prior = bar.open if self.prior_close is None else self.prior_close
+        self.last_range = max(bar.high - bar.low, abs(bar.high - prior), abs(bar.low - prior))
+        self.prior_close = bar.close
+
+    def _state_values(self) -> dict[str, object]:
+        return {"prior_close": self.prior_close, "last_range": self.last_range}
+
+
+class StructuralShapedComponent(IncrementalMarketState):
+    """Contract fixture for a stateful structural component without swing rules."""
+
+    def _reset_state(self) -> None:
+        self.prior_close: Decimal | None = None
+        self.direction = "unknown"
+
+    def _update_completed_bar(self, bar: Bar) -> None:
+        if self.prior_close is not None:
+            self.direction = "up" if bar.close > self.prior_close else "not-up"
+        self.prior_close = bar.close
+
+    def _state_values(self) -> dict[str, object]:
+        return {"direction": self.direction, "prior_close": self.prior_close}
+
+
 def config() -> DetectionAnalysisConfig:
     return DetectionAnalysisConfig(instrument_id="US30", timeframe=Timeframe.M1, calendar_id="cal")
 
@@ -123,6 +168,27 @@ def test_replay_after_reset_matches_fresh_component_and_debug_json() -> None:
         assert component.debug_json() == fresh.debug_json()
     assert component.state == first_state
     assert component.debug_json() == first_debug
+
+
+@pytest.mark.parametrize(
+    "component_type", (EmaShapedComponent, AtrShapedComponent, StructuralShapedComponent)
+)
+def test_indicator_and_structural_shapes_share_the_incremental_contract(
+    component_type: type[IncrementalMarketState],
+) -> None:
+    bars = (bar(0), bar(1), bar(2))
+    component = component_type(config(), warmup_completed_bars=2)
+    for current in bars:
+        component.update(current)
+    expected = component.debug_json()
+    assert component.state.is_warm
+    assert component.state.completed_bars == len(bars)
+
+    component.reset()
+    assert component.state.completed_bars == 0
+    for current in bars:
+        component.update(current)
+    assert component.debug_json() == expected
 
 
 @pytest.mark.parametrize("requirement", [-1, True, 1.5])
