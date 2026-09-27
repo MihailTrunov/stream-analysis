@@ -126,6 +126,11 @@ class TransitionSpec:
     from_state: str
     to_state: str
     trigger_id: str
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.reason is not None and not self.reason.strip():
+            raise PatternDefinitionError("transition reason must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +180,8 @@ class PatternDefinition:
     simultaneous_precedence: tuple[str, ...]
     context_schema: tuple[ContextFieldSpec, ...]
     rationale_condition_ids: tuple[str, ...]
+    terminal_states: tuple[str, ...] = ()
+    same_bar_chains: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         identity_fields = (
@@ -201,6 +208,8 @@ class PatternDefinition:
             "simultaneous_precedence",
             "context_schema",
             "rationale_condition_ids",
+            "terminal_states",
+            "same_bar_chains",
         )
         for field_name in tuple_fields:
             object.__setattr__(
@@ -208,6 +217,9 @@ class PatternDefinition:
                 field_name,
                 tuple(getattr(self, field_name)),
             )
+        object.__setattr__(
+            self, "same_bar_chains", tuple(tuple(pair) for pair in self.same_bar_chains)
+        )
 
         _unique("required components", self.required_components)
         _unique("required market events", self.required_market_events)
@@ -226,6 +238,8 @@ class PatternDefinition:
         )
         _unique("rationale ids", self.rationale_condition_ids)
         _unique("precedence ids", self.simultaneous_precedence)
+        _unique("terminal states", self.terminal_states)
+        _unique("same-bar chains", self.same_bar_chains)
 
         invalid_states = (
             not self.lifecycle_states
@@ -237,6 +251,9 @@ class PatternDefinition:
             )
 
         states = set(self.lifecycle_states)
+        terminal = set(self.effective_terminal_states)
+        if set(self.terminal_states) - states:
+            raise PatternDefinitionError("terminal state is not a lifecycle state")
         conditions = {
             condition_id
             for group in self.condition_groups
@@ -256,9 +273,13 @@ class PatternDefinition:
                 raise PatternDefinitionError(
                     "transition triggers must be declared conditions"
                 )
+            if transition.from_state in terminal:
+                raise PatternDefinitionError("terminal states cannot have outgoing transitions")
+            if transition.from_state == transition.to_state:
+                raise PatternDefinitionError("self transitions are not allowed")
             transition_key = (transition.from_state, transition.trigger_id)
             prior_target = transition_targets.get(transition_key)
-            if prior_target is not None and prior_target != transition.to_state:
+            if prior_target is not None:
                 raise PatternDefinitionError(
                     "ambiguous transition from one state and trigger"
                 )
@@ -281,6 +302,35 @@ class PatternDefinition:
             raise PatternDefinitionError(
                 "precedence ids must be declared conditions"
             )
+        if any(not state.strip() for state in self.terminal_states):
+            raise PatternDefinitionError("terminal states must be non-empty")
+        edges = {
+            (first.trigger_id, second.trigger_id)
+            for first in self.transitions
+            for second in self.transitions
+            if first.to_state == second.from_state
+        }
+        if any(len(pair) != 2 for pair in self.same_bar_chains):
+            raise PatternDefinitionError("same-bar chain requires two triggers")
+        if set(self.same_bar_chains) - edges:
+            raise PatternDefinitionError("same-bar chain is not a transition path")
+        reachable = {self.lifecycle_states[0]}
+        while True:
+            expanded = reachable | {
+                edge.to_state for edge in self.transitions if edge.from_state in reachable
+            }
+            if expanded == reachable:
+                break
+            reachable = expanded
+        if reachable != states:
+            raise PatternDefinitionError("lifecycle contains unreachable states")
+
+    @property
+    def effective_terminal_states(self) -> frozenset[str]:
+        conventional = {"completed", "invalidated", "expired"}
+        return frozenset(self.terminal_states) | frozenset(
+            state for state in self.lifecycle_states if state.lower() in conventional
+        )
 
     @property
     def identity(self) -> tuple[str, str]:
@@ -329,7 +379,12 @@ class PatternDefinition:
             ],
             "lifecycle_states": list(self.lifecycle_states),
             "transitions": [
-                vars_like(value)
+                {
+                    "from_state": value.from_state,
+                    "to_state": value.to_state,
+                    "trigger_id": value.trigger_id,
+                    **({"reason": value.reason} if value.reason is not None else {}),
+                }
                 for value in self.transitions
             ],
             "condition_groups": [
@@ -355,6 +410,10 @@ class PatternDefinition:
                 name=self.name,
                 description=self.description,
             )
+        if self.terminal_states:
+            result["terminal_states"] = list(self.terminal_states)
+        if self.same_bar_chains:
+            result["same_bar_chains"] = [list(pair) for pair in self.same_bar_chains]
         return result
 
     def canonical_json(self) -> str:

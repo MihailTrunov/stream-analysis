@@ -11,10 +11,13 @@ from .definition import (
     TransitionSpec,
     assert_semantic_change_is_versioned,
 )
+from .lifecycle import LifecycleRunner, LifecycleTransition
 
 __all__ = [
     "ConditionGroup",
     "ContextFieldSpec",
+    "LifecycleRunner",
+    "LifecycleTransition",
     "ParameterSpec",
     "ParameterType",
     "PatternDefinition",
