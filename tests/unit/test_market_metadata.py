@@ -124,7 +124,7 @@ def test_market_metadata_migration_is_reversible(monkeypatch, tmp_path) -> None:
     command.upgrade(config, "head")
     engine = create_engine(url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_01"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_02"
         assert connection.scalar(text("SELECT count(*) FROM dataset_revisions")) == 0
     command.downgrade(config, "20260926_01")
     with engine.connect() as connection:

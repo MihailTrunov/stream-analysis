@@ -1,0 +1,1 @@
+{"calendar_id":"cal-v1","components":[{"component_id":"atr","component_version":"2","enabled":true,"parameters":[{"name":"enabled","value":true,"value_type":"boolean"},{"name":"threshold","value":"1.2","value_type":"decimal"}]}],"instrument_id":"DÄX","patterns":[],"schema_version":"detection-config-v1","timeframe":"1m"}

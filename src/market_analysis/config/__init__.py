@@ -13,7 +13,7 @@ from .models import (
     SegmentSelection,
     StalePresetRevisionError,
 )
-from .resolution import resolve_detection_config
+from .resolution import resolve_detection_config, resolve_evaluation_plan
 
 __all__ = [
     "ComponentSelection",
@@ -29,4 +29,5 @@ __all__ = [
     "detection_config_hash",
     "evaluation_plan_hash",
     "resolve_detection_config",
+    "resolve_evaluation_plan",
 ]

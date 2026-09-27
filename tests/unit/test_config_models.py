@@ -137,7 +137,7 @@ def test_decimal_timestamp_and_preset_revision_semantics() -> None:
             ConfigParameter(name="x", value=Decimal("1.20")),
         ),
     )
-    assert '"1.20"' in plan.canonical_json()
+    assert '"1.2"' in plan.canonical_json()
     assert "2026-01-01T00:00:00Z" in plan.canonical_json()
 
     config = DetectionAnalysisConfig(

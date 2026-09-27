@@ -7,7 +7,10 @@ from market_analysis.config.models import (
     ConfigParameter,
     ConfigurationError,
     DetectionAnalysisConfig,
+    EvaluationPlan,
+    OutcomeSelection,
     PatternSelection,
+    SegmentSelection,
 )
 from market_analysis.patterns import ParameterSpec, PatternDefinition
 
@@ -64,6 +67,50 @@ def resolve_detection_config(
         calendar_id=config.calendar_id,
         components=tuple(components),
         patterns=tuple(patterns),
+    )
+
+
+def resolve_evaluation_plan(
+    plan: EvaluationPlan,
+    *,
+    outcome_parameters: Mapping[DefinitionKey, tuple[ParameterSpec, ...]] | None = None,
+    segment_parameters: Mapping[DefinitionKey, tuple[ParameterSpec, ...]] | None = None,
+) -> EvaluationPlan:
+    """Expand registered outcome and segment defaults before hashing a plan."""
+    outcome_specs = outcome_parameters or {}
+    segment_specs = segment_parameters or {}
+    outcomes = []
+    for outcome in plan.outcomes:
+        key = (outcome.outcome_id, outcome.outcome_version)
+        if key not in outcome_specs:
+            raise ConfigurationError(f"unregistered outcome definition: {key}")
+        outcomes.append(
+            OutcomeSelection(
+                outcome_id=outcome.outcome_id,
+                outcome_version=outcome.outcome_version,
+                parameters=_resolve_parameters(outcome_specs[key], outcome.parameters),
+            )
+        )
+    segments = []
+    for segment in plan.segments:
+        key = (segment.segment_id, segment.segment_version)
+        if key not in segment_specs:
+            raise ConfigurationError(f"unregistered segment definition: {key}")
+        segments.append(
+            SegmentSelection(
+                segment_id=segment.segment_id,
+                segment_version=segment.segment_version,
+                parameters=_resolve_parameters(segment_specs[key], segment.parameters),
+            )
+        )
+    return EvaluationPlan(
+        schema_version=plan.schema_version,
+        detection_config_hash=plan.detection_config_hash,
+        context_schema_version=plan.context_schema_version,
+        context_fields=plan.context_fields,
+        outcomes=tuple(outcomes),
+        segments=tuple(segments),
+        export_settings=plan.export_settings,
     )
 
 

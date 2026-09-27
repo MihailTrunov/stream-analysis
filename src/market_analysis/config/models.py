@@ -27,7 +27,7 @@ class StalePresetRevisionError(ConfigurationError):
 
 
 Identifier = Annotated[str, Field(min_length=1, pattern=r".*\S.*")]
-ConfigValue = str | bool | int | Decimal | datetime
+ConfigValue = str | bool | int | Decimal | datetime | None
 
 
 class ImmutableModel(BaseModel):
@@ -41,6 +41,8 @@ class ConfigParameter(ImmutableModel):
     @field_validator("value", mode="before")
     @classmethod
     def normalize_value(cls, value: Any) -> Any:
+        if value is None:
+            return None
         if isinstance(value, datetime):
             if value.tzinfo is None or value.utcoffset() is None:
                 raise ValueError(
@@ -294,7 +296,7 @@ class ConfigurationPresetRevision(ImmutableModel):
 
 
 def _config_value(value: object) -> ConfigValue:
-    if isinstance(value, str | bool | int | Decimal | datetime):
+    if value is None or isinstance(value, str | bool | int | Decimal | datetime):
         return value
     raise ConfigurationError(
         f"unsupported resolved configuration value: {type(value).__name__}"
@@ -341,6 +343,8 @@ def _parameter_payload(value: ConfigParameter) -> dict[str, object]:
     parameter_value = value.value
     if isinstance(parameter_value, bool):
         value_type = "boolean"
+    elif parameter_value is None:
+        value_type = "null"
     elif isinstance(parameter_value, int):
         value_type = "integer"
     elif isinstance(parameter_value, Decimal):
@@ -360,7 +364,7 @@ def _canonical_value(value: object) -> object:
     if isinstance(value, datetime):
         return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
     if isinstance(value, Decimal):
-        return format(value, "f")
+        return format(Decimal(0) if value == 0 else value.normalize(), "f")
     return value
 
 

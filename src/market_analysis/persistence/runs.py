@@ -23,6 +23,12 @@ from market_analysis.config import (
     detection_config_hash,
     evaluation_plan_hash,
     resolve_detection_config,
+    resolve_evaluation_plan,
+)
+from market_analysis.config.hashing import (
+    DETECTION_HASH_VERSION,
+    EVALUATION_HASH_VERSION,
+    HASH_ALGORITHM,
 )
 from market_analysis.patterns import ParameterSpec, PatternDefinition
 
@@ -38,15 +44,21 @@ run_snapshots = Table(
     Column("calendar_version", String(200), nullable=False),
     Column("build_id", String(200), nullable=False),
     Column("config_schema_version", String(100), nullable=False),
+    Column("detection_hash_algorithm", String(20), nullable=False),
+    Column("detection_hash_version", String(100), nullable=False),
     Column("detection_config_hash", String(64), nullable=False),
     Column("detection_config_json", Text, nullable=False),
+    Column("evaluation_hash_algorithm", String(20)),
+    Column("evaluation_hash_version", String(100)),
     Column("evaluation_plan_hash", String(64)),
     Column("evaluation_plan_json", Text),
     CheckConstraint("run_kind IN ('replay', 'evaluation')", name="ck_run_kind"),
     CheckConstraint(
-        "(run_kind = 'replay' AND evaluation_plan_json IS NULL AND evaluation_plan_hash IS NULL) "
+        "(run_kind = 'replay' AND evaluation_plan_json IS NULL AND evaluation_plan_hash IS NULL "
+        "AND evaluation_hash_algorithm IS NULL AND evaluation_hash_version IS NULL) "
         "OR (run_kind = 'evaluation' AND evaluation_plan_json IS NOT NULL "
-        "AND evaluation_plan_hash IS NOT NULL)",
+        "AND evaluation_plan_hash IS NOT NULL AND evaluation_hash_algorithm IS NOT NULL "
+        "AND evaluation_hash_version IS NOT NULL)",
         name="ck_run_plan",
     ),
     CheckConstraint(
@@ -67,8 +79,12 @@ class RunSnapshotRecord:
     calendar_version: str
     build_id: str
     config_schema_version: str
+    detection_hash_algorithm: str
+    detection_hash_version: str
     detection_config_hash: str
     detection_config_json: str
+    evaluation_hash_algorithm: str | None
+    evaluation_hash_version: str | None
     evaluation_plan_hash: str | None
     evaluation_plan_json: str | None
 
@@ -86,6 +102,8 @@ def create_run_snapshot(
     preset_revision: int | None = None,
     component_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
     pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
+    outcome_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
+    segment_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
 ) -> RunSnapshotRecord:
     for name, value in (
         ("dataset_revision_id", dataset_revision_id),
@@ -103,6 +121,12 @@ def create_run_snapshot(
         component_parameters=component_parameters,
         pattern_definitions=pattern_definitions,
     )
+    if evaluation_plan is not None:
+        evaluation_plan = resolve_evaluation_plan(
+            evaluation_plan,
+            outcome_parameters=outcome_parameters,
+            segment_parameters=segment_parameters,
+        )
     logger = research_logger(
         run_id=str(run_id),
         dataset_id=dataset_revision_id,
@@ -110,7 +134,11 @@ def create_run_snapshot(
         component="run-snapshot",
         build_id=build_id,
     )
-    config_hash = detection_config_hash(detection_config)
+    config_hash = detection_config_hash(
+        detection_config,
+        component_parameters=component_parameters,
+        pattern_definitions=pattern_definitions,
+    )
     if evaluation_plan is not None and evaluation_plan.detection_config_hash != config_hash:
         logger.error("evaluation plan references a different detection config")
         raise ValueError("evaluation plan references a different detection config")
@@ -123,10 +151,18 @@ def create_run_snapshot(
         calendar_version=calendar_version,
         build_id=build_id,
         config_schema_version=detection_config.schema_version,
+        detection_hash_algorithm=HASH_ALGORITHM,
+        detection_hash_version=DETECTION_HASH_VERSION,
         detection_config_hash=config_hash,
         detection_config_json=detection_config.canonical_json(),
+        evaluation_hash_algorithm=(HASH_ALGORITHM if evaluation_plan is not None else None),
+        evaluation_hash_version=(EVALUATION_HASH_VERSION if evaluation_plan is not None else None),
         evaluation_plan_hash=(
-            evaluation_plan_hash(evaluation_plan) if evaluation_plan is not None else None
+            evaluation_plan_hash(
+                evaluation_plan,
+                outcome_parameters=outcome_parameters,
+                segment_parameters=segment_parameters,
+            ) if evaluation_plan is not None else None
         ),
         evaluation_plan_json=(
             evaluation_plan.canonical_json() if evaluation_plan is not None else None

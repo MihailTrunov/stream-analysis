@@ -63,7 +63,11 @@ def test_omitted_and_explicit_defaults_have_identical_resolved_hash() -> None:
         config(True), component_parameters=specs, pattern_definitions=patterns
     )
     assert resolved_implicit == resolved_explicit
-    assert detection_config_hash(resolved_implicit) == detection_config_hash(resolved_explicit)
+    assert detection_config_hash(
+        config(False), component_parameters=specs, pattern_definitions=patterns
+    ) == detection_config_hash(
+        config(True), component_parameters=specs, pattern_definitions=patterns
+    )
     assert resolved_implicit.patterns[0].parameters[0].value == 3
 
 

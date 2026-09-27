@@ -13,9 +13,12 @@ from alembic.config import Config
 from market_analysis.application.logging import configure_logging
 from market_analysis.config import (
     ComponentSelection,
+    ConfigParameter,
     DetectionAnalysisConfig,
     EvaluationPlan,
+    OutcomeSelection,
     detection_config_hash,
+    evaluation_plan_hash,
 )
 from market_analysis.patterns import ParameterSpec, ParameterType
 from market_analysis.persistence.runs import (
@@ -31,8 +34,40 @@ def test_explicit_migration_creates_schema_and_version(monkeypatch, tmp_path) ->
     command.upgrade(Config("alembic.ini"), "head")
     engine = create_engine(f"sqlite:///{database_path}")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_01"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_02"
         assert connection.scalar(text("SELECT count(*) FROM run_snapshots")) == 0
+    engine.dispose()
+
+
+def test_hash_metadata_migration_backfills_existing_snapshots(monkeypatch, tmp_path) -> None:
+    database_path = tmp_path / "previous-schema.db"
+    url = f"sqlite:///{database_path}"
+    monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
+    config = Config("alembic.ini")
+    command.upgrade(config, "20260927_01")
+    engine = create_engine(url)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO run_snapshots (run_id, run_kind, dataset_revision_id, "
+                "calendar_version, build_id, config_schema_version, detection_config_hash, "
+                "detection_config_json, evaluation_plan_hash, evaluation_plan_json) "
+                "VALUES (:run_id, 'evaluation', 'dataset-1', 'calendar-1', 'build-1', "
+                "'detection-config-v1', :digest, '{}', :digest, '{}')"
+            ),
+            {"run_id": str(run_id), "digest": "a" * 64},
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        record = load_run_snapshot(connection, run_id)
+    assert record is not None
+    assert record.detection_hash_algorithm == "sha256"
+    assert record.detection_hash_version == "detection-config-v1"
+    assert record.evaluation_hash_algorithm == "sha256"
+    assert record.evaluation_hash_version == "evaluation-plan-v1"
+    assert record.calendar_version == "calendar-1"
+    assert record.build_id == "build-1"
     engine.dispose()
 
 
@@ -69,11 +104,65 @@ def test_replay_and_evaluation_snapshots_preserve_exact_resolved_config() -> Non
         assert load_run_snapshot(connection, evaluation_id) == evaluation
 
     assert replay.run_kind == "replay"
+    assert replay.detection_hash_algorithm == "sha256"
+    assert replay.detection_hash_version == "detection-config-v1"
     assert replay.detection_config_json == config.canonical_json()
     assert replay.evaluation_plan_json is None
+    assert replay.evaluation_hash_algorithm is None
+    assert replay.evaluation_hash_version is None
     assert evaluation.run_kind == "evaluation"
+    assert evaluation.evaluation_hash_algorithm == "sha256"
+    assert evaluation.evaluation_hash_version == "evaluation-plan-v1"
     assert evaluation.detection_config_hash == replay.detection_config_hash
     assert evaluation.evaluation_plan_json == plan.canonical_json()
+
+
+def test_calendar_and_build_lineage_do_not_change_config_digests() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    config = DetectionAnalysisConfig(instrument_id="US30", calendar_id="demo-v1")
+    with engine.begin() as connection:
+        first = create_run_snapshot(
+            connection, run_id=uuid4(), dataset_revision_id="revision-1",
+            calendar_version="calendar-1", build_id="build-1", detection_config=config,
+        )
+        second = create_run_snapshot(
+            connection, run_id=uuid4(), dataset_revision_id="revision-2",
+            calendar_version="calendar-2", build_id="build-2", detection_config=config,
+        )
+    assert first.detection_config_hash == second.detection_config_hash
+    assert first.detection_config_json == second.detection_config_json
+    assert first.calendar_version != second.calendar_version
+    assert first.build_id != second.build_id
+
+
+def test_snapshot_persists_resolved_outcome_defaults() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    config = DetectionAnalysisConfig(instrument_id="US30", calendar_id="demo-v1")
+    specs = {("return", "1"): (ParameterSpec("horizon", ParameterType.INTEGER, 5),)}
+    plan = EvaluationPlan(
+        detection_config_hash=detection_config_hash(config),
+        context_schema_version="1",
+        outcomes=(OutcomeSelection(outcome_id="return", outcome_version="1"),),
+    )
+    with engine.begin() as connection:
+        record = create_run_snapshot(
+            connection, run_id=uuid4(), dataset_revision_id="revision-1",
+            calendar_version="calendar-1", build_id="build-1", detection_config=config,
+            evaluation_plan=plan, outcome_parameters=specs,
+        )
+    assert record.evaluation_plan_json is not None
+    assert '"name":"horizon","value":5' in record.evaluation_plan_json
+    explicit = plan.model_copy(update={"outcomes": (
+        OutcomeSelection(
+            outcome_id="return", outcome_version="1",
+            parameters=(ConfigParameter(name="horizon", value=5),),
+        ),
+    )})
+    assert record.evaluation_plan_hash == evaluation_plan_hash(
+        explicit, outcome_parameters=specs
+    )
 
 
 def test_snapshot_rejects_mismatched_plan_and_duplicate_run_id() -> None:
