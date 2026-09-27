@@ -16,24 +16,25 @@ class SimulationClockError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ObservableBars:
-    """A fixed-index analytical view; advancing the clock cannot widen it."""
+    """A persistent past-only view with no reference to the clock's future bars."""
 
-    _source: tuple[Bar, ...] = field(repr=False)
+    current_bar: Bar
     index: int
     dataset_revision_id: str
     visible_start: datetime
+    _previous: ObservableBars | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        if not 0 <= self.index < len(self._source):
-            raise SimulationClockError("observable index is outside the source")
+        if self.index < 0 or (
+            self._previous is None and self.index != 0
+        ) or (
+            self._previous is not None and self._previous.index != self.index - 1
+        ):
+            raise SimulationClockError("observable index is not a contiguous past-only prefix")
 
     @property
     def timestamp(self) -> datetime:
-        return self._source[self.index].timestamp
-
-    @property
-    def current_bar(self) -> Bar:
-        return self._source[self.index]
+        return self.current_bar.timestamp
 
     @property
     def visible_count(self) -> int:
@@ -46,7 +47,11 @@ class ObservableBars:
     def bar_at(self, index: int) -> Bar:
         if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index <= self.index:
             raise SimulationClockError("future or invalid bar index is not observable")
-        return self._source[index]
+        node: ObservableBars = self
+        while node.index != index:
+            assert node._previous is not None
+            node = node._previous
+        return node.current_bar
 
     def timestamp_at(self, index: int) -> datetime:
         return self.bar_at(index).timestamp
@@ -61,22 +66,28 @@ class ObservableBars:
         selected = timestamp.astimezone(UTC)
         if selected > self.timestamp:
             raise SimulationClockError("future timestamp is not observable")
-        index = bisect_left(
-            self._source, selected, 0, self.index + 1, key=lambda bar: bar.timestamp
-        )
-        if index <= self.index and self._source[index].timestamp == selected:
-            return self._source[index]
+        node: ObservableBars | None = self
+        while node is not None and node.timestamp > selected:
+            node = node._previous
+        if node is not None and node.timestamp == selected:
+            return node.current_bar
         raise SimulationClockError("timestamp is not a visible bar")
 
     def history(self) -> tuple[Bar, ...]:
         """Return a read-only prefix; callers never receive future bars."""
-        return self._source[: self.index + 1]
+        result = []
+        node: ObservableBars | None = self
+        while node is not None:
+            result.append(node.current_bar)
+            node = node._previous
+        result.reverse()
+        return tuple(result)
 
 
 class SimulationClock:
     """Advance only one canonical completed bar at a time in market time."""
 
-    __slots__ = ("_sequence", "_bars", "_index", "_selected_start", "_selected_end")
+    __slots__ = ("_sequence", "_bars", "_index", "_current", "_selected_start", "_selected_end")
 
     def __init__(
         self,
@@ -109,6 +120,7 @@ class SimulationClock:
         self._sequence = sequence
         self._bars = bars[:stop]
         self._index = -1
+        self._current: ObservableBars | None = None
         self._selected_start = start
         self._selected_end = end
 
@@ -154,18 +166,21 @@ class SimulationClock:
 
     @property
     def current(self) -> ObservableBars:
-        if self._index < 0:
+        if self._current is None:
             raise SimulationClockError("no bar is observable before the first step")
-        return ObservableBars(
-            self._bars, self._index, self.dataset_revision_id, self._selected_start
-        )
+        return self._current
 
     def step(self) -> ObservableBars:
         if not self.has_next:
             raise SimulationClockError("simulation clock is at the final bar")
         self._index += 1
+        self._current = ObservableBars(
+            self._bars[self._index], self._index, self.dataset_revision_id,
+            self._selected_start, self._current,
+        )
         return self.current
 
     def reset(self) -> None:
         """Return to before bar zero; analytical components reset separately."""
         self._index = -1
+        self._current = None

@@ -46,6 +46,7 @@ def test_clock_steps_once_and_old_view_never_expands() -> None:
         _ = clock.current
     first = clock.step()
     assert first.index == 0 and first.timestamp == START
+    assert not hasattr(first, "_source")
     assert first.history() == (first.current_bar,)
     with pytest.raises(SimulationClockError, match="future"):
         first.bar_at(1)
