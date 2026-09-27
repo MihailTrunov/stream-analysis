@@ -13,11 +13,14 @@ content. Source bytes receive their own checksum; source/import provenance is
 not smuggled into the canonical-content hash.
 
 The canonical checksum is SHA-256 over a version-tagged, stable UTF-8 JSON
-representation of strictly ordered, unique completed Bars. Include all
+representation of unique completed Bars sorted by timestamp. Input ordering
+does not affect the checksum; a published `BarSequence` remains strictly
+ordered. A streaming checksum path accepts already ordered bars for large
+datasets without buffering the entire history. Include all
 analytical fields (instrument, timeframe, UTC timestamp, OHLC, volume,
 completeness and quality flags), but exclude provider-specific source_id.
 Normalize decimal text and sort quality flags; reject mixed instruments,
-timeframes, duplicate timestamps, incomplete bars and unordered input. A
+timeframes, duplicate timestamps and incomplete bars. A
 content change changes the digest; a metadata-only change does not.
 
 ## Metadata and storage
@@ -25,8 +28,9 @@ content change changes the digest; a metadata-only change does not.
 Keep the existing immutable `dataset_revisions` and `dataset_memberships`
 records. Add a one-to-one-per-membership lineage record with source dataset
 identity, requested and actual half-open ranges, bar count, acquisition time,
-validation status, source and canonical checksums, checksum and dataset-format
-versions. Existing revision metadata supplies provider, retrieval,
+validation status, canonicalized provider request metadata, source and canonical
+checksums, checksum and dataset-format versions. Existing revision metadata
+supplies provider, retrieval,
 normalization, calendar and manifest provenance. The new record is immutable
 and must match its revision membership. A `BarSequence` couples the ordered
 bars to this lineage in memory and verifies count, bounds and checksum.

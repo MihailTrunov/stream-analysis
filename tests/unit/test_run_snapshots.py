@@ -36,7 +36,7 @@ def test_explicit_migration_creates_schema_and_version(monkeypatch, tmp_path) ->
     command.upgrade(Config("alembic.ini"), "head")
     engine = create_engine(f"sqlite:///{database_path}")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_02"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_03"
         assert connection.scalar(text("SELECT count(*) FROM run_snapshots")) == 0
     engine.dispose()
 

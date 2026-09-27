@@ -12,13 +12,16 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from alembic import command
 from alembic.config import Config
+from market_analysis.domain import BAR_CHECKSUM_VERSION, DatasetLineage, ValidationStatus
 from market_analysis.domain.market_data import Instrument, ProviderSymbolMapping, Timeframe
 from market_analysis.persistence.market_data import (
     DatasetMembership,
     DatasetRevision,
     MetadataConflictError,
+    load_dataset_lineage,
     load_dataset_revision,
     load_instrument,
+    register_dataset_lineage,
     register_dataset_revision,
     register_instrument,
 )
@@ -57,12 +60,30 @@ def test_market_metadata_migration_and_repository_on_postgres(monkeypatch) -> No
             DatasetMembership(instrument_id, Timeframe.M1, start, start + timedelta(hours=1), 60),
         ),
     )
+    lineage = DatasetLineage(
+        dataset_revision_id=revision_id,
+        source_dataset_id=f"source-{suffix}",
+        instrument_id=instrument_id,
+        timeframe=Timeframe.M1,
+        requested_start=start,
+        requested_end=start + timedelta(hours=1),
+        actual_start=start,
+        actual_end=start + timedelta(hours=1),
+        bar_count=60,
+        acquired_at=start + timedelta(seconds=1),
+        validation_status=ValidationStatus.PASS,
+        provider_request_json='{"end":"2026-09-27T01:00:00Z","symbol":"US30"}',
+        source_checksum="a" * 64,
+        canonical_checksum="b" * 64,
+        checksum_version=BAR_CHECKSUM_VERSION,
+        dataset_format_version="parquet-v1",
+    )
     with engine.connect() as connection:
         transaction = connection.begin()
         try:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260927_02"
+                == "20260927_03"
             )
             assert register_instrument(connection, instrument) == instrument
             assert load_instrument(connection, instrument_id) == instrument
@@ -72,6 +93,19 @@ def test_market_metadata_migration_and_repository_on_postgres(monkeypatch) -> No
             assert register_dataset_revision(connection, revision) == revision
             assert load_dataset_revision(connection, revision_id) == revision
             assert register_dataset_revision(connection, revision) == revision
+            assert register_dataset_lineage(connection, lineage) == lineage
+            assert load_dataset_lineage(
+                connection, revision_id, instrument_id, Timeframe.M1
+            ) == lineage
+            with pytest.raises(DBAPIError, match="market metadata is immutable"):
+                with connection.begin_nested():
+                    connection.execute(
+                        text(
+                            "UPDATE dataset_content_lineage SET source_checksum = :checksum "
+                            "WHERE dataset_revision_id = :id"
+                        ),
+                        {"checksum": "c" * 64, "id": revision_id},
+                    )
             with pytest.raises(DBAPIError, match="market metadata is immutable"):
                 with connection.begin_nested():
                     connection.execute(

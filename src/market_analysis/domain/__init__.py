@@ -1,5 +1,12 @@
 """Provider-independent domain contracts."""
 
+from .dataset_lineage import (
+    BAR_CHECKSUM_VERSION,
+    BarSequence,
+    DatasetLineage,
+    canonical_bar_checksum,
+    canonical_bar_checksum_ordered,
+)
 from .dataset_validation import (
     Check,
     ExpectedSlotCalendar,
@@ -28,8 +35,11 @@ from .market_data import (
 
 __all__ = [
     "Bar",
+    "BarSequence",
+    "BAR_CHECKSUM_VERSION",
     "Check",
     "DomainValidationError",
+    "DatasetLineage",
     "ExpectedSlotCalendar",
     "Finding",
     "HistoricalDataError",
@@ -46,4 +56,6 @@ __all__ = [
     "ValidationReport",
     "ValidationStatus",
     "validate_dataset",
+    "canonical_bar_checksum",
+    "canonical_bar_checksum_ordered",
 ]

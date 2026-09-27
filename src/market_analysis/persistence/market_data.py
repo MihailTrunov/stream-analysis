@@ -16,6 +16,7 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -26,6 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 
+from market_analysis.domain.dataset_lineage import DatasetLineage
+from market_analysis.domain.dataset_validation import ValidationStatus
 from market_analysis.domain.market_data import Instrument, ProviderSymbolMapping, Timeframe
 from market_analysis.persistence.runs import metadata
 
@@ -111,6 +114,48 @@ Index(
     dataset_memberships.c.range_start,
     dataset_memberships.c.range_end,
 )
+dataset_content_lineage = Table(
+    "dataset_content_lineage",
+    metadata,
+    Column("dataset_revision_id", String(200), primary_key=True),
+    Column("instrument_id", String(200), primary_key=True),
+    Column("timeframe", String(10), primary_key=True),
+    Column("source_dataset_id", String(200), nullable=False),
+    Column("requested_start", DateTime(timezone=True), nullable=False),
+    Column("requested_end", DateTime(timezone=True), nullable=False),
+    Column("actual_start", DateTime(timezone=True)),
+    Column("actual_end", DateTime(timezone=True)),
+    Column("bar_count", Integer, nullable=False),
+    Column("acquired_at", DateTime(timezone=True), nullable=False),
+    Column("validation_status", String(20), nullable=False),
+    Column("provider_request_json", Text, nullable=False),
+    Column("source_checksum", String(64), nullable=False),
+    Column("canonical_checksum", String(64), nullable=False),
+    Column("checksum_version", String(100), nullable=False),
+    Column("dataset_format_version", String(100), nullable=False),
+    ForeignKeyConstraint(
+        ["dataset_revision_id", "instrument_id", "timeframe"],
+        [
+            "dataset_memberships.dataset_revision_id",
+            "dataset_memberships.instrument_id",
+            "dataset_memberships.timeframe",
+        ],
+        name="fk_lineage_membership",
+    ),
+    CheckConstraint("requested_end >= requested_start", name="ck_lineage_requested_range"),
+    CheckConstraint("bar_count >= 0", name="ck_lineage_bar_count"),
+    CheckConstraint(
+        "(bar_count = 0 AND actual_start IS NULL AND actual_end IS NULL) OR "
+        "(bar_count > 0 AND actual_start IS NOT NULL AND actual_end IS NOT NULL "
+        "AND actual_start < actual_end)",
+        name="ck_lineage_actual_range",
+    ),
+    CheckConstraint(
+        "validation_status IN ('pass', 'warning', 'fail')",
+        name="ck_lineage_validation_status",
+    ),
+)
+Index("ix_lineage_source_dataset", dataset_content_lineage.c.source_dataset_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +373,92 @@ def list_dataset_revisions(connection: Connection, dataset_id: str) -> tuple[Dat
     return tuple(
         revision for revision_id in ids
         if (revision := load_dataset_revision(connection, revision_id)) is not None
+    )
+
+
+def register_dataset_lineage(connection: Connection, lineage: DatasetLineage) -> DatasetLineage:
+    """Insert immutable content and acquisition lineage for one revision membership."""
+    existing = load_dataset_lineage(
+        connection, lineage.dataset_revision_id, lineage.instrument_id, lineage.timeframe
+    )
+    if existing is not None:
+        if existing != lineage:
+            raise MetadataConflictError("dataset lineage already differs")
+        return existing
+    member = connection.execute(
+        select(dataset_memberships).where(
+            dataset_memberships.c.dataset_revision_id == lineage.dataset_revision_id,
+            dataset_memberships.c.instrument_id == lineage.instrument_id,
+            dataset_memberships.c.timeframe == lineage.timeframe.value,
+        )
+    ).mappings().one_or_none()
+    if member is None:
+        raise MetadataConflictError("dataset lineage has no revision membership")
+    if (
+        lineage.bar_count != member["bar_count"]
+        or lineage.requested_start != _stored_utc(member["range_start"])
+        or lineage.requested_end != _stored_utc(member["range_end"])
+    ):
+        raise MetadataConflictError("dataset lineage differs from revision membership")
+    try:
+        with connection.begin_nested():
+            connection.execute(dataset_content_lineage.insert().values(
+                dataset_revision_id=lineage.dataset_revision_id,
+                instrument_id=lineage.instrument_id,
+                timeframe=lineage.timeframe.value,
+                source_dataset_id=lineage.source_dataset_id,
+                requested_start=lineage.requested_start,
+                requested_end=lineage.requested_end,
+                actual_start=lineage.actual_start,
+                actual_end=lineage.actual_end,
+                bar_count=lineage.bar_count,
+                acquired_at=lineage.acquired_at,
+                validation_status=lineage.validation_status.value,
+                provider_request_json=lineage.provider_request_json,
+                source_checksum=lineage.source_checksum,
+                canonical_checksum=lineage.canonical_checksum,
+                checksum_version=lineage.checksum_version,
+                dataset_format_version=lineage.dataset_format_version,
+            ))
+    except IntegrityError:
+        existing = load_dataset_lineage(
+            connection, lineage.dataset_revision_id, lineage.instrument_id, lineage.timeframe
+        )
+        if existing == lineage:
+            return existing
+        raise MetadataConflictError("dataset lineage already differs") from None
+    return lineage
+
+
+def load_dataset_lineage(
+    connection: Connection, revision_id: str, instrument_id: str, timeframe: Timeframe
+) -> DatasetLineage | None:
+    row = connection.execute(
+        select(dataset_content_lineage).where(
+            dataset_content_lineage.c.dataset_revision_id == revision_id,
+            dataset_content_lineage.c.instrument_id == instrument_id,
+            dataset_content_lineage.c.timeframe == timeframe.value,
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return DatasetLineage(
+        dataset_revision_id=row["dataset_revision_id"],
+        source_dataset_id=row["source_dataset_id"],
+        instrument_id=row["instrument_id"],
+        timeframe=Timeframe(row["timeframe"]),
+        requested_start=_stored_utc(row["requested_start"]),
+        requested_end=_stored_utc(row["requested_end"]),
+        actual_start=(None if row["actual_start"] is None else _stored_utc(row["actual_start"])),
+        actual_end=(None if row["actual_end"] is None else _stored_utc(row["actual_end"])),
+        bar_count=row["bar_count"],
+        acquired_at=_stored_utc(row["acquired_at"]),
+        validation_status=ValidationStatus(row["validation_status"]),
+        provider_request_json=row["provider_request_json"],
+        source_checksum=row["source_checksum"],
+        canonical_checksum=row["canonical_checksum"],
+        checksum_version=row["checksum_version"],
+        dataset_format_version=row["dataset_format_version"],
     )
 
 
