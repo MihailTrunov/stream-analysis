@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import os
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import DBAPIError, IntegrityError
+
+from alembic import command
+from alembic.config import Config
+from market_analysis.domain.market_data import Instrument, ProviderSymbolMapping, Timeframe
+from market_analysis.persistence.market_data import (
+    DatasetMembership,
+    DatasetRevision,
+    MetadataConflictError,
+    load_dataset_revision,
+    load_instrument,
+    register_dataset_revision,
+    register_instrument,
+)
+
+
+@pytest.mark.skipif(
+    not os.getenv("STREAM_ANALYSIS_TEST_DATABASE_URL"),
+    reason="PostgreSQL integration URL is not configured",
+)
+def test_market_metadata_migration_and_repository_on_postgres(monkeypatch) -> None:
+    url = os.environ["STREAM_ANALYSIS_TEST_DATABASE_URL"]
+    monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
+    command.upgrade(Config("alembic.ini"), "head")
+    engine = create_engine(url)
+    suffix = uuid4().hex
+    instrument_id = f"instrument-{suffix}"
+    revision_id = f"revision-{suffix}"
+    instrument = Instrument(
+        instrument_id, "Test instrument", "calendar-v1", 22,
+        Decimal("0.0000000000000000000001"),
+        (ProviderSymbolMapping("fixture", f"symbol-{suffix}"),),
+    )
+    start = datetime(2026, 9, 27, tzinfo=UTC)
+    revision = DatasetRevision(
+        dataset_revision_id=revision_id,
+        dataset_id=f"dataset-{suffix}",
+        source_id="fixture-source",
+        provider="fixture",
+        retrieved_at=start,
+        created_at=start + timedelta(seconds=1),
+        normalization_version="1",
+        calendar_version="calendar-v1",
+        manifest_format_version="1",
+        manifest_ref=f"datasets/{revision_id}/manifest.json",
+        memberships=(
+            DatasetMembership(instrument_id, Timeframe.M1, start, start + timedelta(hours=1), 60),
+        ),
+    )
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "20260927_01"
+            )
+            assert register_instrument(connection, instrument) == instrument
+            assert load_instrument(connection, instrument_id) == instrument
+            assert register_instrument(connection, instrument) == instrument
+            with pytest.raises(MetadataConflictError):
+                register_instrument(connection, replace(instrument, price_precision=5))
+            assert register_dataset_revision(connection, revision) == revision
+            assert load_dataset_revision(connection, revision_id) == revision
+            assert register_dataset_revision(connection, revision) == revision
+            with pytest.raises(DBAPIError, match="market metadata is immutable"):
+                with connection.begin_nested():
+                    connection.execute(
+                        text(
+                            "UPDATE instruments SET calendar_id = 'changed' "
+                            "WHERE instrument_id = :id"
+                        ),
+                        {"id": instrument_id},
+                    )
+            with pytest.raises(DBAPIError, match="market metadata is immutable"):
+                with connection.begin_nested():
+                    connection.execute(
+                        text("DELETE FROM dataset_revisions WHERE dataset_revision_id = :id"),
+                        {"id": revision_id},
+                    )
+            with pytest.raises(MetadataConflictError):
+                register_dataset_revision(connection, replace(revision, source_id="changed"))
+            missing = replace(revision, dataset_revision_id=f"missing-{suffix}", memberships=(
+                replace(revision.memberships[0], instrument_id=f"missing-{suffix}"),
+            ))
+            with pytest.raises(IntegrityError):
+                register_dataset_revision(connection, missing)
+            assert load_dataset_revision(connection, f"missing-{suffix}") is None
+            indexes = {
+                index["name"] for index in inspect(connection).get_indexes("dataset_memberships")
+            }
+            assert "ix_dataset_membership_lookup" in indexes
+        finally:
+            transaction.rollback()
+    engine.dispose()
