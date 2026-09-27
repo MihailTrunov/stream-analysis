@@ -32,6 +32,11 @@ from .market_data import (
     ProviderSymbolMapping,
     Timeframe,
 )
+from .replay_cursor import (
+    AnalyticalPipeline,
+    ReplayCursor,
+    ReplayCursorError,
+)
 from .session_calendar import (
     CalendarException,
     CalendarRegistry,
@@ -43,6 +48,7 @@ from .session_calendar import (
 from .simulation_clock import ObservableBars, SimulationClock, SimulationClockError
 
 __all__ = [
+    "AnalyticalPipeline",
     "Bar",
     "BarSequence",
     "BAR_CHECKSUM_VERSION",
@@ -63,6 +69,8 @@ __all__ = [
     "Instrument",
     "ProviderError",
     "ProviderSymbolMapping",
+    "ReplayCursor",
+    "ReplayCursorError",
     "Severity",
     "SessionCalendarError",
     "SessionState",
