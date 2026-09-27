@@ -39,6 +39,7 @@ class ValidationStatus(StrEnum):
 class Check(StrEnum):
     DUPLICATE_INTERVAL = "duplicate_interval"
     MISSING_INTERVAL = "missing_interval"
+    UNEXPECTED_INTERVAL = "unexpected_interval"
     INVALID_OHLC = "invalid_ohlc"
     TIMESTAMP_ORDER = "timestamp_order"
     INCOMPLETE_BAR = "incomplete_bar"
@@ -222,6 +223,7 @@ def validate_dataset(
         raise DomainValidationError(
             "calendar expected slots must be unique, ordered UTC instants in range"
         )
+    expected = set(slots)
 
     findings: list[Finding] = []
     seen: dict[datetime, int] = {}
@@ -290,6 +292,16 @@ def validate_dataset(
         valid_count += 1
         if start <= bar.timestamp < end:
             present.add(bar.timestamp)
+            if bar.timestamp not in expected:
+                findings.append(
+                    Finding(
+                        Check.UNEXPECTED_INTERVAL,
+                        Severity.ERROR,
+                        "bar timestamp is not an expected calendar slot",
+                        timestamp,
+                        index,
+                    )
+                )
         if not bar.is_complete:
             findings.append(
                 Finding(Check.INCOMPLETE_BAR, Severity.ERROR, "bar is incomplete", timestamp, index)

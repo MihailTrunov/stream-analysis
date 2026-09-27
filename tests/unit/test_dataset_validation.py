@@ -77,6 +77,17 @@ def test_closed_intervals_are_not_gaps_and_empty_window_passes() -> None:
     assert empty.expected_slot_count == 0
 
 
+def test_off_grid_and_closed_session_bars_fail_validation() -> None:
+    on_slot = fixture()[0]
+    off_grid = {**on_slot, "timestamp": "2026-01-02T14:30:30Z"}
+    closed_session = {**on_slot, "timestamp": "2026-01-02T14:31:00Z"}
+    report = validate([on_slot, off_grid, closed_session], FixtureCalendar((0,)))
+    assert report.status is ValidationStatus.FAIL
+    assert report.counts["unexpected_interval"] == 2
+    assert [finding.record_index for finding in report.findings
+            if finding.check is Check.UNEXPECTED_INTERVAL] == [1, 2]
+
+
 def test_valid_flags_are_warnings_and_raw_invalid_record_is_structured() -> None:
     candidate = fixture()[0]
     candidate["source_id"] = "other"
