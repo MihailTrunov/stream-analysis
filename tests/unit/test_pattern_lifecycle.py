@@ -69,6 +69,26 @@ def test_candidate_confirmed_active_completed_and_no_reactivation() -> None:
     assert runner.advance(bar(3), {"confirm", "activate", "finish"}) == ()
 
 
+def test_confirmation_bar_can_also_release_to_active_when_declared() -> None:
+    definition = lifecycle(
+        ("candidate", "confirmed", "active", "completed"),
+        (
+            TransitionSpec("candidate", "confirmed", "confirm"),
+            TransitionSpec("confirmed", "active", "release"),
+            TransitionSpec("active", "completed", "finish"),
+        ),
+        chains=(("confirm", "release"),),
+    )
+    runner = LifecycleRunner(definition)
+    events = runner.advance(bar(0), {"release", "confirm"})
+    assert [(event.sequence, event.from_state, event.to_state) for event in events] == [
+        (0, "candidate", "confirmed"), (1, "confirmed", "active"),
+    ]
+    assert events[0].bar_timestamp == events[1].bar_timestamp
+    assert runner.state == "active"
+    assert runner.advance(bar(1), {"finish"})[0].to_state == "completed"
+
+
 def test_candidate_reclaimed_confirmed_same_bar_records_two_ordered_events() -> None:
     definition = lifecycle(
         ("candidate", "reclaimed", "confirmed"),
