@@ -50,8 +50,20 @@ from .trend_leg import (
     TrendLegTransition,
     TrendLegTransitionType,
 )
+from .trend_leg_qualification import (
+    TREND_LEG_QUALIFICATION_DEFINITION_ID,
+    EndedQualification,
+    QualificationEarned,
+    QualificationEvidence,
+    QualificationStatus,
+    QualificationThresholds,
+    TrendLegQualificationState,
+)
 
 __all__ = [
+    "TREND_LEG_QUALIFICATION_DEFINITION_ID", "EndedQualification", "QualificationEarned",
+    "QualificationEvidence", "QualificationStatus", "QualificationThresholds",
+    "TrendLegQualificationState",
     "TREND_LEG_DEFINITION_ID", "EmaCrossSegment", "EmaCrossTransition", "TrendDirection",
     "TrendLeg", "TrendLegState", "TrendLegTransition", "TrendLegTransitionType",
     "AtrState", "EmaState", "IncrementalMarketState", "MarketState", "MarketStateError",

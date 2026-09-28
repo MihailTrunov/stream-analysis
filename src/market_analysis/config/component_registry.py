@@ -124,6 +124,22 @@ TREND_LEG_V1_PARAMETERS = (
     ),
 )
 
+TREND_LEG_QUALIFICATION_V1_PARAMETERS = (
+    ParameterSpec("trend_leg_instance_id", ParameterType.STRING, "trend_leg"),
+    ParameterSpec(
+        "min_duration_bars", ParameterType.INTEGER, 30, minimum=Decimal(1),
+        description="Minimum completed one-minute bars from the initial protected swing.",
+    ),
+    ParameterSpec(
+        "min_directional_move_points", ParameterType.DECIMAL, Decimal(70), minimum=Decimal(0),
+        description="Minimum directional move from initial protection to the completed close.",
+    ),
+    ParameterSpec(
+        "qualification_mode", ParameterType.STRING, "LIVE_STICKY_V1",
+        supported_values=("LIVE_STICKY_V1",),
+    ),
+)
+
 RANGE_STATE_V1_PARAMETERS = (
     ParameterSpec("chop_period", ParameterType.INTEGER, 14, minimum=Decimal(2)),
     ParameterSpec("chop_directional_threshold", ParameterType.DECIMAL, Decimal("38.2"),
@@ -165,6 +181,7 @@ BUILTIN_COMPONENT_PARAMETERS: Mapping[DefinitionKey, tuple[ParameterSpec, ...]] 
         ("swing_point", "1"): SWING_POINT_V1_PARAMETERS,
         ("swing_structure", "1"): SWING_STRUCTURE_V1_PARAMETERS,
         ("trend_leg", "1"): TREND_LEG_V1_PARAMETERS,
+        ("trend_leg_qualification", "1"): TREND_LEG_QUALIFICATION_V1_PARAMETERS,
         ("range_state", "1"): RANGE_STATE_V1_PARAMETERS,
     })
 )

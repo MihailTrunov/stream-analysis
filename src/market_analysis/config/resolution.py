@@ -16,6 +16,7 @@ from market_analysis.config.models import (
     PatternSelection,
     SegmentSelection,
 )
+from market_analysis.domain import Timeframe
 from market_analysis.patterns import ParameterSpec, PatternDefinition
 
 DefinitionKey = tuple[str, str]
@@ -51,6 +52,22 @@ def resolve_detection_config(
             )
         )
     for selection in components:
+        if (selection.component_id == "trend_leg_qualification"
+                and selection.component_version == "1" and selection.enabled):
+            if config.timeframe != Timeframe.M1:
+                raise ConfigurationError("TrendLeg qualification v1 requires canonical M1 bars")
+            values = {item.name: item.value for item in selection.parameters}
+            dependency = next(
+                (item for item in components
+                 if item.effective_instance_id == values["trend_leg_instance_id"]),
+                None,
+            )
+            if (dependency is None or not dependency.enabled
+                    or dependency.component_id != "trend_leg"
+                    or dependency.component_version != "1"):
+                raise ConfigurationError(
+                    "TrendLeg qualification trend_leg_instance_id must bind an enabled trend_leg v1"
+                )
         if (selection.component_id != "trend_leg" or selection.component_version != "1"
                 or not selection.enabled):
             continue
