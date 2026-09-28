@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 from types import MappingProxyType
 
-from market_analysis.patterns import ParameterSpec, ParameterType
+from market_analysis.patterns import ParameterSpec, ParameterType, PatternDefinitionError
 
 DefinitionKey = tuple[str, str]
 
@@ -95,12 +95,47 @@ SWING_STRUCTURE_V1_PARAMETERS = (
     ),
 )
 
+RANGE_STATE_V1_PARAMETERS = (
+    ParameterSpec("chop_period", ParameterType.INTEGER, 14, minimum=Decimal(2)),
+    ParameterSpec("chop_directional_threshold", ParameterType.DECIMAL, Decimal("38.2"),
+                  minimum=Decimal(0), maximum=Decimal(100)),
+    ParameterSpec("chop_range_threshold", ParameterType.DECIMAL, Decimal("61.8"),
+                  minimum=Decimal(0), maximum=Decimal(100)),
+    ParameterSpec("bandwidth_period", ParameterType.INTEGER, 20, minimum=Decimal(1)),
+    ParameterSpec("bandwidth_stddev_multiplier", ParameterType.DECIMAL, Decimal("2.0"),
+                  minimum=Decimal(0)),
+    ParameterSpec("compression_reference_bars", ParameterType.INTEGER, 120, minimum=Decimal(2)),
+    ParameterSpec("expanded_score_threshold", ParameterType.DECIMAL, Decimal(20),
+                  minimum=Decimal(0), maximum=Decimal(100)),
+    ParameterSpec("compressed_score_threshold", ParameterType.DECIMAL, Decimal(80),
+                  minimum=Decimal(0), maximum=Decimal(100)),
+    ParameterSpec("bandwidth_stddev_mode", ParameterType.STRING, "POPULATION_V1",
+                  supported_values=("POPULATION_V1",)),
+    ParameterSpec("compression_percentile_mode", ParameterType.STRING, "STRICT_EMPIRICAL_V1",
+                  supported_values=("STRICT_EMPIRICAL_V1",)),
+)
+
+
+def validate_component_parameters(key: DefinitionKey, values: Mapping[str, object]) -> None:
+    """Cross-field checks scoped to the new version; legacy definitions stay unchanged."""
+    if key != ("range_state", "1"):
+        return
+    for lower, upper in (
+        ("chop_directional_threshold", "chop_range_threshold"),
+        ("expanded_score_threshold", "compressed_score_threshold"),
+    ):
+        lo, hi = values[lower], values[upper]
+        if not isinstance(lo, Decimal | int) or not isinstance(hi, Decimal | int) or lo >= hi:
+            raise PatternDefinitionError(f"{lower} must be strictly below {upper}")
+
+
 BUILTIN_COMPONENT_PARAMETERS: Mapping[DefinitionKey, tuple[ParameterSpec, ...]] = (
     MappingProxyType({
         ("ema", "1"): EMA_V1_PARAMETERS,
         ("atr", "1"): ATR_V1_PARAMETERS,
         ("swing_point", "1"): SWING_POINT_V1_PARAMETERS,
         ("swing_structure", "1"): SWING_STRUCTURE_V1_PARAMETERS,
+        ("range_state", "1"): RANGE_STATE_V1_PARAMETERS,
     })
 )
 

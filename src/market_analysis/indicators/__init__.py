@@ -3,6 +3,22 @@
 from .atr import AtrState, VolatilityState
 from .ema import EmaState
 from .incremental import IncrementalMarketState, MarketState, MarketStateError
+from .range_state import (
+    RANGE_STATE_DEFINITION_ID,
+    BandwidthObservation,
+    BandwidthState,
+    ChopCategory,
+    ChopInput,
+    ChopState,
+    CloseObservation,
+    CompressionCategory,
+    CompressionState,
+    RangeAvailability,
+    RangeLineage,
+    RangeObservation,
+    RangeParameters,
+    RangeState,
+)
 from .session import SessionComponent
 from .swing_point import (
     SWING_POINT_DEFINITION_ID,
@@ -33,4 +49,7 @@ __all__ = [
     "SwingPoint", "SwingPointReference", "SwingPointState", "SwingType",
     "SWING_STRUCTURE_DEFINITION_ID", "OverallStructure", "StructureBreak", "StructureBreakType",
     "StructureLineage", "SwingClassification", "SwingLabel", "SwingStructureState",
+    "RANGE_STATE_DEFINITION_ID", "BandwidthObservation", "BandwidthState", "ChopCategory",
+    "ChopInput", "ChopState", "CloseObservation", "CompressionCategory", "CompressionState",
+    "RangeAvailability", "RangeLineage", "RangeObservation", "RangeParameters", "RangeState",
 ]

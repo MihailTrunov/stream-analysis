@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from market_analysis.config.component_registry import BUILTIN_COMPONENT_PARAMETERS
+from market_analysis.config.component_registry import (
+    BUILTIN_COMPONENT_PARAMETERS,
+    validate_component_parameters,
+)
 from market_analysis.config.models import (
     ComponentSelection,
     ConfigParameter,
@@ -37,6 +40,7 @@ def resolve_detection_config(
         if key not in component_specs:
             raise ConfigurationError(f"unregistered component definition: {key}")
         component_values = _resolve_parameters(component_specs[key], component_selection.parameters)
+        validate_component_parameters(key, {item.name: item.value for item in component_values})
         components.append(
             ComponentSelection(
                 component_id=component_selection.component_id,
