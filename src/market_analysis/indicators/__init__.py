@@ -40,8 +40,20 @@ from .swing_structure import (
     SwingLabel,
     SwingStructureState,
 )
+from .trend_leg import (
+    TREND_LEG_DEFINITION_ID,
+    EmaCrossSegment,
+    EmaCrossTransition,
+    TrendDirection,
+    TrendLeg,
+    TrendLegState,
+    TrendLegTransition,
+    TrendLegTransitionType,
+)
 
 __all__ = [
+    "TREND_LEG_DEFINITION_ID", "EmaCrossSegment", "EmaCrossTransition", "TrendDirection",
+    "TrendLeg", "TrendLegState", "TrendLegTransition", "TrendLegTransitionType",
     "AtrState", "EmaState", "IncrementalMarketState", "MarketState", "MarketStateError",
     "VolatilityState",
     "SessionComponent",

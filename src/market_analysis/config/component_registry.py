@@ -95,6 +95,35 @@ SWING_STRUCTURE_V1_PARAMETERS = (
     ),
 )
 
+TREND_LEG_V1_PARAMETERS = (
+    ParameterSpec("ema_instance_id", ParameterType.STRING, "ema"),
+    ParameterSpec("structure_instance_id", ParameterType.STRING, "swing_structure"),
+    ParameterSpec(
+        "establishment_mode",
+        ParameterType.STRING,
+        "CONFIRMED_CORRECTIVE_DIRECTIONAL_V1",
+        supported_values=("CONFIRMED_CORRECTIVE_DIRECTIONAL_V1",),
+    ),
+    ParameterSpec(
+        "termination_mode",
+        ParameterType.STRING,
+        "PROTECTED_SWING_CLOSE_BREAK_V1",
+        supported_values=("PROTECTED_SWING_CLOSE_BREAK_V1",),
+    ),
+    ParameterSpec(
+        "ema_segment_boundary_mode",
+        ParameterType.STRING,
+        "INCLUSIVE_SHARED_BAR_V1",
+        supported_values=("INCLUSIVE_SHARED_BAR_V1",),
+    ),
+    ParameterSpec(
+        "favorable_extreme_mode",
+        ParameterType.STRING,
+        "DIRECTIONAL_SWING_AND_OBSERVED_BARS_V1",
+        supported_values=("DIRECTIONAL_SWING_AND_OBSERVED_BARS_V1",),
+    ),
+)
+
 RANGE_STATE_V1_PARAMETERS = (
     ParameterSpec("chop_period", ParameterType.INTEGER, 14, minimum=Decimal(2)),
     ParameterSpec("chop_directional_threshold", ParameterType.DECIMAL, Decimal("38.2"),
@@ -135,6 +164,7 @@ BUILTIN_COMPONENT_PARAMETERS: Mapping[DefinitionKey, tuple[ParameterSpec, ...]] 
         ("atr", "1"): ATR_V1_PARAMETERS,
         ("swing_point", "1"): SWING_POINT_V1_PARAMETERS,
         ("swing_structure", "1"): SWING_STRUCTURE_V1_PARAMETERS,
+        ("trend_leg", "1"): TREND_LEG_V1_PARAMETERS,
         ("range_state", "1"): RANGE_STATE_V1_PARAMETERS,
     })
 )

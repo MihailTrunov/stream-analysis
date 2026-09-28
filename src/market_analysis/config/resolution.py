@@ -50,6 +50,28 @@ def resolve_detection_config(
                 parameters=component_values,
             )
         )
+    for selection in components:
+        if (selection.component_id != "trend_leg" or selection.component_version != "1"
+                or not selection.enabled):
+            continue
+        values = {item.name: item.value for item in selection.parameters}
+        for parameter, component_id in (
+            ("ema_instance_id", "ema"),
+            ("structure_instance_id", "swing_structure"),
+        ):
+            dependency = next(
+                (item for item in components if item.effective_instance_id == values[parameter]),
+                None,
+            )
+            if (
+                dependency is None
+                or not dependency.enabled
+                or dependency.component_id != component_id
+                or dependency.component_version != "1"
+            ):
+                raise ConfigurationError(
+                    f"TrendLeg {parameter} must bind an enabled {component_id} v1"
+                )
     patterns = []
     for pattern_selection in config.patterns:
         key = (pattern_selection.pattern_id, pattern_selection.pattern_version)
