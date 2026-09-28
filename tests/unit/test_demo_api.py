@@ -22,7 +22,9 @@ def test_ema_definition_is_ui_discoverable_and_preview_is_server_validated() -> 
     client = TestClient(app)
     response = client.get("/component-definitions")
     assert response.status_code == 200
-    definition = response.json()["components"][0]
+    definition = next(
+        item for item in response.json()["components"] if item["component_id"] == "ema"
+    )
     assert definition["component_id"] == "ema"
     assert definition["parameters"][0]["default"] == 45
     assert definition["parameters"][0]["minimum"] == "1"

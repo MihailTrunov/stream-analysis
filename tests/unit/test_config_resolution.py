@@ -34,7 +34,7 @@ def _definition() -> PatternDefinition:
 
 def test_omitted_and_explicit_defaults_have_identical_resolved_hash() -> None:
     definition = _definition()
-    specs = {("atr", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)}
+    specs = {("custom", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)}
     patterns = {definition.identity: definition}
 
     def config(explicit: bool) -> DetectionAnalysisConfig:
@@ -43,7 +43,7 @@ def test_omitted_and_explicit_defaults_have_identical_resolved_hash() -> None:
             calendar_id="demo-v1",
             components=(
                 ComponentSelection(
-                    component_id="atr",
+                    component_id="custom",
                     component_version="1",
                     parameters=(ConfigParameter(name="period", value=14),) if explicit else (),
                 ),
@@ -76,7 +76,7 @@ def test_unregistered_or_invalid_component_is_rejected() -> None:
     config = DetectionAnalysisConfig(
         instrument_id="US30",
         calendar_id="demo-v1",
-        components=(ComponentSelection(component_id="atr", component_version="1"),),
+        components=(ComponentSelection(component_id="custom", component_version="1"),),
     )
     with pytest.raises(ConfigurationError, match="unregistered component"):
         resolve_detection_config(config)
@@ -90,12 +90,7 @@ def test_unregistered_or_invalid_component_is_rejected() -> None:
         )}
     )
     with pytest.raises(ValueError, match="integer"):
-        resolve_detection_config(
-            invalid,
-            component_parameters={
-                ("atr", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)
-            },
-        )
+        resolve_detection_config(invalid)
 
 
 def test_ema_instances_share_one_registered_definition_and_resolve_independently() -> None:
@@ -157,13 +152,13 @@ def test_custom_component_registry_adds_to_built_in_ema_schema() -> None:
         components=(
             ComponentSelection(component_id="ema", component_version="1",
                                instance_id="trend"),
-            ComponentSelection(component_id="atr", component_version="1"),
+            ComponentSelection(component_id="custom", component_version="1"),
         ),
     )
     resolved = resolve_detection_config(
         selected,
         component_parameters={
-            ("atr", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)
+            ("custom", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)
         },
     )
     assert [item.parameters[0].value for item in resolved.components] == [45, 14]

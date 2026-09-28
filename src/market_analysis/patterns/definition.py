@@ -29,6 +29,7 @@ class ParameterSpec:
     minimum: Decimal | None = None
     maximum: Decimal | None = None
     description: str = ""
+    supported_values: tuple[object, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.parameter_id.strip():
@@ -41,6 +42,18 @@ class ParameterSpec:
             )
         object.__setattr__(self, "minimum", lo)
         object.__setattr__(self, "maximum", hi)
+        object.__setattr__(
+            self,
+            "supported_values",
+            tuple(self.supported_values),
+        )
+        for supported in self.supported_values:
+            try:
+                self.normalize(supported)
+            except PatternDefinitionError as exc:
+                raise PatternDefinitionError(
+                    f"supported value for {self.parameter_id} is invalid: {exc}"
+                ) from exc
         object.__setattr__(
             self,
             "default",
@@ -99,6 +112,11 @@ class ParameterSpec:
                 raise PatternDefinitionError(
                     f"{self.parameter_id} must be <= {self.maximum}"
                 )
+        if self.supported_values and normalized not in self.supported_values:
+            raise PatternDefinitionError(
+                f"{self.parameter_id} must be one of: "
+                f"{', '.join(str(item) for item in self.supported_values)}"
+            )
         return normalized
 
     def canonical(
@@ -114,6 +132,10 @@ class ParameterSpec:
             "minimum": _json_value(self.minimum),
             "maximum": _json_value(self.maximum),
         }
+        if self.supported_values:
+            result["supported_values"] = [
+                _json_value(item) for item in self.supported_values
+            ]
         if include_default:
             result["default"] = _json_value(self.default)
         if include_description:

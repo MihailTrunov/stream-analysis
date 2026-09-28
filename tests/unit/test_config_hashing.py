@@ -94,7 +94,7 @@ def test_canonical_utf8_bytes_and_digests_match_golden_fixtures() -> None:
 def test_unresolved_selections_cannot_be_hashed() -> None:
     config = DetectionAnalysisConfig(
         instrument_id="US30", calendar_id="cal",
-        components=(ComponentSelection(component_id="atr", component_version="1"),),
+        components=(ComponentSelection(component_id="custom", component_version="1"),),
     )
     with pytest.raises(ConfigurationError, match="unregistered component"):
         detection_config_hash(config)
@@ -186,13 +186,13 @@ def test_evaluation_defaults_match_explicit_values() -> None:
 
 
 def test_detection_parameter_mutation_changes_both_hashes_when_plan_is_rebound() -> None:
-    specs = {("atr", "1"): (ParameterSpec("length", ParameterType.INTEGER, 14),)}
+    specs = {("custom", "1"): (ParameterSpec("length", ParameterType.INTEGER, 14),)}
 
     def selected(length: int) -> DetectionAnalysisConfig:
         return DetectionAnalysisConfig(
             instrument_id="US30", calendar_id="cal",
             components=(ComponentSelection(
-                component_id="atr", component_version="1",
+                component_id="custom", component_version="1",
                 parameters=(ConfigParameter(name="length", value=length),),
             ),),
         )
@@ -236,22 +236,24 @@ def test_outcome_version_configuration_and_context_mutate_only_plan_hash() -> No
 
 def test_selection_and_parameter_order_do_not_change_resolved_hashes() -> None:
     specs = {
-        ("atr", "1"): (
+        ("custom", "1"): (
             ParameterSpec("period", ParameterType.INTEGER, 14),
             ParameterSpec("enabled", ParameterType.BOOLEAN, True),
         ),
     }
     ema = ComponentSelection(component_id="ema", component_version="1")
-    atr = ComponentSelection(component_id="atr", component_version="1", parameters=(
+    custom = ComponentSelection(component_id="custom", component_version="1", parameters=(
         ConfigParameter(name="period", value=14),
         ConfigParameter(name="enabled", value=True),
     ))
-    reordered_atr = atr.model_copy(update={"parameters": tuple(reversed(atr.parameters))})
+    reordered_custom = custom.model_copy(
+        update={"parameters": tuple(reversed(custom.parameters))}
+    )
     first = DetectionAnalysisConfig(
-        instrument_id="US30", calendar_id="cal", components=(ema, atr),
+        instrument_id="US30", calendar_id="cal", components=(ema, custom),
     )
     reordered = DetectionAnalysisConfig(
-        instrument_id="US30", calendar_id="cal", components=(reordered_atr, ema),
+        instrument_id="US30", calendar_id="cal", components=(reordered_custom, ema),
     )
     assert detection_config_hash(first, component_parameters=specs) == detection_config_hash(
         reordered, component_parameters=specs

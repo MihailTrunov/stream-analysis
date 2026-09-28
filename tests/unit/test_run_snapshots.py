@@ -235,7 +235,7 @@ def test_snapshot_expands_registered_component_defaults_before_persisting() -> N
     config = DetectionAnalysisConfig(
         instrument_id="US30",
         calendar_id="demo-v1",
-        components=(ComponentSelection(component_id="atr", component_version="1"),),
+        components=(ComponentSelection(component_id="custom", component_version="1"),),
     )
     with engine.begin() as connection:
         with pytest.raises(ValueError, match="unregistered component"):
@@ -255,7 +255,7 @@ def test_snapshot_expands_registered_component_defaults_before_persisting() -> N
             build_id="test-build",
             detection_config=config,
             component_parameters={
-                ("atr", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)
+                ("custom", "1"): (ParameterSpec("period", ParameterType.INTEGER, 14),)
             },
         )
         assert '"name":"period"' in record.detection_config_json
