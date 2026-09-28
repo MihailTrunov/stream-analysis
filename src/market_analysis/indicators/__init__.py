@@ -14,6 +14,16 @@ from .swing_point import (
     SwingPointState,
     SwingType,
 )
+from .swing_structure import (
+    SWING_STRUCTURE_DEFINITION_ID,
+    OverallStructure,
+    StructureBreak,
+    StructureBreakType,
+    StructureLineage,
+    SwingClassification,
+    SwingLabel,
+    SwingStructureState,
+)
 
 __all__ = [
     "AtrState", "EmaState", "IncrementalMarketState", "MarketState", "MarketStateError",
@@ -21,4 +31,6 @@ __all__ = [
     "SessionComponent",
     "SWING_POINT_DEFINITION_ID", "ConfirmationSource", "EqualExtremePolicy", "ExtremeSource",
     "SwingPoint", "SwingPointReference", "SwingPointState", "SwingType",
+    "SWING_STRUCTURE_DEFINITION_ID", "OverallStructure", "StructureBreak", "StructureBreakType",
+    "StructureLineage", "SwingClassification", "SwingLabel", "SwingStructureState",
 ]

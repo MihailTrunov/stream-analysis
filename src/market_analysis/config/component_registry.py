@@ -69,11 +69,38 @@ SWING_POINT_V1_PARAMETERS = (
     ),
 )
 
+SWING_STRUCTURE_V1_PARAMETERS = (
+    ParameterSpec(
+        "equal_level_atr_multiplier", ParameterType.DECIMAL, Decimal("0.10"),
+        minimum=Decimal(0), description="Inclusive equality tolerance in new-swing ATR units.",
+    ),
+    ParameterSpec(
+        "equality_atr_anchor", ParameterType.STRING, "NEW_SWING_ATR_AT_EXTREME",
+        supported_values=("NEW_SWING_ATR_AT_EXTREME",),
+    ),
+    ParameterSpec(
+        "break_buffer_atr_multiplier", ParameterType.DECIMAL, Decimal("0.10"),
+        minimum=Decimal(0), description="Strict close-break buffer in reference-swing ATR units.",
+    ),
+    ParameterSpec(
+        "break_atr_anchor", ParameterType.STRING, "REFERENCE_SWING_ATR_AT_EXTREME",
+        supported_values=("REFERENCE_SWING_ATR_AT_EXTREME",),
+    ),
+    ParameterSpec(
+        "break_confirmation_source", ParameterType.STRING, "CLOSE", supported_values=("CLOSE",),
+    ),
+    ParameterSpec(
+        "allow_break_on_reference_detection_bar", ParameterType.BOOLEAN, False,
+        supported_values=(False,),
+    ),
+)
+
 BUILTIN_COMPONENT_PARAMETERS: Mapping[DefinitionKey, tuple[ParameterSpec, ...]] = (
     MappingProxyType({
         ("ema", "1"): EMA_V1_PARAMETERS,
         ("atr", "1"): ATR_V1_PARAMETERS,
         ("swing_point", "1"): SWING_POINT_V1_PARAMETERS,
+        ("swing_structure", "1"): SWING_STRUCTURE_V1_PARAMETERS,
     })
 )
 

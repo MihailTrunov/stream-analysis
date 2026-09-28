@@ -225,6 +225,15 @@ class SwingPointState(IncrementalMarketState):
     def confirmed_swing_points(self) -> tuple[SwingPoint, ...]:
         return tuple(self._confirmed)
 
+    @property
+    def current_bar_swing_points(self) -> tuple[SwingPoint, ...]:
+        """New confirmations only, without copying the accumulated history."""
+        if self._confirmed and (
+            self._confirmed[-1].confirmation_bar_index == self._completed_bars - 1
+        ):
+            return (self._confirmed[-1],)
+        return ()
+
     def _reset_state(self) -> None:
         self._confirmed: list[SwingPoint] = []
         self._candidate_high: _Candidate | None = None

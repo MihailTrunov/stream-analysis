@@ -69,12 +69,24 @@ class IncrementalMarketState(ABC):
     def warmup_completed_bars(self) -> int:
         return self._warmup_completed_bars
 
+    @property
+    def reset_generation(self) -> int:
+        """Monotonic reset identity for consumers enforcing stream continuity."""
+        return self._reset_generation
+
+    @property
+    def last_completed_bar(self) -> Bar | None:
+        """The immutable current input, for exact dependency lockstep checks."""
+        return self._last_completed_bar
+
     @final
     def reset(self) -> None:
         """Return to the initial state under the same immutable run config."""
         self._reset_state()
+        self._reset_generation = getattr(self, "_reset_generation", 0) + 1
         self._completed_bars = 0
         self._last_timestamp: datetime | None = None
+        self._last_completed_bar: Bar | None = None
 
     @final
     def update(self, bar: Bar) -> None:
@@ -93,6 +105,7 @@ class IncrementalMarketState(ABC):
         self._update_completed_bar(bar)
         self._completed_bars += 1
         self._last_timestamp = bar.timestamp
+        self._last_completed_bar = bar
 
     @property
     @final
