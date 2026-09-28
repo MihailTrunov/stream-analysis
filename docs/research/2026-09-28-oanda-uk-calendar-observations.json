@@ -1,0 +1,2266 @@
+{
+  "verification_date": "2026-09-28",
+  "scope": "SCRUM-71, OANDA UK/live US30_USD and DE30_EUR calendar verification only",
+  "request": {
+    "endpoint": "https://api-fxtrade.oanda.com/v3/accounts/{redacted}/instruments/{symbol}/candles",
+    "granularity": "M1",
+    "price": "M",
+    "range": "requested_day UTC minus four hours; two-day half-open window",
+    "authentication": "Local credentials used in memory; no credentials, identifiers, account financial data or OHLC responses retained"
+  },
+  "cautions": [
+    "These are observed timestamp envelopes, not a classification of all missing minutes or proof that every minute traded.",
+    "Small within-session gaps were compacted for readable manual diagnostics; larger gaps are preserved as observations and must not automatically become calendar exceptions.",
+    "A returned timestamp identifies a completed candle interval start. end_exclusive is last returned interval start plus one minute.",
+    "The 2025-11-28 outage-like overnight gap is NOT a scheduled closure in the profile.",
+    "This is sampled manual verification, not a full three-year import, dataset checksum, or assertion of complete holiday master data."
+  ],
+  "records": [
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2023-10-02",
+      "completed_candle_count": 2620,
+      "observed_envelopes": [
+        {
+          "first_utc": "2023-10-01T22:00:00+00:00",
+          "end_exclusive_utc": "2023-10-02T21:00:00+00:00",
+          "first_local": "2023-10-01T17:00:00-05:00",
+          "end_exclusive_local": "2023-10-02T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2023-10-02T22:00:00+00:00",
+          "end_exclusive_utc": "2023-10-03T20:00:00+00:00",
+          "first_local": "2023-10-02T17:00:00-05:00",
+          "end_exclusive_local": "2023-10-03T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2024-01-08",
+      "completed_candle_count": 2639,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-01-07T23:00:00+00:00",
+          "end_exclusive_utc": "2024-01-08T22:00:00+00:00",
+          "first_local": "2024-01-07T17:00:00-06:00",
+          "end_exclusive_local": "2024-01-08T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-01-08T23:00:00+00:00",
+          "end_exclusive_utc": "2024-01-09T20:00:00+00:00",
+          "first_local": "2024-01-08T17:00:00-06:00",
+          "end_exclusive_local": "2024-01-09T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2024-03-11",
+      "completed_candle_count": 2698,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-10T22:00:00+00:00",
+          "end_exclusive_utc": "2024-03-11T21:00:00+00:00",
+          "first_local": "2024-03-10T17:00:00-05:00",
+          "end_exclusive_local": "2024-03-11T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-03-11T22:00:00+00:00",
+          "end_exclusive_utc": "2024-03-12T20:00:00+00:00",
+          "first_local": "2024-03-11T17:00:00-05:00",
+          "end_exclusive_local": "2024-03-12T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2024-03-25",
+      "completed_candle_count": 2690,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-24T22:00:00+00:00",
+          "end_exclusive_utc": "2024-03-25T21:00:00+00:00",
+          "first_local": "2024-03-24T17:00:00-05:00",
+          "end_exclusive_local": "2024-03-25T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-03-25T22:00:00+00:00",
+          "end_exclusive_utc": "2024-03-26T20:00:00+00:00",
+          "first_local": "2024-03-25T17:00:00-05:00",
+          "end_exclusive_local": "2024-03-26T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2024-04-02",
+      "completed_candle_count": 2756,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-04-01T20:00:00+00:00",
+          "end_exclusive_utc": "2024-04-01T21:00:00+00:00",
+          "first_local": "2024-04-01T15:00:00-05:00",
+          "end_exclusive_local": "2024-04-01T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-04-01T22:00:00+00:00",
+          "end_exclusive_utc": "2024-04-02T20:59:00+00:00",
+          "first_local": "2024-04-01T17:00:00-05:00",
+          "end_exclusive_local": "2024-04-02T15:59:00-05:00"
+        },
+        {
+          "first_utc": "2024-04-02T22:00:00+00:00",
+          "end_exclusive_utc": "2024-04-03T20:00:00+00:00",
+          "first_local": "2024-04-02T17:00:00-05:00",
+          "end_exclusive_local": "2024-04-03T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2024-10-28",
+      "completed_candle_count": 2697,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-10-27T22:00:00+00:00",
+          "end_exclusive_utc": "2024-10-28T21:00:00+00:00",
+          "first_local": "2024-10-27T17:00:00-05:00",
+          "end_exclusive_local": "2024-10-28T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-10-28T22:00:00+00:00",
+          "end_exclusive_utc": "2024-10-29T20:00:00+00:00",
+          "first_local": "2024-10-28T17:00:00-05:00",
+          "end_exclusive_local": "2024-10-29T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2024-11-04",
+      "completed_candle_count": 2632,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-11-03T23:00:00+00:00",
+          "end_exclusive_utc": "2024-11-04T22:00:00+00:00",
+          "first_local": "2024-11-03T17:00:00-06:00",
+          "end_exclusive_local": "2024-11-04T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-11-04T23:00:00+00:00",
+          "end_exclusive_utc": "2024-11-05T20:00:00+00:00",
+          "first_local": "2024-11-04T17:00:00-06:00",
+          "end_exclusive_local": "2024-11-05T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2025-01-06",
+      "completed_candle_count": 2634,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-01-05T23:00:00+00:00",
+          "end_exclusive_utc": "2025-01-06T22:00:00+00:00",
+          "first_local": "2025-01-05T17:00:00-06:00",
+          "end_exclusive_local": "2025-01-06T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-01-06T23:00:00+00:00",
+          "end_exclusive_utc": "2025-01-07T20:00:00+00:00",
+          "first_local": "2025-01-06T17:00:00-06:00",
+          "end_exclusive_local": "2025-01-07T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2025-03-10",
+      "completed_candle_count": 2700,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-03-09T22:00:00+00:00",
+          "end_exclusive_utc": "2025-03-10T21:00:00+00:00",
+          "first_local": "2025-03-09T17:00:00-05:00",
+          "end_exclusive_local": "2025-03-10T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-03-10T22:00:00+00:00",
+          "end_exclusive_utc": "2025-03-11T20:00:00+00:00",
+          "first_local": "2025-03-10T17:00:00-05:00",
+          "end_exclusive_local": "2025-03-11T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2025-03-31",
+      "completed_candle_count": 2699,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-03-30T22:00:00+00:00",
+          "end_exclusive_utc": "2025-03-31T20:59:00+00:00",
+          "first_local": "2025-03-30T17:00:00-05:00",
+          "end_exclusive_local": "2025-03-31T15:59:00-05:00"
+        },
+        {
+          "first_utc": "2025-03-31T22:00:00+00:00",
+          "end_exclusive_utc": "2025-04-01T20:00:00+00:00",
+          "first_local": "2025-03-31T17:00:00-05:00",
+          "end_exclusive_local": "2025-04-01T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2025-11-03",
+      "completed_candle_count": 2640,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-11-02T23:00:00+00:00",
+          "end_exclusive_utc": "2025-11-03T22:00:00+00:00",
+          "first_local": "2025-11-02T17:00:00-06:00",
+          "end_exclusive_local": "2025-11-03T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-11-03T23:00:00+00:00",
+          "end_exclusive_utc": "2025-11-04T20:00:00+00:00",
+          "first_local": "2025-11-03T17:00:00-06:00",
+          "end_exclusive_local": "2025-11-04T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2026-01-05",
+      "completed_candle_count": 2637,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-01-04T23:00:00+00:00",
+          "end_exclusive_utc": "2026-01-05T21:59:00+00:00",
+          "first_local": "2026-01-04T17:00:00-06:00",
+          "end_exclusive_local": "2026-01-05T15:59:00-06:00"
+        },
+        {
+          "first_utc": "2026-01-05T23:00:00+00:00",
+          "end_exclusive_utc": "2026-01-06T20:00:00+00:00",
+          "first_local": "2026-01-05T17:00:00-06:00",
+          "end_exclusive_local": "2026-01-06T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2026-03-09",
+      "completed_candle_count": 2700,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-03-08T22:00:00+00:00",
+          "end_exclusive_utc": "2026-03-09T21:00:00+00:00",
+          "first_local": "2026-03-08T17:00:00-05:00",
+          "end_exclusive_local": "2026-03-09T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-03-09T22:00:00+00:00",
+          "end_exclusive_utc": "2026-03-10T20:00:00+00:00",
+          "first_local": "2026-03-09T17:00:00-05:00",
+          "end_exclusive_local": "2026-03-10T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2026-03-30",
+      "completed_candle_count": 2700,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-03-29T22:00:00+00:00",
+          "end_exclusive_utc": "2026-03-30T21:00:00+00:00",
+          "first_local": "2026-03-29T17:00:00-05:00",
+          "end_exclusive_local": "2026-03-30T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-03-30T22:00:00+00:00",
+          "end_exclusive_utc": "2026-03-31T20:00:00+00:00",
+          "first_local": "2026-03-30T17:00:00-05:00",
+          "end_exclusive_local": "2026-03-31T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2026-07-06",
+      "completed_candle_count": 2699,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-07-05T22:00:00+00:00",
+          "end_exclusive_utc": "2026-07-06T21:00:00+00:00",
+          "first_local": "2026-07-05T17:00:00-05:00",
+          "end_exclusive_local": "2026-07-06T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-07-06T22:00:00+00:00",
+          "end_exclusive_utc": "2026-07-07T20:00:00+00:00",
+          "first_local": "2026-07-06T17:00:00-05:00",
+          "end_exclusive_local": "2026-07-07T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "US30_USD",
+      "requested_day": "2026-09-21",
+      "completed_candle_count": 2700,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-09-20T22:00:00+00:00",
+          "end_exclusive_utc": "2026-09-21T21:00:00+00:00",
+          "first_local": "2026-09-20T17:00:00-05:00",
+          "end_exclusive_local": "2026-09-21T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-09-21T22:00:00+00:00",
+          "end_exclusive_utc": "2026-09-22T20:00:00+00:00",
+          "first_local": "2026-09-21T17:00:00-05:00",
+          "end_exclusive_local": "2026-09-22T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2023-10-02",
+      "completed_candle_count": 2361,
+      "observed_envelopes": [
+        {
+          "first_utc": "2023-10-02T00:15:00+00:00",
+          "end_exclusive_utc": "2023-10-02T20:00:00+00:00",
+          "first_local": "2023-10-02T02:15:00+02:00",
+          "end_exclusive_local": "2023-10-02T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2023-10-03T00:15:00+00:00",
+          "end_exclusive_utc": "2023-10-03T20:00:00+00:00",
+          "first_local": "2023-10-03T02:15:00+02:00",
+          "end_exclusive_local": "2023-10-03T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-01-08",
+      "completed_candle_count": 2376,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-01-08T00:15:00+00:00",
+          "end_exclusive_utc": "2024-01-08T21:00:00+00:00",
+          "first_local": "2024-01-08T01:15:00+01:00",
+          "end_exclusive_local": "2024-01-08T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-01-09T00:15:00+00:00",
+          "end_exclusive_utc": "2024-01-09T20:00:00+00:00",
+          "first_local": "2024-01-09T01:15:00+01:00",
+          "end_exclusive_local": "2024-01-09T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-03-11",
+      "completed_candle_count": 2379,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-11T00:15:00+00:00",
+          "end_exclusive_utc": "2024-03-11T21:00:00+00:00",
+          "first_local": "2024-03-11T01:15:00+01:00",
+          "end_exclusive_local": "2024-03-11T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-03-12T00:15:00+00:00",
+          "end_exclusive_utc": "2024-03-12T20:00:00+00:00",
+          "first_local": "2024-03-12T01:15:00+01:00",
+          "end_exclusive_local": "2024-03-12T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-03-25",
+      "completed_candle_count": 2316,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-25T00:15:00+00:00",
+          "end_exclusive_utc": "2024-03-25T21:00:00+00:00",
+          "first_local": "2024-03-25T01:15:00+01:00",
+          "end_exclusive_local": "2024-03-25T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-03-26T00:15:00+00:00",
+          "end_exclusive_utc": "2024-03-26T20:00:00+00:00",
+          "first_local": "2024-03-26T01:15:00+01:00",
+          "end_exclusive_local": "2024-03-26T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-04-02",
+      "completed_candle_count": 2333,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-04-02T00:15:00+00:00",
+          "end_exclusive_utc": "2024-04-02T20:00:00+00:00",
+          "first_local": "2024-04-02T02:15:00+02:00",
+          "end_exclusive_local": "2024-04-02T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2024-04-03T00:15:00+00:00",
+          "end_exclusive_utc": "2024-04-03T20:00:00+00:00",
+          "first_local": "2024-04-03T02:15:00+02:00",
+          "end_exclusive_local": "2024-04-03T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-10-28",
+      "completed_candle_count": 2417,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-10-28T00:15:00+00:00",
+          "end_exclusive_utc": "2024-10-28T21:00:00+00:00",
+          "first_local": "2024-10-28T01:15:00+01:00",
+          "end_exclusive_local": "2024-10-28T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-10-29T00:15:00+00:00",
+          "end_exclusive_utc": "2024-10-29T20:00:00+00:00",
+          "first_local": "2024-10-29T01:15:00+01:00",
+          "end_exclusive_local": "2024-10-29T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-11-04",
+      "completed_candle_count": 2417,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-11-04T00:16:00+00:00",
+          "end_exclusive_utc": "2024-11-04T21:00:00+00:00",
+          "first_local": "2024-11-04T01:16:00+01:00",
+          "end_exclusive_local": "2024-11-04T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-11-05T00:15:00+00:00",
+          "end_exclusive_utc": "2024-11-05T20:00:00+00:00",
+          "first_local": "2024-11-05T01:15:00+01:00",
+          "end_exclusive_local": "2024-11-05T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-01-06",
+      "completed_candle_count": 2387,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-01-06T00:15:00+00:00",
+          "end_exclusive_utc": "2025-01-06T21:00:00+00:00",
+          "first_local": "2025-01-06T01:15:00+01:00",
+          "end_exclusive_local": "2025-01-06T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-01-07T00:15:00+00:00",
+          "end_exclusive_utc": "2025-01-07T20:00:00+00:00",
+          "first_local": "2025-01-07T01:15:00+01:00",
+          "end_exclusive_local": "2025-01-07T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-03-10",
+      "completed_candle_count": 2393,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-03-10T00:15:00+00:00",
+          "end_exclusive_utc": "2025-03-10T21:00:00+00:00",
+          "first_local": "2025-03-10T01:15:00+01:00",
+          "end_exclusive_local": "2025-03-10T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-03-11T00:15:00+00:00",
+          "end_exclusive_utc": "2025-03-11T20:00:00+00:00",
+          "first_local": "2025-03-11T01:15:00+01:00",
+          "end_exclusive_local": "2025-03-11T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-03-31",
+      "completed_candle_count": 2362,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-03-31T00:15:00+00:00",
+          "end_exclusive_utc": "2025-03-31T20:00:00+00:00",
+          "first_local": "2025-03-31T02:15:00+02:00",
+          "end_exclusive_local": "2025-03-31T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2025-04-01T00:15:00+00:00",
+          "end_exclusive_utc": "2025-04-01T20:00:00+00:00",
+          "first_local": "2025-04-01T02:15:00+02:00",
+          "end_exclusive_local": "2025-04-01T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-11-03",
+      "completed_candle_count": 2427,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-11-03T00:15:00+00:00",
+          "end_exclusive_utc": "2025-11-03T21:00:00+00:00",
+          "first_local": "2025-11-03T01:15:00+01:00",
+          "end_exclusive_local": "2025-11-03T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-11-04T00:15:00+00:00",
+          "end_exclusive_utc": "2025-11-04T20:00:00+00:00",
+          "first_local": "2025-11-04T01:15:00+01:00",
+          "end_exclusive_local": "2025-11-04T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-01-05",
+      "completed_candle_count": 2376,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-01-05T00:15:00+00:00",
+          "end_exclusive_utc": "2026-01-05T21:00:00+00:00",
+          "first_local": "2026-01-05T01:15:00+01:00",
+          "end_exclusive_local": "2026-01-05T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2026-01-06T00:15:00+00:00",
+          "end_exclusive_utc": "2026-01-06T20:00:00+00:00",
+          "first_local": "2026-01-06T01:15:00+01:00",
+          "end_exclusive_local": "2026-01-06T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-03-09",
+      "completed_candle_count": 2426,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-03-09T00:17:00+00:00",
+          "end_exclusive_utc": "2026-03-09T21:00:00+00:00",
+          "first_local": "2026-03-09T01:17:00+01:00",
+          "end_exclusive_local": "2026-03-09T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2026-03-10T00:15:00+00:00",
+          "end_exclusive_utc": "2026-03-10T20:00:00+00:00",
+          "first_local": "2026-03-10T01:15:00+01:00",
+          "end_exclusive_local": "2026-03-10T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-03-30",
+      "completed_candle_count": 2368,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-03-30T00:15:00+00:00",
+          "end_exclusive_utc": "2026-03-30T20:00:00+00:00",
+          "first_local": "2026-03-30T02:15:00+02:00",
+          "end_exclusive_local": "2026-03-30T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2026-03-31T00:15:00+00:00",
+          "end_exclusive_utc": "2026-03-31T20:00:00+00:00",
+          "first_local": "2026-03-31T02:15:00+02:00",
+          "end_exclusive_local": "2026-03-31T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-07-06",
+      "completed_candle_count": 2364,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-07-06T00:15:00+00:00",
+          "end_exclusive_utc": "2026-07-06T20:00:00+00:00",
+          "first_local": "2026-07-06T02:15:00+02:00",
+          "end_exclusive_local": "2026-07-06T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2026-07-07T00:15:00+00:00",
+          "end_exclusive_utc": "2026-07-07T20:00:00+00:00",
+          "first_local": "2026-07-07T02:15:00+02:00",
+          "end_exclusive_local": "2026-07-07T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "regular",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-09-21",
+      "completed_candle_count": 2370,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-09-21T00:15:00+00:00",
+          "end_exclusive_utc": "2026-09-21T20:00:00+00:00",
+          "first_local": "2026-09-21T02:15:00+02:00",
+          "end_exclusive_local": "2026-09-21T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2026-09-22T00:15:00+00:00",
+          "end_exclusive_utc": "2026-09-22T20:00:00+00:00",
+          "first_local": "2026-09-22T02:15:00+02:00",
+          "end_exclusive_local": "2026-09-22T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2023-11-23",
+      "completed_candle_count": 1949,
+      "observed_envelopes": [
+        {
+          "first_utc": "2023-11-22T20:00:00+00:00",
+          "end_exclusive_utc": "2023-11-22T22:00:00+00:00",
+          "first_local": "2023-11-22T14:00:00-06:00",
+          "end_exclusive_local": "2023-11-22T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2023-11-22T23:00:00+00:00",
+          "end_exclusive_utc": "2023-11-23T18:00:00+00:00",
+          "first_local": "2023-11-22T17:00:00-06:00",
+          "end_exclusive_local": "2023-11-23T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2023-11-23T23:00:00+00:00",
+          "end_exclusive_utc": "2023-11-24T18:15:00+00:00",
+          "first_local": "2023-11-23T17:00:00-06:00",
+          "end_exclusive_local": "2023-11-24T12:15:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2023-12-25",
+      "completed_candle_count": 946,
+      "observed_envelopes": [
+        {
+          "first_utc": "2023-12-25T23:00:00+00:00",
+          "end_exclusive_utc": "2023-12-26T04:21:00+00:00",
+          "first_local": "2023-12-25T17:00:00-06:00",
+          "end_exclusive_local": "2023-12-25T22:21:00-06:00"
+        },
+        {
+          "first_utc": "2023-12-26T04:36:00+00:00",
+          "end_exclusive_utc": "2023-12-26T20:00:00+00:00",
+          "first_local": "2023-12-25T22:36:00-06:00",
+          "end_exclusive_local": "2023-12-26T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-01-01",
+      "completed_candle_count": 1111,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-01-01T23:00:00+00:00",
+          "end_exclusive_utc": "2024-01-02T20:00:00+00:00",
+          "first_local": "2024-01-01T17:00:00-06:00",
+          "end_exclusive_local": "2024-01-02T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-01-15",
+      "completed_candle_count": 2399,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-01-14T23:00:00+00:00",
+          "end_exclusive_utc": "2024-01-15T18:00:00+00:00",
+          "first_local": "2024-01-14T17:00:00-06:00",
+          "end_exclusive_local": "2024-01-15T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-01-15T23:00:00+00:00",
+          "end_exclusive_utc": "2024-01-16T20:00:00+00:00",
+          "first_local": "2024-01-15T17:00:00-06:00",
+          "end_exclusive_local": "2024-01-16T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-02-19",
+      "completed_candle_count": 2398,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-02-18T23:00:00+00:00",
+          "end_exclusive_utc": "2024-02-19T18:00:00+00:00",
+          "first_local": "2024-02-18T17:00:00-06:00",
+          "end_exclusive_local": "2024-02-19T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-02-19T23:00:00+00:00",
+          "end_exclusive_utc": "2024-02-20T20:00:00+00:00",
+          "first_local": "2024-02-19T17:00:00-06:00",
+          "end_exclusive_local": "2024-02-20T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-03-29",
+      "completed_candle_count": 60,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-28T20:00:00+00:00",
+          "end_exclusive_utc": "2024-03-28T21:00:00+00:00",
+          "first_local": "2024-03-28T15:00:00-05:00",
+          "end_exclusive_local": "2024-03-28T16:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-04-01",
+      "completed_candle_count": 2695,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-31T22:00:00+00:00",
+          "end_exclusive_utc": "2024-04-01T21:00:00+00:00",
+          "first_local": "2024-03-31T17:00:00-05:00",
+          "end_exclusive_local": "2024-04-01T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-04-01T22:00:00+00:00",
+          "end_exclusive_utc": "2024-04-02T20:00:00+00:00",
+          "first_local": "2024-04-01T17:00:00-05:00",
+          "end_exclusive_local": "2024-04-02T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-05-01",
+      "completed_candle_count": 2757,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-04-30T20:00:00+00:00",
+          "end_exclusive_utc": "2024-04-30T21:00:00+00:00",
+          "first_local": "2024-04-30T15:00:00-05:00",
+          "end_exclusive_local": "2024-04-30T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-04-30T22:00:00+00:00",
+          "end_exclusive_utc": "2024-05-01T21:00:00+00:00",
+          "first_local": "2024-04-30T17:00:00-05:00",
+          "end_exclusive_local": "2024-05-01T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-05-01T22:00:00+00:00",
+          "end_exclusive_utc": "2024-05-02T20:00:00+00:00",
+          "first_local": "2024-05-01T17:00:00-05:00",
+          "end_exclusive_local": "2024-05-02T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-05-27",
+      "completed_candle_count": 2438,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-05-26T22:00:00+00:00",
+          "end_exclusive_utc": "2024-05-27T17:00:00+00:00",
+          "first_local": "2024-05-26T17:00:00-05:00",
+          "end_exclusive_local": "2024-05-27T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-05-27T22:00:00+00:00",
+          "end_exclusive_utc": "2024-05-28T20:00:00+00:00",
+          "first_local": "2024-05-27T17:00:00-05:00",
+          "end_exclusive_local": "2024-05-28T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-06-19",
+      "completed_candle_count": 2490,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-06-18T20:00:00+00:00",
+          "end_exclusive_utc": "2024-06-18T20:59:00+00:00",
+          "first_local": "2024-06-18T15:00:00-05:00",
+          "end_exclusive_local": "2024-06-18T15:59:00-05:00"
+        },
+        {
+          "first_utc": "2024-06-18T22:00:00+00:00",
+          "end_exclusive_utc": "2024-06-19T16:59:00+00:00",
+          "first_local": "2024-06-18T17:00:00-05:00",
+          "end_exclusive_local": "2024-06-19T11:59:00-05:00"
+        },
+        {
+          "first_utc": "2024-06-19T22:00:00+00:00",
+          "end_exclusive_utc": "2024-06-20T20:00:00+00:00",
+          "first_local": "2024-06-19T17:00:00-05:00",
+          "end_exclusive_local": "2024-06-20T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-07-03",
+      "completed_candle_count": 2324,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-07-02T20:00:00+00:00",
+          "end_exclusive_utc": "2024-07-02T21:00:00+00:00",
+          "first_local": "2024-07-02T15:00:00-05:00",
+          "end_exclusive_local": "2024-07-02T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-07-02T22:00:00+00:00",
+          "end_exclusive_utc": "2024-07-03T17:15:00+00:00",
+          "first_local": "2024-07-02T17:00:00-05:00",
+          "end_exclusive_local": "2024-07-03T12:15:00-05:00"
+        },
+        {
+          "first_utc": "2024-07-03T22:00:00+00:00",
+          "end_exclusive_utc": "2024-07-04T17:00:00+00:00",
+          "first_local": "2024-07-03T17:00:00-05:00",
+          "end_exclusive_local": "2024-07-04T12:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-09-02",
+      "completed_candle_count": 2433,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-09-01T22:00:00+00:00",
+          "end_exclusive_utc": "2024-09-02T17:00:00+00:00",
+          "first_local": "2024-09-01T17:00:00-05:00",
+          "end_exclusive_local": "2024-09-02T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2024-09-02T22:00:00+00:00",
+          "end_exclusive_utc": "2024-09-03T20:00:00+00:00",
+          "first_local": "2024-09-02T17:00:00-05:00",
+          "end_exclusive_local": "2024-09-03T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-11-28",
+      "completed_candle_count": 2385,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-11-27T20:00:00+00:00",
+          "end_exclusive_utc": "2024-11-27T22:00:00+00:00",
+          "first_local": "2024-11-27T14:00:00-06:00",
+          "end_exclusive_local": "2024-11-27T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-11-27T23:00:00+00:00",
+          "end_exclusive_utc": "2024-11-28T18:00:00+00:00",
+          "first_local": "2024-11-27T17:00:00-06:00",
+          "end_exclusive_local": "2024-11-28T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-11-28T23:00:00+00:00",
+          "end_exclusive_utc": "2024-11-29T18:15:00+00:00",
+          "first_local": "2024-11-28T17:00:00-06:00",
+          "end_exclusive_local": "2024-11-29T12:15:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-12-24",
+      "completed_candle_count": 1270,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-23T20:00:00+00:00",
+          "end_exclusive_utc": "2024-12-23T22:00:00+00:00",
+          "first_local": "2024-12-23T14:00:00-06:00",
+          "end_exclusive_local": "2024-12-23T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-12-23T23:00:00+00:00",
+          "end_exclusive_utc": "2024-12-24T18:15:00+00:00",
+          "first_local": "2024-12-23T17:00:00-06:00",
+          "end_exclusive_local": "2024-12-24T12:15:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-12-25",
+      "completed_candle_count": 1240,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-25T23:00:00+00:00",
+          "end_exclusive_utc": "2024-12-26T20:00:00+00:00",
+          "first_local": "2024-12-25T17:00:00-06:00",
+          "end_exclusive_local": "2024-12-26T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-12-26",
+      "completed_candle_count": 2616,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-25T23:00:00+00:00",
+          "end_exclusive_utc": "2024-12-26T22:00:00+00:00",
+          "first_local": "2024-12-25T17:00:00-06:00",
+          "end_exclusive_local": "2024-12-26T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-12-26T23:00:00+00:00",
+          "end_exclusive_utc": "2024-12-27T20:00:00+00:00",
+          "first_local": "2024-12-26T17:00:00-06:00",
+          "end_exclusive_local": "2024-12-27T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2024-12-31",
+      "completed_candle_count": 1500,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-30T20:00:00+00:00",
+          "end_exclusive_utc": "2024-12-30T22:00:00+00:00",
+          "first_local": "2024-12-30T14:00:00-06:00",
+          "end_exclusive_local": "2024-12-30T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2024-12-30T23:00:00+00:00",
+          "end_exclusive_utc": "2024-12-31T22:00:00+00:00",
+          "first_local": "2024-12-30T17:00:00-06:00",
+          "end_exclusive_local": "2024-12-31T16:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-01-01",
+      "completed_candle_count": 1380,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-31T20:00:00+00:00",
+          "end_exclusive_utc": "2024-12-31T22:00:00+00:00",
+          "first_local": "2024-12-31T14:00:00-06:00",
+          "end_exclusive_local": "2024-12-31T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-01-01T23:00:00+00:00",
+          "end_exclusive_utc": "2025-01-02T20:00:00+00:00",
+          "first_local": "2025-01-01T17:00:00-06:00",
+          "end_exclusive_local": "2025-01-02T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-01-20",
+      "completed_candle_count": 2394,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-01-19T23:00:00+00:00",
+          "end_exclusive_utc": "2025-01-20T18:00:00+00:00",
+          "first_local": "2025-01-19T17:00:00-06:00",
+          "end_exclusive_local": "2025-01-20T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-01-20T23:00:00+00:00",
+          "end_exclusive_utc": "2025-01-21T20:00:00+00:00",
+          "first_local": "2025-01-20T17:00:00-06:00",
+          "end_exclusive_local": "2025-01-21T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-02-17",
+      "completed_candle_count": 2340,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-02-16T23:00:00+00:00",
+          "end_exclusive_utc": "2025-02-17T17:59:00+00:00",
+          "first_local": "2025-02-16T17:00:00-06:00",
+          "end_exclusive_local": "2025-02-17T11:59:00-06:00"
+        },
+        {
+          "first_utc": "2025-02-17T23:01:00+00:00",
+          "end_exclusive_utc": "2025-02-18T20:00:00+00:00",
+          "first_local": "2025-02-17T17:01:00-06:00",
+          "end_exclusive_local": "2025-02-18T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-04-18",
+      "completed_candle_count": 59,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-04-17T20:00:00+00:00",
+          "end_exclusive_utc": "2025-04-17T20:59:00+00:00",
+          "first_local": "2025-04-17T15:00:00-05:00",
+          "end_exclusive_local": "2025-04-17T15:59:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-04-21",
+      "completed_candle_count": 2698,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-04-20T22:00:00+00:00",
+          "end_exclusive_utc": "2025-04-21T20:59:00+00:00",
+          "first_local": "2025-04-20T17:00:00-05:00",
+          "end_exclusive_local": "2025-04-21T15:59:00-05:00"
+        },
+        {
+          "first_utc": "2025-04-21T22:00:00+00:00",
+          "end_exclusive_utc": "2025-04-22T20:00:00+00:00",
+          "first_local": "2025-04-21T17:00:00-05:00",
+          "end_exclusive_local": "2025-04-22T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-05-01",
+      "completed_candle_count": 2759,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-04-30T20:00:00+00:00",
+          "end_exclusive_utc": "2025-04-30T21:00:00+00:00",
+          "first_local": "2025-04-30T15:00:00-05:00",
+          "end_exclusive_local": "2025-04-30T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-04-30T22:00:00+00:00",
+          "end_exclusive_utc": "2025-05-01T21:00:00+00:00",
+          "first_local": "2025-04-30T17:00:00-05:00",
+          "end_exclusive_local": "2025-05-01T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-05-01T22:00:00+00:00",
+          "end_exclusive_utc": "2025-05-02T20:00:00+00:00",
+          "first_local": "2025-05-01T17:00:00-05:00",
+          "end_exclusive_local": "2025-05-02T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-05-26",
+      "completed_candle_count": 2453,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-05-25T22:00:00+00:00",
+          "end_exclusive_utc": "2025-05-26T17:00:00+00:00",
+          "first_local": "2025-05-25T17:00:00-05:00",
+          "end_exclusive_local": "2025-05-26T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-05-26T22:01:00+00:00",
+          "end_exclusive_utc": "2025-05-27T20:00:00+00:00",
+          "first_local": "2025-05-26T17:01:00-05:00",
+          "end_exclusive_local": "2025-05-27T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-06-19",
+      "completed_candle_count": 2518,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-06-18T20:00:00+00:00",
+          "end_exclusive_utc": "2025-06-18T21:00:00+00:00",
+          "first_local": "2025-06-18T15:00:00-05:00",
+          "end_exclusive_local": "2025-06-18T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-06-18T22:00:00+00:00",
+          "end_exclusive_utc": "2025-06-19T17:00:00+00:00",
+          "first_local": "2025-06-18T17:00:00-05:00",
+          "end_exclusive_local": "2025-06-19T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-06-19T22:00:00+00:00",
+          "end_exclusive_utc": "2025-06-20T20:00:00+00:00",
+          "first_local": "2025-06-19T17:00:00-05:00",
+          "end_exclusive_local": "2025-06-20T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-07-03",
+      "completed_candle_count": 2350,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-07-02T20:00:00+00:00",
+          "end_exclusive_utc": "2025-07-02T21:00:00+00:00",
+          "first_local": "2025-07-02T15:00:00-05:00",
+          "end_exclusive_local": "2025-07-02T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-07-02T22:00:00+00:00",
+          "end_exclusive_utc": "2025-07-03T17:15:00+00:00",
+          "first_local": "2025-07-02T17:00:00-05:00",
+          "end_exclusive_local": "2025-07-03T12:15:00-05:00"
+        },
+        {
+          "first_utc": "2025-07-03T22:00:00+00:00",
+          "end_exclusive_utc": "2025-07-04T17:00:00+00:00",
+          "first_local": "2025-07-03T17:00:00-05:00",
+          "end_exclusive_local": "2025-07-04T12:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-09-01",
+      "completed_candle_count": 2454,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-08-31T22:00:00+00:00",
+          "end_exclusive_utc": "2025-09-01T17:00:00+00:00",
+          "first_local": "2025-08-31T17:00:00-05:00",
+          "end_exclusive_local": "2025-09-01T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2025-09-01T22:01:00+00:00",
+          "end_exclusive_utc": "2025-09-02T20:00:00+00:00",
+          "first_local": "2025-09-01T17:01:00-05:00",
+          "end_exclusive_local": "2025-09-02T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-11-27",
+      "completed_candle_count": 1742,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-11-26T20:00:00+00:00",
+          "end_exclusive_utc": "2025-11-26T22:00:00+00:00",
+          "first_local": "2025-11-26T14:00:00-06:00",
+          "end_exclusive_local": "2025-11-26T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-11-26T23:00:00+00:00",
+          "end_exclusive_utc": "2025-11-27T18:00:00+00:00",
+          "first_local": "2025-11-26T17:00:00-06:00",
+          "end_exclusive_local": "2025-11-27T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-11-27T23:00:00+00:00",
+          "end_exclusive_utc": "2025-11-28T02:59:00+00:00",
+          "first_local": "2025-11-27T17:00:00-06:00",
+          "end_exclusive_local": "2025-11-27T20:59:00-06:00"
+        },
+        {
+          "first_utc": "2025-11-28T13:31:00+00:00",
+          "end_exclusive_utc": "2025-11-28T18:15:00+00:00",
+          "first_local": "2025-11-28T07:31:00-06:00",
+          "end_exclusive_local": "2025-11-28T12:15:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-12-24",
+      "completed_candle_count": 1231,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-12-23T20:00:00+00:00",
+          "end_exclusive_utc": "2025-12-23T22:00:00+00:00",
+          "first_local": "2025-12-23T14:00:00-06:00",
+          "end_exclusive_local": "2025-12-23T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-12-23T23:00:00+00:00",
+          "end_exclusive_utc": "2025-12-24T18:15:00+00:00",
+          "first_local": "2025-12-23T17:00:00-06:00",
+          "end_exclusive_local": "2025-12-24T12:15:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-12-25",
+      "completed_candle_count": 1250,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-12-25T23:00:00+00:00",
+          "end_exclusive_utc": "2025-12-26T20:00:00+00:00",
+          "first_local": "2025-12-25T17:00:00-06:00",
+          "end_exclusive_local": "2025-12-26T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2025-12-31",
+      "completed_candle_count": 1497,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-12-30T20:00:00+00:00",
+          "end_exclusive_utc": "2025-12-30T22:00:00+00:00",
+          "first_local": "2025-12-30T14:00:00-06:00",
+          "end_exclusive_local": "2025-12-30T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2025-12-30T23:00:00+00:00",
+          "end_exclusive_utc": "2025-12-31T22:00:00+00:00",
+          "first_local": "2025-12-30T17:00:00-06:00",
+          "end_exclusive_local": "2025-12-31T16:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-01-01",
+      "completed_candle_count": 1374,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-12-31T20:00:00+00:00",
+          "end_exclusive_utc": "2025-12-31T22:00:00+00:00",
+          "first_local": "2025-12-31T14:00:00-06:00",
+          "end_exclusive_local": "2025-12-31T16:00:00-06:00"
+        },
+        {
+          "first_utc": "2026-01-01T23:00:00+00:00",
+          "end_exclusive_utc": "2026-01-02T20:00:00+00:00",
+          "first_local": "2026-01-01T17:00:00-06:00",
+          "end_exclusive_local": "2026-01-02T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-01-19",
+      "completed_candle_count": 2400,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-01-18T23:00:00+00:00",
+          "end_exclusive_utc": "2026-01-19T18:00:00+00:00",
+          "first_local": "2026-01-18T17:00:00-06:00",
+          "end_exclusive_local": "2026-01-19T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2026-01-19T23:00:00+00:00",
+          "end_exclusive_utc": "2026-01-20T20:00:00+00:00",
+          "first_local": "2026-01-19T17:00:00-06:00",
+          "end_exclusive_local": "2026-01-20T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-02-16",
+      "completed_candle_count": 2400,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-02-15T23:00:00+00:00",
+          "end_exclusive_utc": "2026-02-16T18:00:00+00:00",
+          "first_local": "2026-02-15T17:00:00-06:00",
+          "end_exclusive_local": "2026-02-16T12:00:00-06:00"
+        },
+        {
+          "first_utc": "2026-02-16T23:00:00+00:00",
+          "end_exclusive_utc": "2026-02-17T20:00:00+00:00",
+          "first_local": "2026-02-16T17:00:00-06:00",
+          "end_exclusive_local": "2026-02-17T14:00:00-06:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-04-02",
+      "completed_candle_count": 2353,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-01T20:00:00+00:00",
+          "end_exclusive_utc": "2026-04-01T21:00:00+00:00",
+          "first_local": "2026-04-01T15:00:00-05:00",
+          "end_exclusive_local": "2026-04-01T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-01T22:00:00+00:00",
+          "end_exclusive_utc": "2026-04-02T21:00:00+00:00",
+          "first_local": "2026-04-01T17:00:00-05:00",
+          "end_exclusive_local": "2026-04-02T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-02T22:00:00+00:00",
+          "end_exclusive_utc": "2026-04-03T13:15:00+00:00",
+          "first_local": "2026-04-02T17:00:00-05:00",
+          "end_exclusive_local": "2026-04-03T08:15:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-04-03",
+      "completed_candle_count": 975,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-02T20:00:00+00:00",
+          "end_exclusive_utc": "2026-04-02T21:00:00+00:00",
+          "first_local": "2026-04-02T15:00:00-05:00",
+          "end_exclusive_local": "2026-04-02T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-02T22:00:00+00:00",
+          "end_exclusive_utc": "2026-04-03T13:15:00+00:00",
+          "first_local": "2026-04-02T17:00:00-05:00",
+          "end_exclusive_local": "2026-04-03T08:15:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-04-06",
+      "completed_candle_count": 2700,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-05T22:00:00+00:00",
+          "end_exclusive_utc": "2026-04-06T21:00:00+00:00",
+          "first_local": "2026-04-05T17:00:00-05:00",
+          "end_exclusive_local": "2026-04-06T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-06T22:00:00+00:00",
+          "end_exclusive_utc": "2026-04-07T20:00:00+00:00",
+          "first_local": "2026-04-06T17:00:00-05:00",
+          "end_exclusive_local": "2026-04-07T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-04-30",
+      "completed_candle_count": 2760,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-29T20:00:00+00:00",
+          "end_exclusive_utc": "2026-04-29T21:00:00+00:00",
+          "first_local": "2026-04-29T15:00:00-05:00",
+          "end_exclusive_local": "2026-04-29T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-29T22:00:00+00:00",
+          "end_exclusive_utc": "2026-04-30T21:00:00+00:00",
+          "first_local": "2026-04-29T17:00:00-05:00",
+          "end_exclusive_local": "2026-04-30T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-30T22:00:00+00:00",
+          "end_exclusive_utc": "2026-05-01T20:00:00+00:00",
+          "first_local": "2026-04-30T17:00:00-05:00",
+          "end_exclusive_local": "2026-05-01T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-05-01",
+      "completed_candle_count": 1440,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-30T20:00:00+00:00",
+          "end_exclusive_utc": "2026-04-30T21:00:00+00:00",
+          "first_local": "2026-04-30T15:00:00-05:00",
+          "end_exclusive_local": "2026-04-30T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-04-30T22:00:00+00:00",
+          "end_exclusive_utc": "2026-05-01T21:00:00+00:00",
+          "first_local": "2026-04-30T17:00:00-05:00",
+          "end_exclusive_local": "2026-05-01T16:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-05-25",
+      "completed_candle_count": 2460,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-05-24T22:00:00+00:00",
+          "end_exclusive_utc": "2026-05-25T17:00:00+00:00",
+          "first_local": "2026-05-24T17:00:00-05:00",
+          "end_exclusive_local": "2026-05-25T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-05-25T22:00:00+00:00",
+          "end_exclusive_utc": "2026-05-26T20:00:00+00:00",
+          "first_local": "2026-05-25T17:00:00-05:00",
+          "end_exclusive_local": "2026-05-26T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-06-19",
+      "completed_candle_count": 1200,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-06-18T20:00:00+00:00",
+          "end_exclusive_utc": "2026-06-18T21:00:00+00:00",
+          "first_local": "2026-06-18T15:00:00-05:00",
+          "end_exclusive_local": "2026-06-18T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-06-18T22:00:00+00:00",
+          "end_exclusive_utc": "2026-06-19T17:00:00+00:00",
+          "first_local": "2026-06-18T17:00:00-05:00",
+          "end_exclusive_local": "2026-06-19T12:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-07-03",
+      "completed_candle_count": 1200,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-07-02T20:00:00+00:00",
+          "end_exclusive_utc": "2026-07-02T21:00:00+00:00",
+          "first_local": "2026-07-02T15:00:00-05:00",
+          "end_exclusive_local": "2026-07-02T16:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-07-02T22:00:00+00:00",
+          "end_exclusive_utc": "2026-07-03T17:00:00+00:00",
+          "first_local": "2026-07-02T17:00:00-05:00",
+          "end_exclusive_local": "2026-07-03T12:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "US30_USD",
+      "requested_day": "2026-09-07",
+      "completed_candle_count": 2452,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-09-06T22:00:00+00:00",
+          "end_exclusive_utc": "2026-09-07T17:00:00+00:00",
+          "first_local": "2026-09-06T17:00:00-05:00",
+          "end_exclusive_local": "2026-09-07T12:00:00-05:00"
+        },
+        {
+          "first_utc": "2026-09-07T22:00:00+00:00",
+          "end_exclusive_utc": "2026-09-08T20:00:00+00:00",
+          "first_local": "2026-09-07T17:00:00-05:00",
+          "end_exclusive_local": "2026-09-08T15:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2023-11-23",
+      "completed_candle_count": 2261,
+      "observed_envelopes": [
+        {
+          "first_utc": "2023-11-22T20:00:00+00:00",
+          "end_exclusive_utc": "2023-11-22T21:00:00+00:00",
+          "first_local": "2023-11-22T21:00:00+01:00",
+          "end_exclusive_local": "2023-11-22T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2023-11-23T00:15:00+00:00",
+          "end_exclusive_utc": "2023-11-23T21:00:00+00:00",
+          "first_local": "2023-11-23T01:15:00+01:00",
+          "end_exclusive_local": "2023-11-23T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2023-11-24T00:15:00+00:00",
+          "end_exclusive_utc": "2023-11-24T20:00:00+00:00",
+          "first_local": "2023-11-24T01:15:00+01:00",
+          "end_exclusive_local": "2023-11-24T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2023-12-25",
+      "completed_candle_count": 0,
+      "observed_envelopes": []
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-01-01",
+      "completed_candle_count": 1107,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-01-02T00:15:00+00:00",
+          "end_exclusive_utc": "2024-01-02T20:00:00+00:00",
+          "first_local": "2024-01-02T01:15:00+01:00",
+          "end_exclusive_local": "2024-01-02T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-01-15",
+      "completed_candle_count": 2344,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-01-15T00:15:00+00:00",
+          "end_exclusive_utc": "2024-01-15T21:00:00+00:00",
+          "first_local": "2024-01-15T01:15:00+01:00",
+          "end_exclusive_local": "2024-01-15T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-01-16T00:15:00+00:00",
+          "end_exclusive_utc": "2024-01-16T20:00:00+00:00",
+          "first_local": "2024-01-16T01:15:00+01:00",
+          "end_exclusive_local": "2024-01-16T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-02-19",
+      "completed_candle_count": 2221,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-02-19T00:15:00+00:00",
+          "end_exclusive_utc": "2024-02-19T21:00:00+00:00",
+          "first_local": "2024-02-19T01:15:00+01:00",
+          "end_exclusive_local": "2024-02-19T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-02-20T00:15:00+00:00",
+          "end_exclusive_utc": "2024-02-20T20:00:00+00:00",
+          "first_local": "2024-02-20T01:15:00+01:00",
+          "end_exclusive_local": "2024-02-20T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-03-29",
+      "completed_candle_count": 59,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-03-28T20:00:00+00:00",
+          "end_exclusive_utc": "2024-03-28T21:00:00+00:00",
+          "first_local": "2024-03-28T21:00:00+01:00",
+          "end_exclusive_local": "2024-03-28T22:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-04-01",
+      "completed_candle_count": 1151,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-04-02T00:15:00+00:00",
+          "end_exclusive_utc": "2024-04-02T20:00:00+00:00",
+          "first_local": "2024-04-02T02:15:00+02:00",
+          "end_exclusive_local": "2024-04-02T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-05-01",
+      "completed_candle_count": 1157,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-05-02T00:15:00+00:00",
+          "end_exclusive_utc": "2024-05-02T20:00:00+00:00",
+          "first_local": "2024-05-02T02:15:00+02:00",
+          "end_exclusive_local": "2024-05-02T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-05-27",
+      "completed_candle_count": 2156,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-05-27T00:15:00+00:00",
+          "end_exclusive_utc": "2024-05-27T19:59:00+00:00",
+          "first_local": "2024-05-27T02:15:00+02:00",
+          "end_exclusive_local": "2024-05-27T21:59:00+02:00"
+        },
+        {
+          "first_utc": "2024-05-28T00:15:00+00:00",
+          "end_exclusive_utc": "2024-05-28T20:00:00+00:00",
+          "first_local": "2024-05-28T02:15:00+02:00",
+          "end_exclusive_local": "2024-05-28T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-06-19",
+      "completed_candle_count": 2116,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-06-19T00:15:00+00:00",
+          "end_exclusive_utc": "2024-06-19T20:00:00+00:00",
+          "first_local": "2024-06-19T02:15:00+02:00",
+          "end_exclusive_local": "2024-06-19T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2024-06-20T00:16:00+00:00",
+          "end_exclusive_utc": "2024-06-20T20:00:00+00:00",
+          "first_local": "2024-06-20T02:16:00+02:00",
+          "end_exclusive_local": "2024-06-20T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-07-03",
+      "completed_candle_count": 2146,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-07-03T00:15:00+00:00",
+          "end_exclusive_utc": "2024-07-03T20:00:00+00:00",
+          "first_local": "2024-07-03T02:15:00+02:00",
+          "end_exclusive_local": "2024-07-03T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2024-07-04T00:15:00+00:00",
+          "end_exclusive_utc": "2024-07-04T20:00:00+00:00",
+          "first_local": "2024-07-04T02:15:00+02:00",
+          "end_exclusive_local": "2024-07-04T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-09-02",
+      "completed_candle_count": 2266,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-09-02T00:15:00+00:00",
+          "end_exclusive_utc": "2024-09-02T19:59:00+00:00",
+          "first_local": "2024-09-02T02:15:00+02:00",
+          "end_exclusive_local": "2024-09-02T21:59:00+02:00"
+        },
+        {
+          "first_utc": "2024-09-03T00:15:00+00:00",
+          "end_exclusive_utc": "2024-09-03T20:00:00+00:00",
+          "first_local": "2024-09-03T02:15:00+02:00",
+          "end_exclusive_local": "2024-09-03T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-11-28",
+      "completed_candle_count": 2397,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-11-27T20:00:00+00:00",
+          "end_exclusive_utc": "2024-11-27T21:00:00+00:00",
+          "first_local": "2024-11-27T21:00:00+01:00",
+          "end_exclusive_local": "2024-11-27T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2024-11-28T00:15:00+00:00",
+          "end_exclusive_utc": "2024-11-28T20:59:00+00:00",
+          "first_local": "2024-11-28T01:15:00+01:00",
+          "end_exclusive_local": "2024-11-28T21:59:00+01:00"
+        },
+        {
+          "first_utc": "2024-11-29T00:15:00+00:00",
+          "end_exclusive_utc": "2024-11-29T20:00:00+00:00",
+          "first_local": "2024-11-29T01:15:00+01:00",
+          "end_exclusive_local": "2024-11-29T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-12-24",
+      "completed_candle_count": 60,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-23T20:00:00+00:00",
+          "end_exclusive_utc": "2024-12-23T21:00:00+00:00",
+          "first_local": "2024-12-23T21:00:00+01:00",
+          "end_exclusive_local": "2024-12-23T22:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-12-25",
+      "completed_candle_count": 0,
+      "observed_envelopes": []
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-12-26",
+      "completed_candle_count": 1162,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-27T00:15:00+00:00",
+          "end_exclusive_utc": "2024-12-27T20:00:00+00:00",
+          "first_local": "2024-12-27T01:15:00+01:00",
+          "end_exclusive_local": "2024-12-27T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2024-12-31",
+      "completed_candle_count": 60,
+      "observed_envelopes": [
+        {
+          "first_utc": "2024-12-30T20:00:00+00:00",
+          "end_exclusive_utc": "2024-12-30T21:00:00+00:00",
+          "first_local": "2024-12-30T21:00:00+01:00",
+          "end_exclusive_local": "2024-12-30T22:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-01-01",
+      "completed_candle_count": 1176,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-01-02T00:15:00+00:00",
+          "end_exclusive_utc": "2025-01-02T20:00:00+00:00",
+          "first_local": "2025-01-02T01:15:00+01:00",
+          "end_exclusive_local": "2025-01-02T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-01-20",
+      "completed_candle_count": 2364,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-01-20T00:15:00+00:00",
+          "end_exclusive_utc": "2025-01-20T21:00:00+00:00",
+          "first_local": "2025-01-20T01:15:00+01:00",
+          "end_exclusive_local": "2025-01-20T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-01-21T00:15:00+00:00",
+          "end_exclusive_utc": "2025-01-21T20:00:00+00:00",
+          "first_local": "2025-01-21T01:15:00+01:00",
+          "end_exclusive_local": "2025-01-21T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-02-17",
+      "completed_candle_count": 2361,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-02-17T00:15:00+00:00",
+          "end_exclusive_utc": "2025-02-17T21:00:00+00:00",
+          "first_local": "2025-02-17T01:15:00+01:00",
+          "end_exclusive_local": "2025-02-17T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-02-18T00:15:00+00:00",
+          "end_exclusive_utc": "2025-02-18T20:00:00+00:00",
+          "first_local": "2025-02-18T01:15:00+01:00",
+          "end_exclusive_local": "2025-02-18T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-04-18",
+      "completed_candle_count": 0,
+      "observed_envelopes": []
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-04-21",
+      "completed_candle_count": 1172,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-04-22T00:15:00+00:00",
+          "end_exclusive_utc": "2025-04-22T20:00:00+00:00",
+          "first_local": "2025-04-22T02:15:00+02:00",
+          "end_exclusive_local": "2025-04-22T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-05-01",
+      "completed_candle_count": 1183,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-05-02T00:15:00+00:00",
+          "end_exclusive_utc": "2025-05-02T20:00:00+00:00",
+          "first_local": "2025-05-02T02:15:00+02:00",
+          "end_exclusive_local": "2025-05-02T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-05-26",
+      "completed_candle_count": 2316,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-05-26T00:15:00+00:00",
+          "end_exclusive_utc": "2025-05-26T20:00:00+00:00",
+          "first_local": "2025-05-26T02:15:00+02:00",
+          "end_exclusive_local": "2025-05-26T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2025-05-27T00:15:00+00:00",
+          "end_exclusive_utc": "2025-05-27T20:00:00+00:00",
+          "first_local": "2025-05-27T02:15:00+02:00",
+          "end_exclusive_local": "2025-05-27T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-06-19",
+      "completed_candle_count": 2306,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-06-19T00:15:00+00:00",
+          "end_exclusive_utc": "2025-06-19T20:00:00+00:00",
+          "first_local": "2025-06-19T02:15:00+02:00",
+          "end_exclusive_local": "2025-06-19T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2025-06-20T00:15:00+00:00",
+          "end_exclusive_utc": "2025-06-20T20:00:00+00:00",
+          "first_local": "2025-06-20T02:15:00+02:00",
+          "end_exclusive_local": "2025-06-20T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-07-03",
+      "completed_candle_count": 2299,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-07-03T00:15:00+00:00",
+          "end_exclusive_utc": "2025-07-03T20:00:00+00:00",
+          "first_local": "2025-07-03T02:15:00+02:00",
+          "end_exclusive_local": "2025-07-03T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2025-07-04T00:15:00+00:00",
+          "end_exclusive_utc": "2025-07-04T20:00:00+00:00",
+          "first_local": "2025-07-04T02:15:00+02:00",
+          "end_exclusive_local": "2025-07-04T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-09-01",
+      "completed_candle_count": 2274,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-09-01T00:16:00+00:00",
+          "end_exclusive_utc": "2025-09-01T20:00:00+00:00",
+          "first_local": "2025-09-01T02:16:00+02:00",
+          "end_exclusive_local": "2025-09-01T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2025-09-02T00:15:00+00:00",
+          "end_exclusive_utc": "2025-09-02T20:00:00+00:00",
+          "first_local": "2025-09-02T02:15:00+02:00",
+          "end_exclusive_local": "2025-09-02T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-11-27",
+      "completed_candle_count": 2176,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-11-26T20:00:00+00:00",
+          "end_exclusive_utc": "2025-11-26T21:00:00+00:00",
+          "first_local": "2025-11-26T21:00:00+01:00",
+          "end_exclusive_local": "2025-11-26T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-11-27T00:16:00+00:00",
+          "end_exclusive_utc": "2025-11-27T21:00:00+00:00",
+          "first_local": "2025-11-27T01:16:00+01:00",
+          "end_exclusive_local": "2025-11-27T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2025-11-28T00:16:00+00:00",
+          "end_exclusive_utc": "2025-11-28T03:34:00+00:00",
+          "first_local": "2025-11-28T01:16:00+01:00",
+          "end_exclusive_local": "2025-11-28T04:34:00+01:00"
+        },
+        {
+          "first_utc": "2025-11-28T03:51:00+00:00",
+          "end_exclusive_utc": "2025-11-28T20:00:00+00:00",
+          "first_local": "2025-11-28T04:51:00+01:00",
+          "end_exclusive_local": "2025-11-28T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-12-24",
+      "completed_candle_count": 60,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-12-23T20:00:00+00:00",
+          "end_exclusive_utc": "2025-12-23T21:00:00+00:00",
+          "first_local": "2025-12-23T21:00:00+01:00",
+          "end_exclusive_local": "2025-12-23T22:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-12-25",
+      "completed_candle_count": 0,
+      "observed_envelopes": []
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2025-12-31",
+      "completed_candle_count": 60,
+      "observed_envelopes": [
+        {
+          "first_utc": "2025-12-30T20:00:00+00:00",
+          "end_exclusive_utc": "2025-12-30T21:00:00+00:00",
+          "first_local": "2025-12-30T21:00:00+01:00",
+          "end_exclusive_local": "2025-12-30T22:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-01-01",
+      "completed_candle_count": 1179,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-01-02T00:16:00+00:00",
+          "end_exclusive_utc": "2026-01-02T20:00:00+00:00",
+          "first_local": "2026-01-02T01:16:00+01:00",
+          "end_exclusive_local": "2026-01-02T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-01-19",
+      "completed_candle_count": 2360,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-01-19T00:15:00+00:00",
+          "end_exclusive_utc": "2026-01-19T21:00:00+00:00",
+          "first_local": "2026-01-19T01:15:00+01:00",
+          "end_exclusive_local": "2026-01-19T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2026-01-20T00:16:00+00:00",
+          "end_exclusive_utc": "2026-01-20T20:00:00+00:00",
+          "first_local": "2026-01-20T01:16:00+01:00",
+          "end_exclusive_local": "2026-01-20T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-02-16",
+      "completed_candle_count": 2324,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-02-16T00:16:00+00:00",
+          "end_exclusive_utc": "2026-02-16T21:00:00+00:00",
+          "first_local": "2026-02-16T01:16:00+01:00",
+          "end_exclusive_local": "2026-02-16T22:00:00+01:00"
+        },
+        {
+          "first_utc": "2026-02-17T00:15:00+00:00",
+          "end_exclusive_utc": "2026-02-17T20:00:00+00:00",
+          "first_local": "2026-02-17T01:15:00+01:00",
+          "end_exclusive_local": "2026-02-17T21:00:00+01:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-04-02",
+      "completed_candle_count": 1183,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-02T00:15:00+00:00",
+          "end_exclusive_utc": "2026-04-02T20:00:00+00:00",
+          "first_local": "2026-04-02T02:15:00+02:00",
+          "end_exclusive_local": "2026-04-02T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-04-03",
+      "completed_candle_count": 0,
+      "observed_envelopes": []
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-04-06",
+      "completed_candle_count": 1185,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-07T00:15:00+00:00",
+          "end_exclusive_utc": "2026-04-07T20:00:00+00:00",
+          "first_local": "2026-04-07T02:15:00+02:00",
+          "end_exclusive_local": "2026-04-07T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-04-30",
+      "completed_candle_count": 1184,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-04-30T00:16:00+00:00",
+          "end_exclusive_utc": "2026-04-30T20:00:00+00:00",
+          "first_local": "2026-04-30T02:16:00+02:00",
+          "end_exclusive_local": "2026-04-30T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-05-01",
+      "completed_candle_count": 0,
+      "observed_envelopes": []
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-05-25",
+      "completed_candle_count": 2341,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-05-25T00:15:00+00:00",
+          "end_exclusive_utc": "2026-05-25T20:00:00+00:00",
+          "first_local": "2026-05-25T02:15:00+02:00",
+          "end_exclusive_local": "2026-05-25T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2026-05-26T00:15:00+00:00",
+          "end_exclusive_utc": "2026-05-26T20:00:00+00:00",
+          "first_local": "2026-05-26T02:15:00+02:00",
+          "end_exclusive_local": "2026-05-26T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-06-19",
+      "completed_candle_count": 1169,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-06-19T00:15:00+00:00",
+          "end_exclusive_utc": "2026-06-19T20:00:00+00:00",
+          "first_local": "2026-06-19T02:15:00+02:00",
+          "end_exclusive_local": "2026-06-19T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-07-03",
+      "completed_candle_count": 1162,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-07-03T00:15:00+00:00",
+          "end_exclusive_utc": "2026-07-03T20:00:00+00:00",
+          "first_local": "2026-07-03T02:15:00+02:00",
+          "end_exclusive_local": "2026-07-03T22:00:00+02:00"
+        }
+      ]
+    },
+    {
+      "kind": "holiday",
+      "symbol": "DE30_EUR",
+      "requested_day": "2026-09-07",
+      "completed_candle_count": 2294,
+      "observed_envelopes": [
+        {
+          "first_utc": "2026-09-07T00:16:00+00:00",
+          "end_exclusive_utc": "2026-09-07T20:00:00+00:00",
+          "first_local": "2026-09-07T02:16:00+02:00",
+          "end_exclusive_local": "2026-09-07T22:00:00+02:00"
+        },
+        {
+          "first_utc": "2026-09-08T00:16:00+00:00",
+          "end_exclusive_utc": "2026-09-08T20:00:00+00:00",
+          "first_local": "2026-09-08T02:16:00+02:00",
+          "end_exclusive_local": "2026-09-08T22:00:00+02:00"
+        }
+      ]
+    }
+  ]
+}

@@ -4,12 +4,16 @@ Window bounds are local wall times relative to the analytical trading date.
 The start is inclusive and end exclusive. A time before the trading-day
 boundary belongs to the following civil date. Durations use UTC instants, so
 an IANA daylight-saving change does not fabricate or remove elapsed minutes.
+Weekdays and inclusive coverage dates refer to that analytical start date,
+not the civil date of a timestamp after midnight in an overnight session.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
+from types import MappingProxyType
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -79,12 +83,19 @@ class TradingCalendar:
     breaks: tuple[SessionWindow, ...] = ()
     holidays: frozenset[date] = frozenset()
     exceptions: tuple[CalendarException, ...] = ()
+    trading_weekdays: frozenset[int] = frozenset(range(7))
+    coverage_start: date | None = None
+    coverage_end: date | None = None
+    _exception_index: Mapping[date, CalendarException] = field(
+        init=False, repr=False, compare=False, hash=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "windows", tuple(self.windows))
         object.__setattr__(self, "breaks", tuple(self.breaks))
         object.__setattr__(self, "holidays", frozenset(self.holidays))
         object.__setattr__(self, "exceptions", tuple(self.exceptions))
+        object.__setattr__(self, "trading_weekdays", frozenset(self.trading_weekdays))
         for name in ("calendar_id", "version", "provider", "account", "instrument_id"):
             if not getattr(self, name).strip():
                 raise SessionCalendarError(f"{name} must be nonempty")
@@ -107,6 +118,20 @@ class TradingCalendar:
         dates = [item.trading_date for item in self.exceptions]
         if len(set(dates)) != len(dates):
             raise SessionCalendarError("exception trading dates must be unique")
+        object.__setattr__(self, "_exception_index", MappingProxyType({
+            item.trading_date: item for item in self.exceptions
+        }))
+        if any(
+            type(day) is not int or not 0 <= day <= 6 for day in self.trading_weekdays
+        ):
+            raise SessionCalendarError("trading weekdays must be integers from 0 (Monday) to 6")
+        if (self.coverage_start is None) != (self.coverage_end is None):
+            raise SessionCalendarError("calendar coverage requires both start and end dates")
+        if self.coverage_start is not None and self.coverage_end is not None:
+            if type(self.coverage_start) is not date or type(self.coverage_end) is not date:
+                raise SessionCalendarError("calendar coverage bounds must be analytical dates")
+            if self.coverage_end < self.coverage_start:
+                raise SessionCalendarError("calendar coverage end must not precede start")
 
     def _instant(self, trading_date: date, wall_time: time) -> datetime:
         civil_date = (
@@ -128,7 +153,6 @@ class TradingCalendar:
             end_date = (
                 trading_date + timedelta(days=1)
                 if window.end == self.trading_day_boundary
-                and window.start < self.trading_day_boundary
                 else trading_date
             )
             end = self._instant(end_date, window.end)
@@ -153,9 +177,10 @@ class TradingCalendar:
             local.date() if local.timetz().replace(tzinfo=None) >= self.trading_day_boundary
             else local.date() - timedelta(days=1)
         )
-        exception = next(
-            (item for item in self.exceptions if item.trading_date == trading_date), None
-        )
+        if self.coverage_start is not None and self.coverage_end is not None:
+            if not self.coverage_start <= trading_date <= self.coverage_end:
+                raise SessionCalendarError("trading date is outside verified calendar coverage")
+        exception = self._exception_index.get(trading_date)
         holiday = trading_date in self.holidays
         if exception is not None and exception.closed:
             holiday = True
@@ -165,8 +190,11 @@ class TradingCalendar:
             self.windows if exception is None or exception.windows is None else exception.windows
         )
         breaks = self.breaks if exception is None or exception.breaks is None else exception.breaks
-        matched = None if holiday else self._match(timestamp, trading_date, windows)
-        break_match = None if holiday else self._match(timestamp, trading_date, breaks)
+        closed = holiday or (
+            trading_date.weekday() not in self.trading_weekdays and exception is None
+        )
+        matched = None if closed else self._match(timestamp, trading_date, windows)
+        break_match = None if closed else self._match(timestamp, trading_date, breaks)
         return SessionState(
             timestamp=timestamp, local_timestamp=local, trading_date=trading_date,
             session_name=None if matched is None or break_match is not None else matched[0].name,

@@ -123,3 +123,120 @@ def test_invalid_calendar_and_nonexistent_dst_window_are_rejected() -> None:
     transition = calendar(windows=(SessionWindow("transition", time(1, 30), time(3)),))
     with pytest.raises(SessionCalendarError, match="nonexistent"):
         transition.derive(datetime(2026, 3, 29, 2, tzinfo=UTC))
+
+
+def test_weekdays_use_overnight_session_start_date_and_exact_boundaries() -> None:
+    configured = calendar(
+        timezone_name="America/New_York",
+        trading_day_boundary=time(18),
+        windows=(SessionWindow("provider", time(18), time(17)),),
+        trading_weekdays=frozenset({0, 1, 2, 3, 6}),
+    )
+    # Sunday evening and Monday morning belong to the Sunday-started session.
+    before = configured.derive(datetime(2026, 1, 4, 22, 59, tzinfo=UTC))
+    opened = configured.derive(datetime(2026, 1, 4, 23, tzinfo=UTC))
+    morning = configured.derive(datetime(2026, 1, 5, 13, tzinfo=UTC))
+    end = configured.derive(datetime(2026, 1, 5, 22, tzinfo=UTC))
+    assert not before.is_open and not before.is_holiday
+    assert opened.is_open and opened.elapsed == timedelta(0)
+    assert opened.trading_date == morning.trading_date == date(2026, 1, 4)
+    assert morning.is_open and morning.elapsed == timedelta(hours=14)
+    assert not end.is_open
+    friday = configured.derive(datetime(2026, 1, 9, 13, tzinfo=UTC))
+    weekend = configured.derive(datetime(2026, 1, 9, 23, tzinfo=UTC))
+    assert friday.is_open and friday.trading_date == date(2026, 1, 8)
+    assert not weekend.is_open and not weekend.is_holiday and not weekend.is_break
+
+
+def test_exception_can_reopen_weekend_but_closed_exception_stays_closed() -> None:
+    saturday, sunday = date(2026, 1, 3), date(2026, 1, 4)
+    configured = calendar(
+        trading_weekdays=frozenset(range(5)),
+        breaks=(SessionWindow("pause", time(9), time(9, 15)),),
+        exceptions=(
+            CalendarException(saturday, windows=(SessionWindow("special", time(8), time(10)),)),
+            CalendarException(sunday, closed=True),
+        ),
+    )
+    opening = configured.derive(datetime(2026, 1, 3, 8, tzinfo=UTC))
+    pause = configured.derive(datetime(2026, 1, 3, 9, tzinfo=UTC))
+    closed = configured.derive(datetime(2026, 1, 4, 8, tzinfo=UTC))
+    assert opening.is_open and opening.session_name == "special"
+    assert pause.is_break and not pause.is_open
+    assert closed.is_holiday and not closed.is_open
+    assert not configured.derive(datetime(2026, 1, 3, 10, tzinfo=UTC)).is_open
+
+
+def test_coverage_is_inclusive_and_uses_analytical_start_date() -> None:
+    configured = calendar(
+        trading_day_boundary=time(18),
+        windows=(SessionWindow("provider", time(18), time(17)),),
+        coverage_start=date(2026, 1, 5),
+        coverage_end=date(2026, 1, 6),
+    )
+    first = configured.derive(datetime(2026, 1, 5, 18, tzinfo=UTC))
+    last = configured.derive(datetime(2026, 1, 7, 16, 59, tzinfo=UTC))
+    assert first.is_open and first.trading_date == date(2026, 1, 5)
+    assert last.is_open and last.trading_date == date(2026, 1, 6)
+    for timestamp in (
+        datetime(2026, 1, 5, 17, 59, tzinfo=UTC),
+        datetime(2026, 1, 7, 18, tzinfo=UTC),
+    ):
+        with pytest.raises(SessionCalendarError, match="outside verified calendar coverage"):
+            configured.derive(timestamp)
+
+
+@pytest.mark.parametrize("weekdays", [{-1}, {7}, {True}, {"0"}, {1.5}])
+def test_invalid_weekdays_are_rejected(weekdays: set[object]) -> None:
+    with pytest.raises(SessionCalendarError, match="weekdays"):
+        calendar(trading_weekdays=weekdays)
+
+
+@pytest.mark.parametrize("bounds", [
+    {"coverage_start": date(2026, 1, 5)},
+    {"coverage_end": date(2026, 1, 5)},
+    {"coverage_start": date(2026, 1, 6), "coverage_end": date(2026, 1, 5)},
+    {"coverage_start": datetime(2026, 1, 5), "coverage_end": datetime(2026, 1, 6)},
+    {"coverage_start": "2026-01-05", "coverage_end": "2026-01-06"},
+])
+def test_invalid_coverage_is_rejected(bounds: dict[str, object]) -> None:
+    with pytest.raises(SessionCalendarError, match="coverage"):
+        calendar(**bounds)
+
+
+def test_calendar_freezes_weekdays_and_component_resets_with_coverage() -> None:
+    weekdays = {0}
+    configured = calendar(
+        trading_weekdays=weekdays,
+        coverage_start=date(2026, 1, 5), coverage_end=date(2026, 1, 6),
+    )
+    weekdays.add(1)
+    assert configured.trading_weekdays == frozenset({0})
+    run_config = DetectionAnalysisConfig(
+        instrument_id="US30", timeframe=Timeframe.M1, calendar_id=configured.calendar_id
+    )
+    component = SessionComponent(run_config, configured, pinned_calendar_version="fixture-v1")
+    outputs = []
+    for timestamp in (
+        datetime(2026, 1, 5, 8, tzinfo=UTC),
+        datetime(2026, 1, 6, 8, tzinfo=UTC),
+    ):
+        bar = Bar("US30", Timeframe.M1, timestamp, Decimal(1), Decimal(1), Decimal(1), Decimal(1))
+        component.update(bar)
+        outputs.append((bar, component.debug_json()))
+    assert component.session_state is not None and not component.session_state.is_open
+    component.reset()
+    assert component.session_state is None
+    for bar, expected in outputs:
+        component.update(bar)
+        assert component.debug_json() == expected
+
+
+def test_window_ending_at_boundary_advances_to_next_civil_date() -> None:
+    configured = calendar(
+        windows=(SessionWindow("provider", time(1), time(22)),),
+        breaks=(SessionWindow("evening", time(22), time(0)),),
+    )
+    assert configured.derive(datetime(2026, 1, 5, 22, tzinfo=UTC)).is_break
+    assert configured.derive(datetime(2026, 1, 5, 23, 59, tzinfo=UTC)).is_break
+    assert not configured.derive(datetime(2026, 1, 6, 0, tzinfo=UTC)).is_break
