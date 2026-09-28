@@ -3,6 +3,13 @@
 from .atr import AtrState, VolatilityState
 from .ema import EmaState
 from .incremental import IncrementalMarketState, MarketState, MarketStateError
+from .market_state import (
+    MarketEvent,
+    MarketEventEvidence,
+    MarketEventType,
+    MarketStateAggregator,
+    MarketStateFrame,
+)
 from .range_state import (
     RANGE_STATE_DEFINITION_ID,
     BandwidthObservation,
@@ -76,4 +83,6 @@ __all__ = [
     "RANGE_STATE_DEFINITION_ID", "BandwidthObservation", "BandwidthState", "ChopCategory",
     "ChopInput", "ChopState", "CloseObservation", "CompressionCategory", "CompressionState",
     "RangeAvailability", "RangeLineage", "RangeObservation", "RangeParameters", "RangeState",
+    "MarketEvent", "MarketEventEvidence", "MarketEventType", "MarketStateAggregator",
+    "MarketStateFrame",
 ]
