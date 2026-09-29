@@ -6,6 +6,7 @@ These records describe identity, provenance, and coverage only.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -27,9 +28,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 
-from market_analysis.domain.dataset_lineage import DatasetLineage
+from market_analysis.domain.dataset_lineage import BarSequence, DatasetLineage
 from market_analysis.domain.dataset_validation import ValidationStatus
-from market_analysis.domain.market_data import Instrument, ProviderSymbolMapping, Timeframe
+from market_analysis.domain.market_data import Bar, Instrument, ProviderSymbolMapping, Timeframe
 from market_analysis.persistence.runs import metadata
 
 
@@ -460,6 +461,28 @@ def load_dataset_lineage(
         checksum_version=row["checksum_version"],
         dataset_format_version=row["dataset_format_version"],
     )
+
+
+def load_bar_sequence(
+    connection: Connection,
+    revision_id: str,
+    instrument_id: str,
+    timeframe: Timeframe,
+    bars: Iterable[Bar],
+) -> BarSequence:
+    """Bind canonical bar content to its persisted immutable lineage.
+
+    PostgreSQL stores revision metadata and checksums only (SCRUM-124 owns the
+    Parquet content store), so the caller supplies the canonical bars and this
+    read path authenticates them: :class:`BarSequence` construction verifies
+    the count, instrument/timeframe identity, ordering and the pinned
+    canonical checksum against the persisted revision lineage before any run
+    may step through them.
+    """
+    lineage = load_dataset_lineage(connection, revision_id, instrument_id, timeframe)
+    if lineage is None:
+        raise MetadataConflictError("bar sequence has no persisted dataset lineage")
+    return BarSequence(lineage, tuple(bars))
 
 
 def _utc(value: datetime, name: str) -> datetime:

@@ -925,6 +925,31 @@ def test_frame_level_entry_point_and_lineage_guards() -> None:
         runtime.process_frame(other.update(bar(6)))
 
 
+@pytest.mark.parametrize("entry_point", ["process_bar", "process_frame"])
+def test_processing_generation_counts_failed_attempts_and_survives_reset(entry_point: str) -> None:
+    runtime, _ = three_detector_runtime(fail_on_completed_bar=2)
+    assert runtime.processing_generation == 0
+    method = getattr(runtime, entry_point)
+    with pytest.raises(DetectorRuntimeError, match="requires"):
+        method(None)
+    assert runtime.processing_generation == 0
+    first = bar(0)
+    second = bar(1)
+    method(first if entry_point == "process_bar" else runtime.aggregator.update(first))
+    assert runtime.processing_generation == 1
+    with pytest.raises(DetectorRuntimeError, match="scripted detector failure"):
+        method(second if entry_point == "process_bar" else runtime.aggregator.update(second))
+    assert runtime.processing_generation == 2
+    with pytest.raises(DetectorRuntimeError, match="latched"):
+        method(first)
+    assert runtime.processing_generation == 2
+    runtime.reset()
+    assert runtime.processing_generation == 2
+    assert runtime.reset_generation == 2
+    method(first if entry_point == "process_bar" else runtime.aggregator.update(first))
+    assert runtime.processing_generation == 3
+
+
 def _assert_allowed(module: str) -> None:
     root, _, rest = module.partition(".")
     if root in sys.stdlib_module_names:
@@ -946,10 +971,16 @@ def test_detection_package_has_no_ui_or_provider_dependencies() -> None:
                 _assert_allowed(node.module)
 
 
-def test_nothing_in_src_depends_on_detection_yet() -> None:
+def test_only_the_application_layer_depends_on_detection() -> None:
+    """SCRUM-61 wiring moved the runtime into application orchestration.
+
+    The application layer composes use cases and is allowed to drive the
+    SCRUM-80 detector runtime; domain, indicators, patterns, config,
+    persistence, providers, api and demo modules still must not import it.
+    """
     offenders: list[str] = []
     for path in Path("src/market_analysis").rglob("*.py"):
-        if path.parent.name == "detection":
+        if path.parent.name in {"detection", "application"}:
             continue
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Import) and any(

@@ -175,6 +175,7 @@ class DetectorRuntime:
         "_instances",
         "_last_detection_time",
         "_ledger",
+        "_processing_generation",
         "_reset_generation",
         "_run_id",
         "_sequences",
@@ -235,6 +236,7 @@ class DetectorRuntime:
                     f"{slot.definition.pattern_version} cannot resolve parameters: {exc}"
                 ) from exc
         self._reset_generation = 0
+        self._processing_generation = 0
         self._reset_state()
 
     @staticmethod
@@ -353,6 +355,17 @@ class DetectorRuntime:
         """Monotonic reset identity for consumers enforcing stream continuity."""
         return self._reset_generation
 
+    @property
+    def processing_generation(self) -> int:
+        """Monotonic accepted processing attempts, including failed attempts.
+
+        Drivers use this read-only identity to detect processing through
+        either public entry point outside their own completed-bar sequence.
+        Reset does not erase this history; rejected type or latched-runtime
+        calls never enter processing and do not increment it.
+        """
+        return self._processing_generation
+
     def reset(self) -> None:
         """Restore detectors, instances, ledger and the aggregator to the initial state."""
         self._aggregator.reset()
@@ -372,6 +385,7 @@ class DetectorRuntime:
             raise DetectorRuntimeError(self._LATCHED_MESSAGE)
         if not isinstance(bar, Bar):
             raise DetectorRuntimeError("process_bar requires a canonical Bar")
+        self._processing_generation += 1
         frame = self._aggregator.update(bar)
         return self._step(frame)
 
@@ -388,6 +402,7 @@ class DetectorRuntime:
             raise DetectorRuntimeError(self._LATCHED_MESSAGE)
         if not isinstance(frame, MarketStateFrame):
             raise DetectorRuntimeError("process_frame requires a MarketStateFrame")
+        self._processing_generation += 1
         return self._step(frame)
 
     def debug_json(self) -> str:
