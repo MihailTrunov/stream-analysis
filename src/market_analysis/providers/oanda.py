@@ -277,6 +277,10 @@ class OandaHistoricalDataSource:
             raise ProviderError("invalid OANDA candle list")
         seen: dict[datetime, Bar] = {}
         previous: datetime | None = None
+        interval = _GRANULARITY[request.timeframe][1]
+        preceding_margin = interval + (
+            timedelta(hours=1) if request.timeframe is Timeframe.D1 else timedelta(0)
+        )
         for candle in candles:
             if not isinstance(candle, dict) or not isinstance(candle.get("complete"), bool):
                 raise ProviderError("malformed OANDA candle")
@@ -284,9 +288,11 @@ class OandaHistoricalDataSource:
             if previous is not None and timestamp < previous:
                 raise ProviderError("OANDA candles are out of order")
             previous = timestamp
-            if not query_from <= timestamp <= window_end:
+            # includeFirst can return the candle covering an unaligned `from`.
+            # Daily alignment can move by an hour at DST, hence the margin.
+            if not query_from - preceding_margin <= timestamp <= window_end:
                 raise ProviderError("OANDA candle outside requested window")
-            if not candle["complete"] or timestamp >= window_end:
+            if not candle["complete"] or timestamp < query_from or timestamp >= window_end:
                 continue
             mid = candle.get("mid")
             volume = candle.get("volume")

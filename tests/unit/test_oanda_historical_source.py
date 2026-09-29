@@ -118,6 +118,20 @@ def test_empty_range_and_missing_mapping_do_not_contact_provider() -> None:
     assert calls == 0
 
 
+def test_unaligned_start_filters_provider_candle_covering_from() -> None:
+    adapter = source(
+        httpx.MockTransport(
+            lambda _: httpx.Response(200, json=body(candle(0), candle(1)))
+        )
+    )
+    request = HistoricalDataRequest(
+        instrument(), Timeframe.M1, START + timedelta(seconds=30),
+        START + timedelta(minutes=2),
+    )
+    page = adapter.get_bars(request)
+    assert [bar.timestamp for bar in page.bars] == [START + timedelta(minutes=1)]
+
+
 def test_sparse_pagination_skips_empty_windows_and_verifies_overlap() -> None:
     calls: list[dict[str, list[str]]] = []
 
