@@ -74,6 +74,7 @@ from market_analysis.domain import (
     TradingCalendar,
 )
 from market_analysis.patterns import ParameterSpec, PatternDefinition
+from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.market_data import load_bar_sequence
 from market_analysis.persistence.replay_runs import (
     ReplayRunRecord,
@@ -219,7 +220,8 @@ class ReplayPipeline:
         connection: Connection,
         run_id: UUID,
         *,
-        bars: Iterable[Bar],
+        bars: Iterable[Bar] | None = None,
+        dataset_store: DatasetStore | None = None,
         bindings_factory: BindingsFactory,
         component_parameters: ParameterSpecs | None = None,
         pattern_definitions: PatternDefinitions | None = None,
@@ -227,11 +229,11 @@ class ReplayPipeline:
     ) -> ReplayPipeline:
         """Verify a persisted run and wire it to the shared analytical runtime.
 
-        ``bars`` is the canonical content of the pinned dataset revision (the
-        SCRUM-124 Parquet store later; seeded fixtures in tests). It is
-        authenticated against the persisted lineage before any pipeline is
-        built. ``calendar_resolver`` is required to resolve and verify the
-        pinned calendar version through the SCRUM-71 calendar path.
+        Exactly one source is required: ``dataset_store`` resolves the pinned
+        immutable Parquet revision offline, while ``bars`` supports seeded
+        fixtures and is authenticated against the same persisted lineage.
+        ``calendar_resolver`` resolves the pinned calendar version through
+        the SCRUM-71 calendar path.
 
         ``bindings_factory`` is invoked once and must create fresh detector
         instances exclusively owned by this run. It must never return a
@@ -252,13 +254,21 @@ class ReplayPipeline:
                 "advanced replay runs require a new run id and fresh analytical state"
             )
         cls._verify_pinned_hash(context, component_parameters, pattern_definitions)
-        sequence = load_bar_sequence(
-            connection,
-            context.snapshot.dataset_revision_id,
-            context.detection_config.instrument_id,
-            context.detection_config.timeframe,
-            bars,
-        )
+        if (bars is None) == (dataset_store is None):
+            raise ReplayPipelineError("provide exactly one replay bar source")
+        if dataset_store is not None:
+            sequence = dataset_store.load_sequence(
+                connection, context.snapshot.dataset_revision_id,
+                context.detection_config.instrument_id,
+                context.detection_config.timeframe,
+            )
+        else:
+            assert bars is not None
+            sequence = load_bar_sequence(
+                connection, context.snapshot.dataset_revision_id,
+                context.detection_config.instrument_id,
+                context.detection_config.timeframe, bars,
+            )
         calendar = cls._resolve_calendar(context, calendar_resolver)
         runtime = DetectorRuntime(
             context.detection_config,

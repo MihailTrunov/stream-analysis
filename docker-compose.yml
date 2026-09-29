@@ -11,7 +11,7 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - ${STREAM_ANALYSIS_DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks: [internal]
 
   migrate:
@@ -77,3 +77,6 @@ services:
 networks:
   internal:
     driver: bridge
+
+volumes:
+  postgres_data:

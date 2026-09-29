@@ -31,6 +31,15 @@ older format actually exists, rather than guessing how to parse unknown data.
 
 ## Backup and restore
 
+Owner update on 2026-09-29: the local macOS disposable test confirmed that
+PostgreSQL 16 refused the host bind-mounted data directory because of its
+ownership. The owner approved a Docker-managed named PostgreSQL volume for
+MVP. This supersedes the earlier single-root requirement for the live database
+files only; datasets, artifacts, exports and logs remain in the configured
+data root. The named volume is scoped by the Compose project name. Manual
+backup remains the portable, complete transfer unit. An existing bind-mounted
+`data/postgres` cluster is preserved but not automatically migrated.
+
 Two alternatives were rejected: copying PostgreSQL's live volume (not a
 portable consistent database backup), and restoring into an existing data
 root (could overwrite or mingle immutable research evidence). The manual Nx

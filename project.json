@@ -4,10 +4,10 @@
     "start": {"executor": "nx:run-commands", "options": {"command": "docker compose up --build"}},
     "stop": {"executor": "nx:run-commands", "options": {"command": "docker compose down"}},
     "test": {"executor": "nx:run-commands", "options": {"command": "uv run pytest"}},
-    "lint": {"executor": "nx:run-commands", "options": {"command": "uv run ruff check src tests migrations"}},
+    "lint": {"executor": "nx:run-commands", "options": {"command": "uv run ruff check src scripts tests migrations"}},
     "typecheck": {"executor": "nx:run-commands", "options": {"command": "uv run mypy"}},
     "integration": {"executor": "nx:run-commands", "options": {"command": "uv run pytest tests/integration"}},
-    "ci": {"executor": "nx:run-commands", "options": {"commands": ["uv run ruff check src tests migrations", "uv run mypy", "uv run pytest"]}},
+    "ci": {"executor": "nx:run-commands", "options": {"commands": ["uv run ruff check src scripts tests migrations", "uv run mypy", "uv run pytest"]}},
     "backup": {"executor": "nx:run-commands", "options": {"command": "python scripts/backup.py"}},
     "restore": {"executor": "nx:run-commands", "options": {"command": "python scripts/restore.py"}},
     "benchmark": {"executor": "nx:run-commands", "options": {"command": "python scripts/benchmark.py"}}
