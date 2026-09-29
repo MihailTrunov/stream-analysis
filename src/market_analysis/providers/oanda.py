@@ -217,6 +217,32 @@ class OandaHistoricalDataSource:
             "smooth": "false",
             "includeFirst": "true",
         }
+        return self._request_json(url, params)
+
+    def verify_account_instrument(self, symbol: str) -> None:
+        """Check the exact account-scoped symbol and pinned UK/live index precision."""
+        if self.environment != "live" or symbol not in {"US30_USD", "DE30_EUR"}:
+            raise ProviderError("unsupported OANDA account instrument context")
+        url = (
+            f"{_BASE_URLS[self.environment]}/v3/accounts/{quote(self.account_id, safe='')}"
+            "/instruments"
+        )
+        payload = self._request_json(url, {"instruments": symbol})
+        records = payload.get("instruments")
+        if not isinstance(records, list) or len(records) != 1:
+            raise ProviderError("OANDA account instrument mapping is unavailable")
+        record = records[0]
+        if (
+            not isinstance(record, dict)
+            or record.get("name") != symbol
+            or type(record.get("displayPrecision")) is not int
+            or record["displayPrecision"] != 1
+            or type(record.get("pipLocation")) is not int
+            or record["pipLocation"] != 0
+        ):
+            raise ProviderError("OANDA account instrument contract differs from verified profile")
+
+    def _request_json(self, url: str, params: Mapping[str, str]) -> Mapping[str, Any]:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
@@ -249,13 +275,13 @@ class OandaHistoricalDataSource:
                 self.sleeper(delay)
                 continue
             if response.status_code != 200:
-                raise ProviderError(f"OANDA candle request failed (HTTP {response.status_code})")
+                raise ProviderError(f"OANDA request failed (HTTP {response.status_code})")
             try:
                 payload = response.json()
             except ValueError as exc:
-                raise ProviderError("invalid OANDA candle response JSON") from exc
+                raise ProviderError("invalid OANDA response JSON") from exc
             if not isinstance(payload, dict):
-                raise ProviderError("invalid OANDA candle response")
+                raise ProviderError("invalid OANDA response")
             return payload
         raise AssertionError("unreachable retry state")
 

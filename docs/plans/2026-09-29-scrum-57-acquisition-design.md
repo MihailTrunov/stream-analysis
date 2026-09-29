@@ -15,7 +15,7 @@ Three options were considered. Keeping the entire import in PostgreSQL would
 duplicate the Parquet store and inflate backups. Appending to a single
 in-progress Parquet file makes crash-safe truncation/recovery difficult. Use
 immutable, numbered staging batches under the configured data root. A batch is
-written, flushed and atomically renamed before one PostgreSQL transaction
+written, flushed and linked under a content-addressed name before one PostgreSQL transaction
 records its checksum, count, range and next source page token. A crash before
 the transaction leaves an unreferenced file, never an advanced checkpoint; a
 restart re-fetches that page. Referenced batches are verified before reading
@@ -30,9 +30,9 @@ continuation token. Status is queryable independently of browser lifetime.
 ## Lifecycle and publication
 
 A PostgreSQL job row owns immutable request identity and a generated revision
-ID. A database constraint allows at most one running import. Claiming a queued
+ID. A database constraint allows at most one queued or running import. Claiming a queued
 or explicitly resumed interrupted job is transactional. A running worker
-refreshes its lease. Startup recovery marks stale running jobs interrupted;
+refreshes its heartbeat. Startup recovery marks stale running jobs interrupted;
 it does not queue them. The API can create, inspect and explicitly resume jobs.
 The import worker is the only process that performs provider requests and
 Parquet publication; API/UI activity does not wait for acquisition.
@@ -45,7 +45,8 @@ and actual half-open ranges, bar count, source, retrieval time, calendar and
 normalization versions. A matching retry of a completed request returns the
 existing job/revision by default; an explicit fresh attempt is required to
 incorporate provider corrections. Credentials are worker-local environment
-values and never enter job rows, staging files, logs or manifests.
+values and never enter job rows, staging files, logs or manifests. A one-way
+account fingerprint pins the original account context across an interruption.
 
 ## Verification
 

@@ -31,6 +31,10 @@ services:
       STREAM_ANALYSIS_DATA_ROOT: /data
       STREAM_ANALYSIS_BUILD_ID: ${STREAM_ANALYSIS_BUILD_ID:-development}
       OANDA_TOKEN: ${OANDA_TOKEN:-}
+      OANDA_KEY: ${OANDA_KEY:-}
+      OANDA_ACCOUNT: ${OANDA_ACCOUNT:-}
+      OANDA_ENV: ${OANDA_ENV:-live}
+      OANDA_REGION: ${OANDA_REGION:-UK}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -58,6 +62,10 @@ services:
       STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
       STREAM_ANALYSIS_DATA_ROOT: /data
       OANDA_TOKEN: ${OANDA_TOKEN:-}
+      OANDA_KEY: ${OANDA_KEY:-}
+      OANDA_ACCOUNT: ${OANDA_ACCOUNT:-}
+      OANDA_ENV: ${OANDA_ENV:-live}
+      OANDA_REGION: ${OANDA_REGION:-UK}
     depends_on:
       migrate: {condition: service_completed_successfully}
     volumes:

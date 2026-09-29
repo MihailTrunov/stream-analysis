@@ -6,7 +6,9 @@ The supported local MVP startup is Docker Compose on a Mac with Docker running:
 docker compose up --build
 ```
 
-Open <http://127.0.0.1:5173> for the browser installation check and <http://127.0.0.1:8000/diagnostics> for the diagnostics API. PostgreSQL stays on the private Compose network, with live database files in a Docker-managed `postgres_data` volume. The `migrate` service runs the version-controlled Alembic migration before the API and workers start; application startup itself does not create or modify tables. Datasets, artifacts, exports and logs live under `./data` by default (override with `STREAM_ANALYSIS_DATA_ROOT`). OANDA credentials are not required for startup; provider import is not implemented yet.
+Open <http://127.0.0.1:5173> for the browser installation check and <http://127.0.0.1:8000/diagnostics> for the diagnostics API. PostgreSQL stays on the private Compose network, with live database files in a Docker-managed `postgres_data` volume. The `migrate` service runs the version-controlled Alembic migration before the API and workers start; application startup itself does not create or modify tables. Datasets, artifacts, exports and logs live under `./data` by default (override with `STREAM_ANALYSIS_DATA_ROOT`). OANDA credentials are not required for startup; only live history import needs them.
+
+For UK/live OANDA import, set `OANDA_KEY`, `OANDA_ACCOUNT`, `OANDA_ENV=live`, and `OANDA_REGION=UK` in a local ignored env file. If your credentials are in `app/.env`, start with `docker compose --env-file app/.env up --build` so Compose passes them to the API and import worker; do not commit that file. `POST /imports` accepts a `dataset_id`, `instrument_id` (`US30` or `DAX`), and UTC `start`/`end` range. `GET /imports` and `GET /imports/{job_id}` show durable progress. After a worker interruption, the job stays interrupted until `POST /imports/{job_id}/resume`; it resumes from the last committed page, not from zero. A terminal provider/validation failure requires a new request with `fresh_attempt=true`. Only a completed import publishes a selectable immutable revision. The initial verified calendar covers analytical dates 2023-09-27 through 2026-09-28; later dates require a new verified calendar version.
 
 The seeded two-bar walkthrough is intentionally **not research-grade**. It checks that the browser can fetch canonical local bars, reveal them one at a time, and display service diagnostics. It does not calculate market state, run detectors, create events, or perform autonomous evaluation. Those features depend on later implementation Stories.
 
@@ -22,7 +24,7 @@ docker compose up -d --wait postgres
 pnpm nx run platform:backup
 ```
 
-The archive defaults to a UTC-stamped file under ignored `backups/`; pass a specific path after `--` if desired. It contains a PostgreSQL custom-format dump, immutable datasets, artifacts and exports, with a versioned checksum manifest. It does not contain the live PostgreSQL volume, `.env`, or credentials. Copying `./data` alone is **not** a complete backup. Keep the archive outside the data root and store it securely. `docker compose down` preserves the named volume; `docker compose down --volumes` deletes it.
+The archive defaults to a UTC-stamped file under ignored `backups/`; pass a specific path after `--` if desired. It contains a PostgreSQL custom-format dump, immutable datasets, staged import batches, artifacts and exports, with a versioned checksum manifest. It does not contain the live PostgreSQL volume, `.env`, or credentials. Copying `./data` alone is **not** a complete backup. Keep the archive outside the data root and store it securely. `docker compose down` preserves the named volume; `docker compose down --volumes` deletes it.
 
 To restore, stop the old stack and select a **new, empty** `STREAM_ANALYSIS_DATA_ROOT` (or move the old installation aside). Do not use a path containing existing research data. Then run:
 

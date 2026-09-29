@@ -120,12 +120,12 @@ def test_empty_range_and_missing_mapping_do_not_contact_provider() -> None:
 
 def test_unaligned_start_filters_provider_candle_covering_from() -> None:
     adapter = source(
-        httpx.MockTransport(
-            lambda _: httpx.Response(200, json=body(candle(0), candle(1)))
-        )
+        httpx.MockTransport(lambda _: httpx.Response(200, json=body(candle(0), candle(1))))
     )
     request = HistoricalDataRequest(
-        instrument(), Timeframe.M1, START + timedelta(seconds=30),
+        instrument(),
+        Timeframe.M1,
+        START + timedelta(seconds=30),
         START + timedelta(minutes=2),
     )
     page = adapter.get_bars(request)
@@ -312,3 +312,37 @@ def test_canonical_timeframes_map_to_oanda_granularity(
     adapter = source(httpx.MockTransport(handler))
     adapter.get_bars(selected(timeframe=timeframe))
     assert captured == [expected]
+
+
+def test_account_instrument_contract_verifies_exact_supported_symbols() -> None:
+    adapter = source(
+        httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "instruments": [
+                        {
+                            "name": parse_qs(request.url.query.decode())["instruments"][0],
+                            "displayPrecision": 1,
+                            "pipLocation": 0,
+                        }
+                    ],
+                },
+            )
+        )
+    )
+    adapter.verify_account_instrument("US30_USD")
+    with pytest.raises(ProviderError, match="unsupported"):
+        adapter.verify_account_instrument("EUR_USD")
+    changed = source(
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "instruments": [{"name": "US30_USD", "displayPrecision": 2, "pipLocation": 0}],
+                },
+            )
+        )
+    )
+    with pytest.raises(ProviderError, match="contract differs"):
+        changed.verify_account_instrument("US30_USD")

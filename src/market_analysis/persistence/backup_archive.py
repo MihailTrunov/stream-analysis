@@ -13,7 +13,7 @@ from typing import IO, Any
 BACKUP_FORMAT_VERSION = "stream-analysis-backup-v1"
 _MANIFEST = "backup-manifest.json"
 _DUMP = "postgres.dump"
-_DATA_FOLDERS = frozenset({"datasets", "artifacts", "exports"})
+_DATA_FOLDERS = frozenset({"datasets", "artifacts", "exports", "imports"})
 _CHUNK_SIZE = 1024 * 1024
 _MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 

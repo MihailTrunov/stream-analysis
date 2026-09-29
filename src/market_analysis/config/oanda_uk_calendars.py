@@ -12,11 +12,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
 from market_analysis.domain import (
     CalendarException,
+    Instrument,
+    ProviderSymbolMapping,
     SessionCalendarError,
     SessionWindow,
     TradingCalendar,
@@ -60,16 +63,22 @@ def _dates(values: str) -> tuple[date, ...]:
 def _us_exceptions() -> tuple[CalendarException, ...]:
     # The table lists civil END dates; US analytical dates are the prior day.
     early_closes = (
-        (time(12), """
+        (
+            time(12),
+            """
             2023-11-23
             2024-01-15 2024-02-19 2024-05-27 2024-06-19 2024-07-04 2024-09-02 2024-11-28
             2025-01-20 2025-02-17 2025-05-26 2025-06-19 2025-07-04 2025-09-01 2025-11-27
             2026-01-19 2026-02-16 2026-05-25 2026-06-19 2026-07-03 2026-09-07
-        """),
-        (time(12, 15), """
+        """,
+        ),
+        (
+            time(12, 15),
+            """
             2023-11-24 2024-07-03 2024-11-29 2024-12-24
             2025-07-03 2025-11-28 2025-12-24
-        """),
+        """,
+        ),
         (time(8, 15), "2026-04-03"),
     )
     exceptions = {
@@ -78,7 +87,8 @@ def _us_exceptions() -> tuple[CalendarException, ...]:
             windows=(SessionWindow("provider", time(17), close),),
             breaks=(SessionWindow("scheduled_break", close, time(17)),),
         )
-        for close, values in early_closes for civil_date in _dates(values)
+        for close, values in early_closes
+        for civil_date in _dates(values)
     }
     for trading_date in _dates("""
         2023-12-24 2023-12-31 2024-03-28 2024-12-24 2024-12-31
@@ -115,29 +125,64 @@ def _de_exceptions() -> tuple[CalendarException, ...]:
     return tuple(exceptions[day] for day in sorted(exceptions))
 
 
-OANDA_UK_LIVE_PROFILES: Mapping[str, OandaUkCalendarProfile] = MappingProxyType({
-    "US30_USD": OandaUkCalendarProfile(
-        provider_symbol="US30_USD", instrument_id="US30", display_name="US Wall St30",
-        timezone_name="America/Chicago", trading_day_boundary=time(17),
-        windows=(SessionWindow("provider", time(17), time(16)),),
-        breaks=(SessionWindow("scheduled_break", time(16), time(17)),),
-        trading_weekdays=frozenset({6, 0, 1, 2, 3}), exceptions=_us_exceptions(),
-    ),
-    "DE30_EUR": OandaUkCalendarProfile(
-        provider_symbol="DE30_EUR", instrument_id="DAX", display_name="Germany30",
-        timezone_name="Europe/Berlin", trading_day_boundary=time(0),
-        windows=(SessionWindow("provider", time(1, 15), time(22)),),
-        breaks=(
-            SessionWindow("morning_break", time(0), time(1, 15)),
-            SessionWindow("evening_break", time(22), time(0)),
+OANDA_UK_LIVE_PROFILES: Mapping[str, OandaUkCalendarProfile] = MappingProxyType(
+    {
+        "US30_USD": OandaUkCalendarProfile(
+            provider_symbol="US30_USD",
+            instrument_id="US30",
+            display_name="US Wall St30",
+            timezone_name="America/Chicago",
+            trading_day_boundary=time(17),
+            windows=(SessionWindow("provider", time(17), time(16)),),
+            breaks=(SessionWindow("scheduled_break", time(16), time(17)),),
+            trading_weekdays=frozenset({6, 0, 1, 2, 3}),
+            exceptions=_us_exceptions(),
         ),
-        trading_weekdays=frozenset(range(5)), exceptions=_de_exceptions(),
-    ),
-})
+        "DE30_EUR": OandaUkCalendarProfile(
+            provider_symbol="DE30_EUR",
+            instrument_id="DAX",
+            display_name="Germany30",
+            timezone_name="Europe/Berlin",
+            trading_day_boundary=time(0),
+            windows=(SessionWindow("provider", time(1, 15), time(22)),),
+            breaks=(
+                SessionWindow("morning_break", time(0), time(1, 15)),
+                SessionWindow("evening_break", time(22), time(0)),
+            ),
+            trading_weekdays=frozenset(range(5)),
+            exceptions=_de_exceptions(),
+        ),
+    }
+)
+
+
+def build_oanda_uk_instrument(provider_symbol: str) -> Instrument:
+    """Pin the two verified UK/live index contracts for initial M1 imports.
+
+    Authenticated account instrument metadata on 2026-09-29 reported display
+    precision 1 and pip location 0 for both symbols, so an index point is 1.
+    The account ID and credential are deliberately not retained here.
+    """
+    profile = OANDA_UK_LIVE_PROFILES.get(provider_symbol)
+    if profile is None:
+        raise SessionCalendarError("unsupported exact OANDA instrument mapping")
+    return Instrument(
+        instrument_id=profile.instrument_id,
+        display_name=profile.display_name,
+        calendar_id=profile.calendar_id,
+        price_precision=1,
+        point_size=Decimal("1"),
+        provider_symbols=(ProviderSymbolMapping("oanda", provider_symbol, "live"),),
+    )
 
 
 def build_oanda_uk_calendar(
-    *, provider: str, region: str, environment: str, account: str, provider_symbol: str,
+    *,
+    provider: str,
+    region: str,
+    environment: str,
+    account: str,
+    provider_symbol: str,
 ) -> TradingCalendar:
     """Bind an exact supported context without guessing aliases or account region."""
     if (provider, region, environment) != ("oanda", "UK", "live"):
@@ -148,10 +193,17 @@ def build_oanda_uk_calendar(
     if not isinstance(account, str) or not account.strip():
         raise SessionCalendarError("calendar binding requires a nonempty verified account")
     return TradingCalendar(
-        calendar_id=profile.calendar_id, version=profile.version,
-        provider=provider, account=account, instrument_id=profile.instrument_id,
-        timezone_name=profile.timezone_name, trading_day_boundary=profile.trading_day_boundary,
-        windows=profile.windows, breaks=profile.breaks, trading_weekdays=profile.trading_weekdays,
+        calendar_id=profile.calendar_id,
+        version=profile.version,
+        provider=provider,
+        account=account,
+        instrument_id=profile.instrument_id,
+        timezone_name=profile.timezone_name,
+        trading_day_boundary=profile.trading_day_boundary,
+        windows=profile.windows,
+        breaks=profile.breaks,
+        trading_weekdays=profile.trading_weekdays,
         exceptions=profile.exceptions,
-        coverage_start=profile.coverage_start, coverage_end=profile.coverage_end,
+        coverage_start=profile.coverage_start,
+        coverage_end=profile.coverage_end,
     )

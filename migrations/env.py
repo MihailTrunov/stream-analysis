@@ -5,7 +5,11 @@ import os
 from sqlalchemy import create_engine
 
 from alembic import context
-from market_analysis.persistence import market_data  # noqa: F401
+from market_analysis.persistence import (
+    import_jobs,  # noqa: F401
+    market_data,  # noqa: F401
+    replay_runs,  # noqa: F401
+)
 from market_analysis.persistence.runs import metadata
 
 target_metadata = metadata
