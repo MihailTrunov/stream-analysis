@@ -67,6 +67,7 @@ from market_analysis.config import (
     resolve_detection_config,
 )
 from market_analysis.domain import Bar, TradingCalendar
+from market_analysis.patterns import PatternDefinition
 
 from .atr import AtrState
 from .ema import EmaState
@@ -226,7 +227,13 @@ class MarketStateAggregator:
     (``ema_instance_id``, ``structure_instance_id``, ``trend_leg_instance_id``,
     ``atr_period``); families without a binding parameter (SwingStructure,
     RangeState) require exactly one instance of their dependency family so
-    the binding stays unambiguous.
+    the binding stays unambiguous. A run config that selects pattern
+    definitions requires the registered ``pattern_definitions`` mapping so
+    resolution succeeds. Note the canonical hash covers the SELECTED pattern
+    versions only: a detector runtime executing additional registered
+    versions under the same config shares this hash, so the executed binding
+    set must be pinned separately (DetectorRuntime.binding_fingerprint;
+    SCRUM-81 persistence owns that pinning).
     """
 
     def __init__(
@@ -238,10 +245,13 @@ class MarketStateAggregator:
         calendar: TradingCalendar | None = None,
         pinned_calendar_version: str | None = None,
         pinned_config_hash: str | None = None,
+        pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     ) -> None:
         if not isinstance(run_config, DetectionAnalysisConfig):
             raise MarketStateError("run_config must be a frozen DetectionAnalysisConfig")
-        run_config = resolve_detection_config(run_config)
+        run_config = resolve_detection_config(
+            run_config, pattern_definitions=pattern_definitions
+        )
         for name, value in (("run_id", run_id), ("dataset_revision_id", dataset_revision_id)):
             if not isinstance(value, str) or not value.strip():
                 raise MarketStateError(f"{name} must be a nonempty string")
@@ -258,7 +268,7 @@ class MarketStateAggregator:
             session = SessionComponent(
                 run_config, calendar, pinned_calendar_version=pinned_calendar_version
             )
-        config_hash = detection_config_hash(run_config)
+        config_hash = detection_config_hash(run_config, pattern_definitions=pattern_definitions)
         if pinned_config_hash is not None and pinned_config_hash != config_hash:
             raise MarketStateError(
                 f"pinned_config_hash {pinned_config_hash!r} does not match the resolved "
@@ -293,6 +303,7 @@ class MarketStateAggregator:
                 ),
                 instance_id=key,
                 pinned_config_hash=pinned_config_hash,
+                pattern_definitions=pattern_definitions,
             )
             for key in _family(selections, "swing_point")
         }
@@ -304,6 +315,7 @@ class MarketStateAggregator:
                 dataset_revision_id=dataset_revision_id,
                 instance_id=key,
                 pinned_config_hash=pinned_config_hash,
+                pattern_definitions=pattern_definitions,
             )
             for key in _family(selections, "swing_structure")
         }
@@ -318,6 +330,7 @@ class MarketStateAggregator:
                 dataset_revision_id=dataset_revision_id,
                 instance_id=key,
                 pinned_config_hash=pinned_config_hash,
+                pattern_definitions=pattern_definitions,
             )
             for key in _family(selections, "trend_leg")
         }
@@ -331,6 +344,7 @@ class MarketStateAggregator:
                 dataset_revision_id=dataset_revision_id,
                 instance_id=key,
                 pinned_config_hash=pinned_config_hash,
+                pattern_definitions=pattern_definitions,
             )
             for key in _family(selections, "trend_leg_qualification")
         }
@@ -342,6 +356,7 @@ class MarketStateAggregator:
                 dataset_revision_id=dataset_revision_id,
                 instance_id=key,
                 pinned_config_hash=pinned_config_hash,
+                pattern_definitions=pattern_definitions,
             )
             for key in _family(selections, "range_state")
         }

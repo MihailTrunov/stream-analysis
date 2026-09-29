@@ -17,7 +17,11 @@ from market_analysis.config.component_registry import (
     validate_component_parameters,
 )
 from market_analysis.domain import Bar, Timeframe
-from market_analysis.patterns import ParameterType, PatternDefinitionError
+from market_analysis.patterns import (
+    ParameterType,
+    PatternDefinition,
+    PatternDefinitionError,
+)
 
 from .atr import AtrState
 from .incremental import IncrementalMarketState, MarketStateError
@@ -181,6 +185,7 @@ class RangeState(IncrementalMarketState):
         self, run_config: DetectionAnalysisConfig, atr: AtrState, *,
         run_id: str, dataset_revision_id: str, instance_id: str = "range_state",
         pinned_config_hash: str | None = None,
+        pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     ) -> None:
         selection = next((item for item in run_config.components
                           if item.component_id == "range_state"
@@ -215,7 +220,7 @@ class RangeState(IncrementalMarketState):
         )
         if not isinstance(atr, AtrState):
             raise MarketStateError("RangeState requires an injected AtrState")
-        config_hash = detection_config_hash(run_config)
+        config_hash = detection_config_hash(run_config, pattern_definitions=pattern_definitions)
         if atr.run_config != run_config:
             raise MarketStateError("RangeState dependency config/hash differs from run config")
         if pinned_config_hash is not None and pinned_config_hash != config_hash:

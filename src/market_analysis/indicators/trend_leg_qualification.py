@@ -17,6 +17,7 @@ from enum import StrEnum
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
 from market_analysis.config.component_registry import TREND_LEG_QUALIFICATION_V1_PARAMETERS
 from market_analysis.domain import Bar, Timeframe
+from market_analysis.patterns import PatternDefinition
 
 from .incremental import IncrementalMarketState, MarketStateError
 from .swing_structure import StructureLineage, _values
@@ -90,6 +91,7 @@ class TrendLegQualificationState(IncrementalMarketState):
         dataset_revision_id: str,
         instance_id: str = "trend_leg_qualification",
         pinned_config_hash: str | None = None,
+        pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     ) -> None:
         if not isinstance(run_config, DetectionAnalysisConfig):
             raise MarketStateError("run_config must be a frozen DetectionAnalysisConfig")
@@ -128,7 +130,7 @@ class TrendLegQualificationState(IncrementalMarketState):
             for value in (run_id, dataset_revision_id)
         ):
             raise MarketStateError("qualification requires nonempty run/dataset lineage")
-        config_hash = detection_config_hash(run_config)
+        config_hash = detection_config_hash(run_config, pattern_definitions=pattern_definitions)
         if pinned_config_hash is not None and pinned_config_hash != config_hash:
             raise MarketStateError("pinned_config_hash differs from resolved detection config hash")
         self.instance_id = instance_id

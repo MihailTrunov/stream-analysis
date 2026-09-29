@@ -11,6 +11,7 @@ from enum import StrEnum
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
 from market_analysis.config.component_registry import SWING_STRUCTURE_V1_PARAMETERS
 from market_analysis.domain import Bar, Timeframe
+from market_analysis.patterns import PatternDefinition
 
 from .incremental import IncrementalMarketState, MarketStateError
 from .swing_point import SWING_POINT_DEFINITION_ID, SwingPoint, SwingPointState, SwingType
@@ -112,6 +113,7 @@ class SwingStructureState(IncrementalMarketState):
         self, run_config: DetectionAnalysisConfig, swing_point: SwingPointState, *,
         run_id: str, dataset_revision_id: str, instance_id: str = "swing_structure",
         pinned_config_hash: str | None = None,
+        pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     ) -> None:
         selection = next((
             item for item in run_config.components
@@ -131,7 +133,7 @@ class SwingStructureState(IncrementalMarketState):
         self.break_buffer_atr_multiplier = _multiplier(parameters, "break_buffer_atr_multiplier")
         if not isinstance(swing_point, SwingPointState):
             raise MarketStateError("SwingStructure requires an injected SwingPointState")
-        config_hash = detection_config_hash(run_config)
+        config_hash = detection_config_hash(run_config, pattern_definitions=pattern_definitions)
         if (swing_point.run_config != run_config
                 or swing_point.atr.run_config != run_config
                 or swing_point.detection_config_hash != config_hash):

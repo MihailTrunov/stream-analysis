@@ -4,7 +4,15 @@ import ast
 from pathlib import Path
 
 FORBIDDEN = {"fastapi", "sqlalchemy", "psycopg", "oandapyV20"}
-CORE_DIRS = {"domain", "structure", "patterns", "indicators", "evaluation", "config"}
+CORE_DIRS = {
+    "domain",
+    "structure",
+    "patterns",
+    "indicators",
+    "detection",
+    "evaluation",
+    "config",
+}
 
 
 def imported_roots(path: Path) -> set[str]:

@@ -18,6 +18,7 @@ from enum import StrEnum
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
 from market_analysis.config.component_registry import TREND_LEG_V1_PARAMETERS
 from market_analysis.domain import Bar
+from market_analysis.patterns import PatternDefinition
 
 from .ema import EmaState
 from .incremental import IncrementalMarketState, MarketStateError
@@ -133,6 +134,7 @@ class TrendLegState(IncrementalMarketState):
         dataset_revision_id: str,
         instance_id: str = "trend_leg",
         pinned_config_hash: str | None = None,
+        pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     ) -> None:
         selection = next(
             (
@@ -162,7 +164,7 @@ class TrendLegState(IncrementalMarketState):
             or parameters["structure_instance_id"] != structure.instance_id
         ):
             raise MarketStateError("TrendLeg dependency instance bindings differ")
-        config_hash = detection_config_hash(run_config)
+        config_hash = detection_config_hash(run_config, pattern_definitions=pattern_definitions)
         if pinned_config_hash is not None and pinned_config_hash != config_hash:
             raise MarketStateError("pinned_config_hash differs from resolved detection config hash")
         if (

@@ -11,6 +11,7 @@ from types import MappingProxyType
 
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
 from market_analysis.domain import Bar
+from market_analysis.patterns import PatternDefinition
 
 from .atr import AtrState
 from .incremental import IncrementalMarketState, MarketStateError
@@ -165,6 +166,7 @@ class SwingPointState(IncrementalMarketState):
         *,
         instance_id: str = "swing_point",
         pinned_config_hash: str | None = None,
+        pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     ) -> None:
         selection = next(
             (
@@ -211,7 +213,9 @@ class SwingPointState(IncrementalMarketState):
             parameters, "allow_same_bar_confirmation", False
         )
         self.require_alternation = _fixed_flag(parameters, "require_alternation", True)
-        resolved_config_hash = detection_config_hash(run_config)
+        resolved_config_hash = detection_config_hash(
+            run_config, pattern_definitions=pattern_definitions
+        )
         if pinned_config_hash is not None and pinned_config_hash != resolved_config_hash:
             raise MarketStateError(
                 f"pinned_config_hash {pinned_config_hash!r} does not match the resolved "
