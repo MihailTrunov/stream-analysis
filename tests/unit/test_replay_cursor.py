@@ -135,7 +135,7 @@ def test_run_to_end_from_mid_stream_completes_only_the_remainder() -> None:
     assert replay.index == 3 and not replay.has_next
 
 
-def test_pipeline_failure_mid_step_n_leaves_failed_bar_consumed_not_processed() -> None:
+def test_pipeline_failure_mid_step_n_latches_until_reset() -> None:
     class TransientFailingPipeline(RecordingPipeline):
         def __init__(self) -> None:
             super().__init__()
@@ -153,12 +153,81 @@ def test_pipeline_failure_mid_step_n_leaves_failed_bar_consumed_not_processed() 
         replay.step_n(3)
     assert replay.index == 1
     assert pipeline.events == ["bar:0"]
-    replay.step_one()
-    assert replay.index == 2
-    assert pipeline.events == ["bar:0", "bar:2"]
+    assert replay.failed
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.step_one()
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.step_n(0)
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.run_to_end()
+    assert replay.index == 1 and pipeline.events == ["bar:0"]
     replay.reset()
+    assert not replay.failed and replay.index == -1
     replay.run_to_end()
-    assert pipeline.events == ["bar:0", "bar:2", "reset", "bar:0", "bar:1", "bar:2"]
+    assert pipeline.events == ["bar:0", "reset", "bar:0", "bar:1", "bar:2"]
+
+
+@pytest.mark.parametrize("entrypoint", ["step_one", "run_to_end"])
+def test_pipeline_failure_latches_all_stepping_entrypoints(entrypoint: str) -> None:
+    class FailingPipeline(RecordingPipeline):
+        def process_bar(self, view: ObservableBars) -> None:
+            if view.index == 0:
+                raise RuntimeError("first bar failed")
+            super().process_bar(view)
+
+    pipeline = FailingPipeline()
+    replay = ReplayCursor(SimulationClock(sequence(2)), pipeline)
+    with pytest.raises(RuntimeError, match="first bar failed"):
+        getattr(replay, entrypoint)()
+    assert replay.failed and replay.index == 0 and pipeline.events == []
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.step_one()
+    assert replay.index == 0 and pipeline.events == []
+
+
+def test_failed_reset_keeps_cursor_latched_until_pipeline_reset_succeeds() -> None:
+    class ResetFailingPipeline(RecordingPipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_reset = True
+
+        def process_bar(self, view: ObservableBars) -> None:
+            raise RuntimeError("processing failed")
+
+        def reset(self) -> None:
+            if self.fail_reset:
+                raise RuntimeError("reset failed")
+            super().reset()
+
+    pipeline = ResetFailingPipeline()
+    replay = ReplayCursor(SimulationClock(sequence(2)), pipeline)
+    with pytest.raises(RuntimeError, match="processing failed"):
+        replay.step_one()
+    with pytest.raises(RuntimeError, match="reset failed"):
+        replay.reset()
+    assert replay.failed and replay.index == 0
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.run_to_end()
+    pipeline.fail_reset = False
+    replay.reset()
+    assert not replay.failed and replay.index == -1
+
+
+def test_failed_final_bar_is_not_mistaken_for_successful_exhaustion() -> None:
+    class FinalBarFailingPipeline(RecordingPipeline):
+        def process_bar(self, view: ObservableBars) -> None:
+            if view.index == 1:
+                raise RuntimeError("final bar failed")
+            super().process_bar(view)
+
+    pipeline = FinalBarFailingPipeline()
+    replay = ReplayCursor(SimulationClock(sequence(2)), pipeline)
+    with pytest.raises(RuntimeError, match="final bar failed"):
+        replay.run_to_end()
+    assert replay.index == 1 and not replay.has_next and replay.failed
+    assert pipeline.events == ["bar:0"]
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.run_to_end()
 
 
 def test_step_one_past_final_bar_raises_and_mutates_nothing() -> None:
@@ -166,6 +235,7 @@ def test_step_one_past_final_bar_raises_and_mutates_nothing() -> None:
     replay.run_to_end()
     with pytest.raises(ReplayCursorError, match="final"):
         replay.step_one()
+    assert not replay.failed
     assert replay.index == 1 and len(pipeline.views) == 2
     assert pipeline.events == ["bar:0", "bar:1"]
     with pytest.raises(ReplayCursorError, match="final"):
