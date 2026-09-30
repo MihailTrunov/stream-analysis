@@ -30,6 +30,8 @@ services:
       STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
       STREAM_ANALYSIS_DATA_ROOT: /data
       STREAM_ANALYSIS_BUILD_ID: ${STREAM_ANALYSIS_BUILD_ID:-development}
+      STREAM_ANALYSIS_GIT_COMMIT: ${STREAM_ANALYSIS_GIT_COMMIT:-}
+      STREAM_ANALYSIS_GIT_DIRTY: ${STREAM_ANALYSIS_GIT_DIRTY:-}
       OANDA_TOKEN: ${OANDA_TOKEN:-}
       OANDA_KEY: ${OANDA_KEY:-}
       OANDA_ACCOUNT: ${OANDA_ACCOUNT:-}
@@ -49,6 +51,9 @@ services:
     environment:
       STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
       STREAM_ANALYSIS_DATA_ROOT: /data
+      STREAM_ANALYSIS_BUILD_ID: ${STREAM_ANALYSIS_BUILD_ID:-development}
+      STREAM_ANALYSIS_GIT_COMMIT: ${STREAM_ANALYSIS_GIT_COMMIT:-}
+      STREAM_ANALYSIS_GIT_DIRTY: ${STREAM_ANALYSIS_GIT_DIRTY:-}
     depends_on:
       migrate: {condition: service_completed_successfully}
     volumes:

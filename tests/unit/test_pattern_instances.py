@@ -13,7 +13,17 @@ from sqlalchemy.exc import DatabaseError
 from alembic import command
 from alembic.config import Config
 from market_analysis.application.pattern_instance_bridge import lifecycle_step_from_intent
-from market_analysis.config import DetectionAnalysisConfig, PatternSelection
+from market_analysis.config import (
+    DetectionAnalysisConfig,
+    PatternSelection,
+    detection_config_hash,
+    resolve_detection_config,
+)
+from market_analysis.config.hashing import (
+    CANONICALIZATION_VERSION,
+    DETECTION_HASH_VERSION,
+    HASH_ALGORITHM,
+)
 from market_analysis.detection.records import TransitionIntent
 from market_analysis.domain import Bar, Timeframe
 from market_analysis.indicators import (
@@ -705,12 +715,30 @@ def test_event_id_migration_backfills_existing_transitions(
     at = START + timedelta(minutes=1)
     instance_id = str(uuid4())
     with engine.begin() as connection:
-        run_id = run(connection, selected)
-        config_hash = connection.scalar(
-            text("SELECT detection_config_hash FROM run_snapshots WHERE run_id = :run_id"),
-            {"run_id": str(run_id)},
+        # Seed the old schema directly: current repository code writes the new
+        # CodeVersion columns, which do not exist before revision 09.
+        run_id = uuid4()
+        config = DetectionAnalysisConfig(
+            instrument_id="US30", calendar_id="demo-v1",
+            patterns=(PatternSelection.from_definition(selected),),
         )
-        assert isinstance(config_hash, str)
+        definitions = {selected.identity: selected}
+        resolved = resolve_detection_config(config, pattern_definitions=definitions)
+        config_hash = detection_config_hash(resolved, pattern_definitions=definitions)
+        connection.execute(text(
+            "INSERT INTO run_snapshots (run_id, run_kind, dataset_revision_id, "
+            "calendar_version, build_id, config_schema_version, detection_hash_algorithm, "
+            "detection_hash_version, detection_canonicalization_version, "
+            "detection_config_hash, detection_config_json) "
+            "VALUES (:run_id, 'replay', 'dataset-1', 'demo-v1', 'test-build', "
+            ":schema_version, :algorithm, :hash_version, :canonical_version, "
+            ":config_hash, :config_json)"
+        ), {
+            "run_id": str(run_id), "schema_version": resolved.schema_version,
+            "algorithm": HASH_ALGORITHM, "hash_version": DETECTION_HASH_VERSION,
+            "canonical_version": CANONICALIZATION_VERSION,
+            "config_hash": config_hash, "config_json": resolved.canonical_json(),
+        })
         key = instance_semantic_key(
             dataset_revision_id="dataset-1", detection_config_hash=config_hash,
             instrument_id="US30", timeframe=Timeframe.M1.value, definition=selected,

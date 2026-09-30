@@ -1,14 +1,14 @@
 # Stream Analysis
 
-The supported local MVP startup is Docker Compose on a Mac with Docker running:
+The supported local MVP startup is Docker Compose on a Mac with Docker running. Use the wrapper to pin the current Git commit and dirty status into the API and evaluation worker (the image does not contain `.git`):
 
 ```sh
-docker compose up --build
+sh scripts/start-with-lineage.sh
 ```
 
 Open <http://127.0.0.1:5173> for the browser installation check and <http://127.0.0.1:8000/diagnostics> for the diagnostics API. PostgreSQL stays on the private Compose network, with live database files in a Docker-managed `postgres_data` volume. The `migrate` service runs the version-controlled Alembic migration before the API and workers start; application startup itself does not create or modify tables. Datasets, artifacts, exports and logs live under `./data` by default (override with `STREAM_ANALYSIS_DATA_ROOT`). OANDA credentials are not required for startup; only live history import needs them.
 
-For UK/live OANDA import, set `OANDA_KEY`, `OANDA_ACCOUNT`, `OANDA_ENV=live`, and `OANDA_REGION=UK` in a local ignored env file. If your credentials are in `app/.env`, start with `docker compose --env-file app/.env up --build` so Compose passes them to the API and import worker; do not commit that file. `POST /imports` accepts a `dataset_id`, `instrument_id` (`US30` or `DAX`), and UTC `start`/`end` range. `GET /imports` and `GET /imports/{job_id}` show durable progress. After a worker interruption, the job stays interrupted until `POST /imports/{job_id}/resume`; it resumes from the last committed page, not from zero. A terminal provider/validation failure requires a new request with `fresh_attempt=true`. Only a completed import publishes a selectable immutable revision. The initial verified calendar covers analytical dates 2023-09-27 through 2026-09-28; later dates require a new verified calendar version.
+For UK/live OANDA import, set `OANDA_KEY`, `OANDA_ACCOUNT`, `OANDA_ENV=live`, and `OANDA_REGION=UK` in a local ignored env file. If your credentials are in `app/.env`, start with `sh scripts/start-with-lineage.sh --env-file app/.env` so Compose passes them to the API and import worker; do not commit that file. A direct `docker compose up --build` still works, but run CodeVersion will explicitly say unavailable unless Git metadata is supplied through the environment. A dirty checkout records the commit *and* dirty flag; it is not represented as the exact clean build. `POST /imports` accepts a `dataset_id`, `instrument_id` (`US30` or `DAX`), and UTC `start`/`end` range. `GET /imports` and `GET /imports/{job_id}` show durable progress. After a worker interruption, the job stays interrupted until `POST /imports/{job_id}/resume`; it resumes from the last committed page, not from zero. A terminal provider/validation failure requires a new request with `fresh_attempt=true`. Only a completed import publishes a selectable immutable revision. The initial verified calendar covers analytical dates 2023-09-27 through 2026-09-28; later dates require a new verified calendar version.
 
 The seeded two-bar walkthrough is intentionally **not research-grade**. It checks that the browser can fetch canonical local bars, reveal them one at a time, and display service diagnostics. It does not calculate market state, run detectors, create events, or perform autonomous evaluation. Those features depend on later implementation Stories.
 

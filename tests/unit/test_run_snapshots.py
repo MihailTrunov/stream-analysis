@@ -36,7 +36,7 @@ def test_explicit_migration_creates_schema_and_version(monkeypatch, tmp_path) ->
     command.upgrade(Config("alembic.ini"), "head")
     engine = create_engine(f"sqlite:///{database_path}")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_08"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_09"
         assert connection.scalar(text("SELECT count(*) FROM run_snapshots")) == 0
     engine.dispose()
 
@@ -86,6 +86,9 @@ def test_hash_metadata_migration_backfills_existing_snapshots(monkeypatch, tmp_p
     assert record.evaluation_canonicalization_version == "legacy-v1"
     assert record.calendar_version == "calendar-1"
     assert record.build_id == "build-1"
+    assert record.code_version.status.value == "unavailable"
+    assert record.code_version.source == "legacy-unavailable"
+    assert record.code_version.revision is None
     with engine.begin() as connection, pytest.raises(IntegrityError):
         connection.execute(
             text(

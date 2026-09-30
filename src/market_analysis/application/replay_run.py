@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection
 
+from market_analysis.code_version import CodeVersion, capture_code_version
 from market_analysis.config import DetectionAnalysisConfig, resolve_detection_config
 from market_analysis.domain import DatasetLineage, SimulationClock, ValidationStatus
 from market_analysis.patterns import ParameterSpec, PatternDefinition
@@ -57,6 +58,12 @@ class ReplayRunContext:
             "detection_config_hash": self.snapshot.detection_config_hash,
             "calendar_version": self.snapshot.calendar_version,
             "build_id": self.snapshot.build_id,
+            "code_version": {
+                "revision": self.snapshot.code_revision,
+                "dirty": self.snapshot.code_dirty,
+                "status": self.snapshot.code_capture_status,
+                "source": self.snapshot.code_capture_source,
+            },
             "selected_start": _stamp(self.lifecycle.selected_start),
             "selected_end": _stamp(self.lifecycle.selected_end),
             "status": self.lifecycle.status.value,
@@ -82,6 +89,7 @@ def create_replay_run(
     preset_revision: int | None = None,
     component_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
     pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
+    revision_provider: Callable[[str], CodeVersion] = capture_code_version,
 ) -> ReplayRunContext:
     """Atomically pin a resolved snapshot and initial lifecycle row."""
     revision = load_dataset_revision(connection, dataset_revision_id)
@@ -127,6 +135,7 @@ def create_replay_run(
             preset_revision=preset_revision,
             component_parameters=component_parameters,
             pattern_definitions=pattern_definitions,
+            revision_provider=revision_provider,
         )
         insert_replay_run(connection, lifecycle)
     canonical_config = DetectionAnalysisConfig.from_canonical_json(snapshot.detection_config_json)

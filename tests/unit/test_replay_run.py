@@ -13,6 +13,7 @@ from market_analysis.application.replay_run import (
     load_replay_context,
     step_replay,
 )
+from market_analysis.code_version import CodeCaptureStatus, CodeVersion
 from market_analysis.config import (
     ComponentSelection,
     ConfigParameter,
@@ -116,6 +117,9 @@ def test_replay_run_pins_resolved_snapshot_and_serializes_deterministically() ->
             detection_config=config(), selected_start=START,
             selected_end=START + timedelta(minutes=2), created_at=START,
             build_id="git-build-1", component_parameters=SPECS,
+            revision_provider=lambda build: CodeVersion(
+                build, "b" * 40, False, CodeCaptureStatus.AVAILABLE, "injected"
+            ),
         )
         loaded = load_replay_context(connection, run_id, component_parameters=SPECS)
         assert loaded == created
@@ -129,6 +133,8 @@ def test_replay_run_pins_resolved_snapshot_and_serializes_deterministically() ->
         assert '"name":"period","value":45' in created.snapshot.detection_config_json
         assert created.snapshot.calendar_version == "cal-v1"
         assert created.snapshot.build_id == "git-build-1"
+        assert created.snapshot.code_version.is_clean_committed
+        assert '"revision":"' + "b" * 40 + '"' in created.canonical_json()
         assert load_run_snapshot(connection, run_id) == created.snapshot
     engine.dispose()
 

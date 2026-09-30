@@ -11,7 +11,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine
@@ -20,6 +20,7 @@ from test_detector_runtime import bar, chain_series, config_with, pattern_select
 from alembic import command
 from alembic.config import Config
 from market_analysis.application.pattern_instance_bridge import lifecycle_step_from_intent
+from market_analysis.code_version import CodeCaptureStatus, CodeVersion
 from market_analysis.config import ComponentSelection, ConfigParameter, DetectionAnalysisConfig
 from market_analysis.detection import (
     COMPRESSION_V1,
@@ -44,7 +45,7 @@ from market_analysis.persistence.pattern_instances import (
     load_pattern_instance,
     load_pattern_instance_by_key,
 )
-from market_analysis.persistence.runs import create_run_snapshot, metadata
+from market_analysis.persistence.runs import create_run_snapshot, load_run_snapshot, metadata
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,9 @@ def test_persisted_real_detector_next_decision_matches_uninterrupted_execution(
             build_id="test-build-81",
             detection_config=scenario.config,
             pattern_definitions={scenario.definition.identity: scenario.definition},
+            revision_provider=lambda build: CodeVersion(
+                build, "c" * 40, False, CodeCaptureStatus.AVAILABLE, "injected"
+            ),
         )
         assert snapshot.detection_config_hash == uninterrupted.detection_config_hash
         occurrence = None
@@ -338,6 +342,10 @@ def test_persisted_real_detector_next_decision_matches_uninterrupted_execution(
             )
             assert stored.event_kind == observed.to_state.upper()
         assert advanced.detector_events[-1].build_id == "test-build-81"
+        event_run = load_run_snapshot(connection, UUID(advanced.detector_events[-1].run_id))
+        assert event_run is not None
+        assert event_run.code_version.revision == "c" * 40
+        assert event_run.code_version.is_clean_committed
         assert advanced.detector_events[-1].detection_config_hash == (
             uninterrupted.detection_config_hash
         )

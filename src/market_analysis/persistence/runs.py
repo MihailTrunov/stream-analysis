@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     Connection,
@@ -17,6 +18,7 @@ from sqlalchemy import (
 )
 
 from market_analysis.application.logging import research_logger
+from market_analysis.code_version import CodeCaptureStatus, CodeVersion, capture_code_version
 from market_analysis.config import (
     DetectionAnalysisConfig,
     EvaluationPlan,
@@ -44,6 +46,10 @@ run_snapshots = Table(
     Column("preset_revision", Integer),
     Column("calendar_version", String(200), nullable=False),
     Column("build_id", String(200), nullable=False),
+    Column("code_revision", String(64)),
+    Column("code_dirty", Boolean),
+    Column("code_capture_status", String(20), nullable=False, server_default="unavailable"),
+    Column("code_capture_source", String(100), nullable=False, server_default="legacy-unavailable"),
     Column("config_schema_version", String(100), nullable=False),
     Column("detection_hash_algorithm", String(20), nullable=False),
     Column("detection_hash_version", String(100), nullable=False),
@@ -56,6 +62,12 @@ run_snapshots = Table(
     Column("evaluation_plan_hash", String(64)),
     Column("evaluation_plan_json", Text),
     CheckConstraint("run_kind IN ('replay', 'evaluation')", name="ck_run_kind"),
+    CheckConstraint(
+        "(code_capture_status = 'unavailable' AND code_revision IS NULL "
+        "AND code_dirty IS NULL) OR "
+        "(code_capture_status = 'available' AND code_revision IS NOT NULL)",
+        name="ck_run_code_version",
+    ),
     CheckConstraint(
         "(run_kind = 'replay' AND evaluation_plan_json IS NULL AND evaluation_plan_hash IS NULL "
         "AND evaluation_hash_algorithm IS NULL AND evaluation_hash_version IS NULL "
@@ -94,6 +106,20 @@ class RunSnapshotRecord:
     evaluation_canonicalization_version: str | None
     evaluation_plan_hash: str | None
     evaluation_plan_json: str | None
+    code_revision: str | None
+    code_dirty: bool | None
+    code_capture_status: str
+    code_capture_source: str
+
+    @property
+    def code_version(self) -> CodeVersion:
+        return CodeVersion(
+            build_id=self.build_id,
+            revision=self.code_revision,
+            dirty=self.code_dirty,
+            status=CodeCaptureStatus(self.code_capture_status),
+            source=self.code_capture_source,
+        )
 
 
 def create_run_snapshot(
@@ -111,6 +137,7 @@ def create_run_snapshot(
     pattern_definitions: Mapping[tuple[str, str], PatternDefinition] | None = None,
     outcome_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
     segment_parameters: Mapping[tuple[str, str], tuple[ParameterSpec, ...]] | None = None,
+    revision_provider: Callable[[str], CodeVersion] = capture_code_version,
 ) -> RunSnapshotRecord:
     for name, value in (
         ("dataset_revision_id", dataset_revision_id),
@@ -123,6 +150,9 @@ def create_run_snapshot(
         raise ValueError("preset ID and revision must be supplied together")
     if preset_revision is not None and preset_revision < 1:
         raise ValueError("preset revision must be positive")
+    code_version = revision_provider(build_id)
+    if code_version.build_id != build_id:
+        raise ValueError("revision provider returned a different build_id")
     detection_config = resolve_detection_config(
         detection_config,
         component_parameters=component_parameters,
@@ -157,6 +187,10 @@ def create_run_snapshot(
         preset_revision=preset_revision,
         calendar_version=calendar_version,
         build_id=build_id,
+        code_revision=code_version.revision,
+        code_dirty=code_version.dirty,
+        code_capture_status=code_version.status.value,
+        code_capture_source=code_version.source,
         config_schema_version=detection_config.schema_version,
         detection_hash_algorithm=HASH_ALGORITHM,
         detection_hash_version=DETECTION_HASH_VERSION,
