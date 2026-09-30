@@ -1,6 +1,7 @@
 """Common deterministic runtime and registered v1 pattern detectors."""
 
 from .compression import COMPRESSION_V1, CompressionDetector
+from .continuation import CONTINUATION_V1, ContinuationDetector
 from .inputs import DetectorInput
 from .records import (
     DetectorEvent,
@@ -23,6 +24,8 @@ from .runtime import (
 __all__ = [
     "COMPRESSION_V1",
     "CompressionDetector",
+    "CONTINUATION_V1",
+    "ContinuationDetector",
     "DetectorBinding",
     "DetectorEvent",
     "DetectorInput",
