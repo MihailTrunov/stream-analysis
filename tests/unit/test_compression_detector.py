@@ -9,7 +9,12 @@ from decimal import Decimal
 import pytest
 from test_detector_runtime import bar, config_with, pattern_selection
 
-from market_analysis.config import ConfigParameter, PatternSelection
+from market_analysis.config import (
+    ComponentSelection,
+    ConfigParameter,
+    DetectionAnalysisConfig,
+    PatternSelection,
+)
 from market_analysis.detection import (
     COMPRESSION_V1,
     CompressionDetector,
@@ -18,6 +23,7 @@ from market_analysis.detection import (
     DetectorRuntimeError,
     DetectorRuntimeResult,
 )
+from market_analysis.domain import Timeframe
 from market_analysis.patterns import validate_event_evidence
 from market_analysis.patterns.instance_context import encode_context
 
@@ -106,6 +112,75 @@ def test_five_consecutive_bars_confirm_with_earlier_candidate_event_time() -> No
     for event in runtime.events:
         validate_event_evidence(COMPRESSION_V1, event.trigger_id, event.rationale)
     encode_context(COMPRESSION_V1, runtime.instances[0].context)
+
+
+def test_hand_authored_bars_confirm_and_release_from_computed_range_state() -> None:
+    """The thresholds must be reachable through the real ATR/RangeState chain.
+
+    Four-bar bandwidth windows of alternating closes have identical positive
+    widths, so the strict empirical compression score is 100. The overlapping
+    three-bar high/low windows are range-like (CHOP 100). A final wide
+    directional bar expands bandwidth and releases the confirmed occurrence.
+    """
+    def parameter(name: str, value: int) -> ConfigParameter:
+        return ConfigParameter(name=name, value=value)
+
+    config = DetectionAnalysisConfig(
+        instrument_id="US30",
+        timeframe=Timeframe.M1,
+        calendar_id="cal-v1",
+        components=(
+            ComponentSelection(
+                component_id="atr", component_version="1",
+                parameters=(parameter("period", 2),),
+            ),
+            ComponentSelection(
+                component_id="range_state", component_version="1",
+                parameters=(
+                    parameter("chop_period", 3),
+                    parameter("bandwidth_period", 4),
+                    parameter("compression_reference_bars", 6),
+                ),
+            ),
+        ),
+        patterns=(pattern_selection(COMPRESSION_V1),),
+    )
+    runtime = DetectorRuntime(
+        config,
+        [DetectorBinding(COMPRESSION_V1, CompressionDetector(), reentrant=True)],
+        run_id="run-84-computed",
+        dataset_revision_id="dataset-84-computed",
+    )
+    bars = tuple(bar(i, str(10 + i % 2), "12", "9") for i in range(13)) + (
+        bar(13, "20", "21", "9"),
+    )
+
+    results = [runtime.process_bar(item) for item in bars]
+    assert [item.frame.availability["range_state"] for item in results[:9]] == [
+        "WARMING_UP" for _ in range(8)
+    ] + ["AVAILABLE"]
+    assert [item.instances[0].state for item in results[8:14]] == [
+        "CANDIDATE", "CANDIDATE", "CANDIDATE", "CANDIDATE", "ACTIVE", "COMPLETED",
+    ]
+    assert [result.frame.components["range_state"]["compression_score"]
+            for result in results[8:13]] == [Decimal(100)] * 5
+    assert [result.frame.components["range_state"]["choppiness_score"]
+            for result in results[8:13]] == [Decimal(100)] * 5
+    assert results[13].frame.components["range_state"]["compression_score"] == 0
+    assert [event.trigger_id for event in runtime.events] == [
+        "compression_entry", "persistence_confirmed", "compression_released",
+    ]
+    assert runtime.events[1].event_time == bars[8].timestamp
+    assert runtime.events[1].detection_time == bars[12].timestamp
+    assert runtime.instances[0].context["release_cause"] == "BOTH"
+    for event in runtime.events:
+        validate_event_evidence(COMPRESSION_V1, event.trigger_id, event.rationale)
+
+    before = runtime.debug_json()
+    runtime.reset()
+    for item in bars:
+        runtime.process_bar(item)
+    assert runtime.debug_json() == before
 
 
 @pytest.mark.parametrize(

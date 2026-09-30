@@ -32,3 +32,12 @@ fourth/fifth-bar timing, configured bar count/hash variation, unavailable
 candidate invalidation, both release causes and simultaneous release,
 active hysteresis, terminal re-entry, typed evidence, no-look-ahead,
 and reset/replay parity.
+
+Acceptance fixture: in addition to injected boundary tests, use a short
+hand-authored canonical bar series with the actual ATR and RangeState
+components. Alternating closes in equal high/low envelopes create five
+computed qualifying bars after warm-up; a final wide directional bar causes
+computed release. Assert source availability/scores, lifecycle timestamps,
+typed evidence, and reset/replay identity without replacing the RangeState
+frame. This checks that the approved thresholds are attainable in the real
+component-to-detector path.
