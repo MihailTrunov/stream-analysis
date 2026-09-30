@@ -28,7 +28,7 @@ bar cannot create a new candidate from the ended leg.
 | From | To | Observable completed-bar evidence | Priority |
 | --- | --- | --- | --- |
 | No occurrence | CANDIDATE | Eligible source plus opposing canonical EMA close-cross | After source-leg break guard |
-| CANDIDATE | CONFIRMED | Canonical close-break of the source leg's protected low (UP) or high (DOWN) | 1 |
+| CANDIDATE | CONFIRMED | Canonical `TREND_LEG_ENDED` for the candidate's source leg, caused by its protected-low (UP) or protected-high (DOWN) completed-close break | 1 |
 | CANDIDATE | INVALIDATED | Newly confirmed same-direction HH (UP source) or LL (DOWN source), before protected break | 2 |
 | CANDIDATE | EXPIRED | Configured maximum age reached with neither structural outcome | 3 |
 
@@ -42,9 +42,16 @@ new opposing EMA cross may start another occurrence only on a later bar while
 a valid source leg still exists. Remaining on the opposing EMA side cannot
 restart one.
 
-The confirming DetectorEvent uses the canonical structure-break event's
-`event_time` and `detection_time`, even when that bar ends the source TrendLeg;
-candidate start time stays separate. Confirmation and invalidation preserve
+The confirming DetectorEvent uses the source leg's canonical `TREND_LEG_ENDED`
+event's `event_time` and `detection_time`; candidate start time stays separate.
+The end event is the authority for the source leg's protection, not a generic
+SwingStructure break. A real-chain check found a bar where the source leg
+ended on its protected swing but SwingStructure emitted a break for a newer
+reference swing. The researcher explicitly approved confirmation on the
+source-leg end in this case. Require the end event's leg index and direction
+to match the candidate's frozen source leg; cite its semantic event reference.
+If a matching SwingStructure break is also present, it may be cited as
+corroboration but is not required. Confirmation and invalidation preserve
 the exact consumed market-event semantic reference and typed rationale under
 SCRUM-82. Expiry emits an `EXPIRED` lifecycle event for research/audit, not a
 confirmed reversal pattern signal.
