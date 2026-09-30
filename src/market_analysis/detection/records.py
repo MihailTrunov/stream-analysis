@@ -97,7 +97,9 @@ class TransitionIntent:
     one against the SCRUM-79 lifecycle rules and commits it as a
     sequence-pinned :class:`DetectorEvent`. ``event_time`` may reference an
     earlier market extreme only when its canonical market event is visible by
-    ``detection_time``; the runtime enforces this against the frame feed.
+    ``detection_time``. A detector may also cite an earlier event from the same
+    occurrence (for example, compression confirmation cites candidate start).
+    The runtime enforces both against committed event history.
     """
 
     pattern_id: str

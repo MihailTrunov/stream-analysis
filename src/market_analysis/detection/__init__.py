@@ -1,5 +1,6 @@
-"""Common deterministic runtime for SCRUM-78 pattern detectors."""
+"""Common deterministic runtime and registered v1 pattern detectors."""
 
+from .compression import COMPRESSION_V1, CompressionDetector
 from .inputs import DetectorInput
 from .records import (
     DetectorEvent,
@@ -20,6 +21,8 @@ from .runtime import (
 )
 
 __all__ = [
+    "COMPRESSION_V1",
+    "CompressionDetector",
     "DetectorBinding",
     "DetectorEvent",
     "DetectorInput",

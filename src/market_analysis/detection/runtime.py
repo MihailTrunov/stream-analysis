@@ -189,6 +189,7 @@ class DetectorRuntime:
         "_bindings",
         "_config",
         "_dataset_revision_id",
+        "_detector_event_times",
         "_detection_config_hash",
         "_events",
         "_event_refs",
@@ -493,6 +494,7 @@ class DetectorRuntime:
         }
         self._sequences = {self._key(slot): 0 for slot in self._bindings}
         self._events: tuple[DetectorEvent, ...] = ()
+        self._detector_event_times: frozenset[tuple[str, str, str, datetime]] = frozenset()
         self._event_refs: frozenset[str] = frozenset()
         self._ledger: dict[datetime, datetime] = {}
         self._last_detection_time: datetime | None = None
@@ -573,6 +575,10 @@ class DetectorRuntime:
         self._instances = instances
         self._sequences = sequences
         self._events = (*self._events, *events)
+        self._detector_event_times = self._detector_event_times | frozenset(
+            (event.pattern_id, event.pattern_version, event.instance_id, event.event_time)
+            for event in events
+        )
         self._ledger = ledger
         self._event_refs = frozenset(event_refs)
         self._last_detection_time = detection_time
@@ -712,12 +718,19 @@ class DetectorRuntime:
                 )
             if intent.event_time != detection_time:
                 visible_at = ledger.get(intent.event_time)
-                if visible_at is None or visible_at > detection_time:
+                own_prior_event = (
+                    intent.pattern_id,
+                    intent.pattern_version,
+                    intent.instance_id,
+                    intent.event_time,
+                ) in self._detector_event_times
+                if (visible_at is None or visible_at > detection_time) and not own_prior_event:
                     raise self._failure(
                         slot,
                         frame,
                         f"intent {position} event_time {intent.event_time.isoformat()} cites "
-                        f"no market event visible by {detection_time.isoformat()}",
+                        f"no market event or same-occurrence detector event visible by "
+                        f"{detection_time.isoformat()}",
                     )
         probe = LifecycleRunner(definition, initial_state=instance.state)
         try:
