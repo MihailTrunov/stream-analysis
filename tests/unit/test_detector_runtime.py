@@ -1083,6 +1083,33 @@ def test_two_registered_versions_execute_over_one_frozen_fixture() -> None:
     ]
     assert [instance.state for instance in runtime.instances] == ["confirmed", "confirmed"]
     assert [instance.pattern_version for instance in runtime.instances] == ["1", "2"]
+    # Separately authored expectations for the same input fixture. A future
+    # semantic version may diverge without rewriting the other version's
+    # expected transition history.
+    expected_by_version = {
+        "1": (
+            (0, "opposing_ema_cross", "candidate", 5, "EMA_CROSS"),
+            (1, "ema_reclaim", "reclaimed", 13, "SWING_HIGH_CLOSE_BREAK"),
+            (2, "continuation_break", "confirmed", 13, "SWING_HIGH_CLOSE_BREAK"),
+        ),
+        "2": (
+            (0, "opposing_ema_cross", "candidate", 5, "EMA_CROSS"),
+            (1, "ema_reclaim", "reclaimed", 13, "SWING_HIGH_CLOSE_BREAK"),
+            (2, "close_break_confirmed", "confirmed", 13, "SWING_HIGH_CLOSE_BREAK"),
+        ),
+    }
+    for version, expected in expected_by_version.items():
+        assert [
+            (
+                event.sequence,
+                event.trigger_id,
+                event.to_state,
+                int((event.detection_time - START).total_seconds() // 60),
+                event.rationale["source_event"],
+            )
+            for event in runtime.events
+            if event.pattern_version == version
+        ] == list(expected)
     baseline = runtime.debug_json()
     runtime.reset()
     drive(runtime, series)

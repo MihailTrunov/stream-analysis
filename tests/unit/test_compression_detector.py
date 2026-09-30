@@ -122,6 +122,7 @@ def test_hand_authored_bars_confirm_and_release_from_computed_range_state() -> N
     three-bar high/low windows are range-like (CHOP 100). A final wide
     directional bar expands bandwidth and releases the confirmed occurrence.
     """
+
     def parameter(name: str, value: int) -> ConfigParameter:
         return ConfigParameter(name=name, value=value)
 
@@ -131,11 +132,13 @@ def test_hand_authored_bars_confirm_and_release_from_computed_range_state() -> N
         calendar_id="cal-v1",
         components=(
             ComponentSelection(
-                component_id="atr", component_version="1",
+                component_id="atr",
+                component_version="1",
                 parameters=(parameter("period", 2),),
             ),
             ComponentSelection(
-                component_id="range_state", component_version="1",
+                component_id="range_state",
+                component_version="1",
                 parameters=(
                     parameter("chop_period", 3),
                     parameter("bandwidth_period", 4),
@@ -160,15 +163,24 @@ def test_hand_authored_bars_confirm_and_release_from_computed_range_state() -> N
         "WARMING_UP" for _ in range(8)
     ] + ["AVAILABLE"]
     assert [item.instances[0].state for item in results[8:14]] == [
-        "CANDIDATE", "CANDIDATE", "CANDIDATE", "CANDIDATE", "ACTIVE", "COMPLETED",
+        "CANDIDATE",
+        "CANDIDATE",
+        "CANDIDATE",
+        "CANDIDATE",
+        "ACTIVE",
+        "COMPLETED",
     ]
-    assert [result.frame.components["range_state"]["compression_score"]
-            for result in results[8:13]] == [Decimal(100)] * 5
-    assert [result.frame.components["range_state"]["choppiness_score"]
-            for result in results[8:13]] == [Decimal(100)] * 5
+    assert [
+        result.frame.components["range_state"]["compression_score"] for result in results[8:13]
+    ] == [Decimal(100)] * 5
+    assert [
+        result.frame.components["range_state"]["choppiness_score"] for result in results[8:13]
+    ] == [Decimal(100)] * 5
     assert results[13].frame.components["range_state"]["compression_score"] == 0
     assert [event.trigger_id for event in runtime.events] == [
-        "compression_entry", "persistence_confirmed", "compression_released",
+        "compression_entry",
+        "persistence_confirmed",
+        "compression_released",
     ]
     assert runtime.events[1].event_time == bars[8].timestamp
     assert runtime.events[1].detection_time == bars[12].timestamp
@@ -259,6 +271,23 @@ def test_entry_thresholds_are_independent_and_strict_on_chop() -> None:
     assert _step(runtime, 1, "79.999", "80").instances[0].state == "INACTIVE"
     assert _step(runtime, 2, "90", "40").instances[0].state == "INACTIVE"
     assert _step(runtime, 3, "80", "61.8001").instances[0].state == "CANDIDATE"
+
+
+@pytest.mark.parametrize(
+    ("scenario", "compression", "chop"),
+    [
+        ("compressed_but_directional", "90", "38.2"),
+        ("range_like_but_wide", "20", "70"),
+    ],
+)
+def test_single_axis_negative_fixtures_do_not_start_a_candidate(
+    scenario: str, compression: str, chop: str
+) -> None:
+    runtime = _runtime()
+    result = _step(runtime, 0, compression, chop)
+    assert result.frame.availability["range_state"] == "AVAILABLE", scenario
+    assert result.instances[0].state == "INACTIVE", scenario
+    assert not result.events, scenario
 
 
 def test_configured_persistence_count_changes_hash_and_confirmation_bar() -> None:

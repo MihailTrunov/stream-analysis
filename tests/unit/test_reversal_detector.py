@@ -14,6 +14,7 @@ from market_analysis.detection import (
     DetectorRuntime,
     ReversalDetector,
 )
+from market_analysis.domain import Bar
 from market_analysis.indicators import OverallStructure, market_event_semantic_ref
 from market_analysis.patterns import validate_event_evidence
 from market_analysis.patterns.instance_context import encode_context
@@ -130,6 +131,30 @@ def test_ema_recross_alone_does_not_invalidate_but_new_hh_does() -> None:
         extreme.events[0].rationale["items"][0]["features"]["invalidating_swing_index"]["type"]
         == "integer"
     )
+
+
+def test_mirrored_new_ll_invalidates_bearish_source_after_recross() -> None:
+    def mirror(item: Bar) -> Bar:
+        return replace(
+            item,
+            open=Decimal(200) - item.open,
+            high=Decimal(200) - item.low,
+            low=Decimal(200) - item.high,
+            close=Decimal(200) - item.close,
+        )
+
+    runtime = _runtime()
+    for item in chain_series():
+        runtime.process_bar(mirror(item))
+    recross = runtime.process_bar(mirror(bar(15, "150", "160", "119")))
+    assert recross.instances[0].state == "CANDIDATE"
+    assert not recross.events
+    extreme = runtime.process_bar(mirror(bar(16, "130", "150", "119")))
+    assert [(event.trigger_id, event.to_state) for event in extreme.events] == [
+        ("same_direction_extreme", "INVALIDATED")
+    ]
+    assert extreme.events[0].event_time < extreme.events[0].detection_time
+    assert extreme.instances[0].context["source_direction"] == "DOWN"
 
 
 def test_source_leg_end_wins_over_new_hh_and_newer_structure_break() -> None:
