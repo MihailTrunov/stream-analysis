@@ -102,12 +102,15 @@ class DetectorBinding:
     definition: PatternDefinition
     detector: PatternDetector
     instance_id: str | None = None
+    reentrant: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.definition, PatternDefinition):
             raise DetectorRuntimeError("DetectorBinding requires a PatternDefinition")
         if self.instance_id is not None and not self.instance_id.strip():
             raise DetectorRuntimeError("instance_id must be a non-empty string when given")
+        if not isinstance(self.reentrant, bool):
+            raise DetectorRuntimeError("reentrant must be a boolean")
 
     @property
     def effective_instance_id(self) -> str:
@@ -132,7 +135,16 @@ class DetectorRuntimeResult:
 class _Slot:
     """Internal per-binding execution state; the runtime owns the lifecycle runner."""
 
-    __slots__ = ("binding", "definition", "detector", "instance_id", "parameters", "runner")
+    __slots__ = (
+        "binding",
+        "definition",
+        "detector",
+        "base_instance_id",
+        "instance_id",
+        "occurrence_index",
+        "parameters",
+        "runner",
+    )
 
     def __init__(
         self,
@@ -143,7 +155,9 @@ class _Slot:
         self.binding = binding
         self.definition = definition
         self.detector = binding.detector
+        self.base_instance_id = instance_id
         self.instance_id = instance_id
+        self.occurrence_index = 0
         self.parameters: Mapping[str, object] = MappingProxyType({})
         self.runner = LifecycleRunner(definition)
 
@@ -332,7 +346,12 @@ class DetectorRuntime:
         """
         payload = json.dumps(
             [
-                [slot.definition.pattern_id, slot.definition.pattern_version, slot.instance_id]
+                [
+                    slot.definition.pattern_id,
+                    slot.definition.pattern_version,
+                    slot.base_instance_id,
+                    *(["reentrant"] if slot.binding.reentrant else []),
+                ]
                 for slot in self._bindings
             ],
             sort_keys=True,
@@ -349,6 +368,15 @@ class DetectorRuntime:
     def instances(self) -> tuple[PatternInstance, ...]:
         """The current occurrence state per binding in execution order."""
         return tuple(self._instances[self._key(slot)] for slot in self._bindings)
+
+    @property
+    def occurrences(self) -> tuple[PatternInstance, ...]:
+        """Every started occurrence, including terminal ones, in creation order."""
+        return tuple(
+            instance
+            for instance in self._instances.values()
+            if instance.state != self._initial_state(instance.pattern_id, instance.pattern_version)
+        )
 
     @property
     def events(self) -> tuple[DetectorEvent, ...]:
@@ -376,6 +404,8 @@ class DetectorRuntime:
         self._aggregator.reset()
         for slot in self._bindings:
             slot.runner = LifecycleRunner(slot.definition)
+            slot.instance_id = slot.base_instance_id
+            slot.occurrence_index = 0
             slot.detector.reset()
         self._reset_state()
 
@@ -411,7 +441,7 @@ class DetectorRuntime:
         return self._step(frame)
 
     def debug_json(self) -> str:
-        """Serialize committed events and instance state with stable key order."""
+        """Serialize committed events, current slots, and started occurrences."""
         payload = {
             "run_id": self._run_id,
             "dataset_revision_id": self._dataset_revision_id,
@@ -421,7 +451,8 @@ class DetectorRuntime:
                 {
                     "pattern_id": slot.definition.pattern_id,
                     "pattern_version": slot.definition.pattern_version,
-                    "instance_id": slot.instance_id,
+                    "instance_id": slot.base_instance_id,
+                    "reentrant": slot.binding.reentrant,
                 }
                 for slot in self._bindings
             ],
@@ -434,6 +465,16 @@ class DetectorRuntime:
                     "context": json_value(instance.context),
                 }
                 for instance in self.instances
+            ],
+            "occurrences": [
+                {
+                    "pattern_id": instance.pattern_id,
+                    "pattern_version": instance.pattern_version,
+                    "instance_id": instance.instance_id,
+                    "state": instance.state,
+                    "context": json_value(instance.context),
+                }
+                for instance in self.occurrences
             ],
             "events": [event.to_canonical_dict() for event in self._events],
         }
@@ -471,15 +512,34 @@ class DetectorRuntime:
             if known is None or event.detection_time < known:
                 ledger[event.event_time] = event.detection_time
             event_refs.add(market_event_semantic_ref(frame, event))
-        prepared = [
-            self._prepare(slot, frame, ledger, event_refs, detection_time)
-            for slot in self._bindings
-        ]
+        prepared = []
+        for slot in self._bindings:
+            current = self._instances[self._key(slot)]
+            restart = slot.binding.reentrant and current.state in (
+                slot.definition.effective_terminal_states
+            )
+            if restart:
+                next_id = f"{slot.base_instance_id}:{slot.occurrence_index + 1}"
+                current = PatternInstance(
+                    slot.definition.pattern_id,
+                    slot.definition.pattern_version,
+                    next_id,
+                    slot.definition.lifecycle_states[0],
+                )
+            prepared.append(
+                (*self._prepare(slot, current, frame, ledger, event_refs, detection_time), restart)
+            )
         events: list[DetectorEvent] = []
         instances = dict(self._instances)
         sequences = dict(self._sequences)
-        for slot, output, transitions in prepared:
+        for slot, output, transitions, restart in prepared:
+            if restart:
+                slot.occurrence_index += 1
+                slot.instance_id = output.instance.instance_id
+                slot.runner = LifecycleRunner(slot.definition)
             key = self._key(slot)
+            if restart:
+                sequences[key] = 0
             self._advance(slot, frame, transitions)
             for intent in transitions:
                 sequence = sequences[key]
@@ -522,6 +582,13 @@ class DetectorRuntime:
             instances=tuple(instances[self._key(slot)] for slot in self._bindings),
         )
 
+    def _initial_state(self, pattern_id: str, pattern_version: str) -> str:
+        return next(
+            slot.definition.lifecycle_states[0]
+            for slot in self._bindings
+            if slot.definition.identity == (pattern_id, pattern_version)
+        )
+
     def _validate_frame(self, frame: MarketStateFrame) -> None:
         if not frame.bar.is_complete:
             raise DetectorRuntimeError("frame bar must be completed")
@@ -539,13 +606,13 @@ class DetectorRuntime:
     def _prepare(
         self,
         slot: _Slot,
+        instance: PatternInstance,
         frame: MarketStateFrame,
         ledger: Mapping[datetime, datetime],
         event_refs: set[str],
         detection_time: datetime,
     ) -> tuple[_Slot, DetectorOutput, tuple[TransitionIntent, ...]]:
         """Run one detector and validate its output without mutating any state."""
-        instance = self._instances[self._key(slot)]
         bar_input = DetectorInput(
             frame=frame,
             definition=slot.definition,
@@ -577,7 +644,7 @@ class DetectorRuntime:
         detection_time: datetime,
     ) -> None:
         definition = slot.definition
-        expected = (definition.pattern_id, definition.pattern_version, slot.instance_id)
+        expected = instance.identity
         # NOTE: instance context and intent rationale are frozen and identity-
         # checked here; schema enforcement happens at the SCRUM-81 persistence
         # boundary (encode_context validates against context_schema, and the

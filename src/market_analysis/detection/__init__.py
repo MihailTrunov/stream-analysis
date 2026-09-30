@@ -10,6 +10,7 @@ from .records import (
     freeze_mapping,
     json_value,
 )
+from .reversal import REVERSAL_V1, ReversalDetector
 from .runtime import (
     DetectorBinding,
     DetectorRuntime,
@@ -29,6 +30,8 @@ __all__ = [
     "DetectorRuntimeResult",
     "PatternDetector",
     "PatternInstance",
+    "REVERSAL_V1",
+    "ReversalDetector",
     "TransitionIntent",
     "freeze_mapping",
     "json_value",

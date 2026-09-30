@@ -574,6 +574,75 @@ def test_two_detectors_execute_through_one_interface() -> None:
     ]
 
 
+def test_opt_in_reentrant_binding_preserves_terminal_occurrences_and_replay() -> None:
+    definition = replace(
+        reversal_definition(), terminal_states=("confirmed", "invalidated", "expired")
+    )
+
+    class ScheduledDetector:
+        def process_bar(self, bar_input: DetectorInput) -> DetectorOutput:
+            trigger = {
+                1: "opposing_ema_cross",
+                2: "protected_swing_break",
+                4: "opposing_ema_cross",
+                5: "protected_swing_break",
+            }.get(bar_input.completed_bars)
+            edge = next(
+                (
+                    item
+                    for item in definition.transitions
+                    if item.from_state == bar_input.instance.state and item.trigger_id == trigger
+                ),
+                None,
+            )
+            if edge is None:
+                return DetectorOutput(bar_input.instance)
+            intent = TransitionIntent(
+                definition.pattern_id,
+                definition.pattern_version,
+                bar_input.instance.instance_id,
+                edge.from_state,
+                edge.to_state,
+                edge.trigger_id,
+                bar_input.detection_time,
+                bar_input.detection_time,
+                {"condition": edge.trigger_id},
+            )
+            return DetectorOutput(replace(bar_input.instance, state=edge.to_state), (intent,))
+
+        def reset(self) -> None:
+            pass
+
+    runtime = runtime_for(
+        [DetectorBinding(definition, ScheduledDetector(), reentrant=True)], [definition]
+    )
+    fingerprint = runtime.binding_fingerprint
+    results = drive(runtime, tuple(bar(i) for i in range(5)))
+    assert [item.instances[0].instance_id for item in results] == [
+        "trend-reversal",
+        "trend-reversal",
+        "trend-reversal:1",
+        "trend-reversal:1",
+        "trend-reversal:1",
+    ]
+    assert [item.state for item in runtime.occurrences] == ["confirmed", "confirmed"]
+    assert [item.instance_id for item in runtime.occurrences] == [
+        "trend-reversal",
+        "trend-reversal:1",
+    ]
+    assert [(item.instance_id, item.sequence) for item in runtime.events] == [
+        ("trend-reversal", 0),
+        ("trend-reversal", 1),
+        ("trend-reversal:1", 0),
+        ("trend-reversal:1", 1),
+    ]
+    assert runtime.binding_fingerprint == fingerprint
+    before = runtime.debug_json()
+    runtime.reset()
+    drive(runtime, tuple(bar(i) for i in range(5)))
+    assert runtime.debug_json() == before
+
+
 def test_representative_scrum_83_84_85_detectors_share_one_path() -> None:
     runtime, detectors = three_detector_runtime()
     drive(runtime, chain_series())
