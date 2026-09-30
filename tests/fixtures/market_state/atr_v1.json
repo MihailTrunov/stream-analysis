@@ -1,0 +1,18 @@
+{
+  "id": "atr-period-2-wilder-v1",
+  "purpose": "True ranges 2, 6, 3, 2; SMA seed 4 followed by Wilder values 3.5 and 2.75.",
+  "start_utc": "2026-01-05T12:00:00Z",
+  "instrument_id": "US30",
+  "timeframe": "1m",
+  "run_id": "fixture-run-111",
+  "dataset_revision_id": "fixture-dataset-111",
+  "components": [{"id": "atr", "version": "1", "parameters": {"period": 2}}],
+  "bars_close_high_low": [["10", "11", "9"], ["15", "16", "14"], ["17", "18", "15"], ["17", "18", "16"]],
+  "expected_events_by_bar": [[], [], [], []],
+  "expected_paths_by_bar": {
+    "0": {"availability.atr": "WARMING_UP", "components.atr.true_range": "2", "components.atr.atr": null, "components.atr.smoothing": "wilder"},
+    "1": {"availability.atr": "AVAILABLE", "components.atr.true_range": "6", "components.atr.atr": "4"},
+    "2": {"components.atr.true_range": "3", "components.atr.atr": "3.5"},
+    "3": {"components.atr.true_range": "2", "components.atr.atr": "2.75"}
+  }
+}

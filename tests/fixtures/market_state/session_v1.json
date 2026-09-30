@@ -1,0 +1,24 @@
+{
+  "id": "london-session-boundaries-dst-break-holiday-v1",
+  "purpose": "One pinned Europe/London calendar; winter and summer UTC offsets, inclusive start/exclusive end, break and holiday.",
+  "calendar": {
+    "calendar_id": "cal-v1",
+    "version": "fixture-v1",
+    "provider": "seed",
+    "account": "local",
+    "instrument_id": "US30",
+    "timezone_name": "Europe/London",
+    "trading_day_boundary": "00:00",
+    "windows": [["london", "08:00", "11:00"], ["pre_us", "11:00", "14:00"]],
+    "breaks": [["pause", "09:00", "09:15"]],
+    "holidays": ["2026-01-06"]
+  },
+  "cases": [
+    {"utc": "2026-01-05T07:59:00Z", "local": "2026-01-05T07:59:00+00:00", "session": null, "elapsed_seconds": null, "is_open": false, "is_break": false, "is_holiday": false},
+    {"utc": "2026-01-05T08:00:00Z", "local": "2026-01-05T08:00:00+00:00", "session": "london", "elapsed_seconds": 0, "is_open": true, "is_break": false, "is_holiday": false},
+    {"utc": "2026-01-05T09:00:00Z", "local": "2026-01-05T09:00:00+00:00", "session": null, "elapsed_seconds": null, "is_open": false, "is_break": true, "is_holiday": false},
+    {"utc": "2026-01-05T11:00:00Z", "local": "2026-01-05T11:00:00+00:00", "session": "pre_us", "elapsed_seconds": 0, "is_open": true, "is_break": false, "is_holiday": false},
+    {"utc": "2026-01-06T08:00:00Z", "local": "2026-01-06T08:00:00+00:00", "session": null, "elapsed_seconds": null, "is_open": false, "is_break": false, "is_holiday": true},
+    {"utc": "2026-07-06T07:00:00Z", "local": "2026-07-06T08:00:00+01:00", "session": "london", "elapsed_seconds": 0, "is_open": true, "is_break": false, "is_holiday": false}
+  ]
+}

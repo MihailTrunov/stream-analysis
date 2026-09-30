@@ -1,0 +1,19 @@
+{
+  "id": "ema-period-3-sma-seed-v1",
+  "purpose": "Five hand-calculated closes: first two unavailable, SMA seed 20, then alpha 0.5 gives 30 and 25.",
+  "start_utc": "2026-01-05T12:00:00Z",
+  "instrument_id": "US30",
+  "timeframe": "1m",
+  "run_id": "fixture-run-111",
+  "dataset_revision_id": "fixture-dataset-111",
+  "components": [{"id": "ema", "version": "1", "parameters": {"period": 3}}],
+  "bars_close_high_low": [["10", "10", "10"], ["20", "20", "20"], ["30", "30", "30"], ["40", "40", "40"], ["20", "20", "20"]],
+  "expected_events_by_bar": [[], [], [], [], []],
+  "expected_paths_by_bar": {
+    "0": {"availability.ema": "WARMING_UP", "components.ema.ema": null, "components.ema.seed_method": "sma_period_closes", "components.ema.alpha": "0.5"},
+    "1": {"availability.ema": "WARMING_UP", "components.ema.ema": null},
+    "2": {"availability.ema": "AVAILABLE", "components.ema.ema": "20"},
+    "3": {"components.ema.ema": "30.0"},
+    "4": {"components.ema.ema": "25.00"}
+  }
+}

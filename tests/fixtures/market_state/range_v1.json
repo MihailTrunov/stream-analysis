@@ -1,0 +1,19 @@
+{
+  "id": "range-two-bar-hand-calculation-v1",
+  "purpose": "Two bars give TR 4 and 6, CHOP 100 log10(10/8)/log10(2), population bandwidth 0.8; compression waits for reference history.",
+  "start_utc": "2026-01-05T12:00:00Z",
+  "instrument_id": "US30",
+  "timeframe": "1m",
+  "run_id": "fixture-run-111",
+  "dataset_revision_id": "fixture-dataset-111",
+  "components": [
+    {"id": "atr", "version": "1", "parameters": {"period": 14}},
+    {"id": "range_state", "version": "1", "parameters": {"chop_period": 2, "bandwidth_period": 2, "compression_reference_bars": 2}}
+  ],
+  "bars_close_high_low": [["8", "10", "6"], ["12", "14", "10"]],
+  "expected_events_by_bar": [[], []],
+  "expected_paths_by_bar": {
+    "0": {"availability.range_state": "WARMING_UP", "components.range_state.chop.status": "WARMING_UP", "components.range_state.bandwidth_evidence.status": "WARMING_UP", "components.atr.atr": null},
+    "1": {"components.range_state.chop.sum_true_range": "10", "components.range_state.chop.window_range": "8", "components.range_state.choppiness_score": "32.19280948873623478703194294893902", "components.range_state.choppiness_regime": "DIRECTIONAL", "components.range_state.bandwidth_evidence.basis": "10", "components.range_state.bandwidth_evidence.variance": "4", "components.range_state.bandwidth_evidence.stddev": "2", "components.range_state.bandwidth_evidence.upper_band": "14.0", "components.range_state.bandwidth_evidence.lower_band": "6.0", "components.range_state.bandwidth": "0.8", "components.range_state.compression_regime": "UNAVAILABLE", "components.atr.atr": null}
+  }
+}

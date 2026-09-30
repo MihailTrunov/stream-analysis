@@ -1,0 +1,50 @@
+{
+  "id": "structural-up-leg-and-delayed-swing-v1",
+  "purpose": "A 16-bar causal chain from EMA/ATR through swings, structure, structural TrendLeg and MarketState; the final bar breaks the protected low.",
+  "start_utc": "2026-01-05T12:00:00Z",
+  "instrument_id": "US30",
+  "timeframe": "1m",
+  "run_id": "fixture-run-111",
+  "dataset_revision_id": "fixture-dataset-111",
+  "expected_detection_config_hash": "bb7723a89fc464eca6005ee745e3c3625cfa18f87a07f62e0430614a9d6f9bd5",
+  "components": [
+    {"id": "atr", "version": "1", "parameters": {"period": 1}},
+    {"id": "ema", "version": "1", "parameters": {"period": 3}},
+    {"id": "swing_point", "version": "1", "parameters": {"atr_period": 1, "reversal_atr_multiplier": {"decimal": "0.1"}}},
+    {"id": "swing_structure", "version": "1", "parameters": {}},
+    {"id": "trend_leg", "version": "1", "parameters": {}},
+    {"id": "trend_leg_qualification", "version": "1", "parameters": {"min_duration_bars": 4, "min_directional_move_points": {"decimal": "31"}}},
+    {"id": "range_state", "version": "1", "parameters": {}}
+  ],
+  "bars_close_high_low": [
+    ["100", "101", "99"], ["100", "101", "99"], ["100", "101", "99"],
+    ["100", "101", "99"], ["100", "101", "99"],
+    ["129", "130", "100"], ["110", "129", "109"], ["80", "110", "79"],
+    ["100", "101", "80"], ["120", "121", "99"], ["110", "120", "109"],
+    ["90", "110", "89"], ["110", "111", "90"], ["140", "141", "109"],
+    ["120", "140", "119"], ["86.89", "120", "86"]
+  ],
+  "expected_events_by_bar": [
+    [], [], [], [], [],
+    ["EMA_CROSS"],
+    ["SWING_POINT_CONFIRMED", "SWING_STRUCTURE_CLASSIFIED", "EMA_CROSS"],
+    [],
+    ["SWING_POINT_CONFIRMED", "SWING_STRUCTURE_CLASSIFIED", "EMA_CROSS"],
+    [],
+    ["SWING_POINT_CONFIRMED", "SWING_STRUCTURE_CLASSIFIED"],
+    ["EMA_CROSS"],
+    ["SWING_POINT_CONFIRMED", "SWING_STRUCTURE_CLASSIFIED", "EMA_CROSS"],
+    ["SWING_HIGH_CLOSE_BREAK"],
+    ["SWING_POINT_CONFIRMED", "SWING_STRUCTURE_CLASSIFIED", "EMA_CROSS", "TREND_LEG_STARTED", "TREND_LEG_QUALIFIED"],
+    ["SWING_LOW_CLOSE_BREAK", "TREND_LEG_ENDED", "TREND_LEG_QUALIFICATION_ENDED"]
+  ],
+  "expected_paths_by_bar": {
+    "0": {"availability.ema": "WARMING_UP", "availability.atr": "AVAILABLE", "availability.swing_point": "WARMING_UP", "availability.swing_structure": "UNDEFINED", "availability.trend_leg": "NO_ACTIVE_LEG", "availability.range_state": "WARMING_UP", "components.ema.ema": null, "components.atr.atr": "2"},
+    "2": {"availability.ema": "AVAILABLE", "components.ema.ema": "100", "availability.swing_point": "WARMING_UP"},
+    "5": {"availability.swing_point": "AVAILABLE", "availability.swing_structure": "UNDEFINED", "components.swing_point.confirmed_count": 0, "components.ema.ema": "114.500"},
+    "6": {"components.swing_point.confirmed_count": 1, "components.swing_point.confirmed.0.event_price": "130", "components.swing_point.confirmed.0.event_time": "2026-01-05T12:05:00Z", "components.swing_point.confirmed.0.detection_time": "2026-01-05T12:06:00Z"},
+    "13": {"market_events_this_bar.0.evidence.reference_price": "121", "market_events_this_bar.0.evidence.reference_atr": "22", "market_events_this_bar.0.evidence.threshold": "123.20", "components.swing_structure.active_high_break_threshold": "123.20"},
+    "14": {"availability.trend_leg": "ACTIVE", "availability.trend_leg_qualification": "QUALIFIED", "availability.range_state": "WARMING_UP", "components.trend_leg.active_leg.direction": "UP", "components.trend_leg.active_leg.event_time": "2026-01-05T12:11:00Z", "components.trend_leg.active_leg.detection_time": "2026-01-05T12:14:00Z", "components.trend_leg.active_leg.duration_bars": 4, "components.trend_leg.active_leg.directional_movement_points": "31", "components.trend_leg.active_leg.favorable_extreme": "141", "components.trend_leg.active_leg.close_retracement_points": "21", "components.trend_leg.active_leg.protected_swing.event_price": "89", "components.trend_leg.active_leg.break_threshold": "86.90", "components.swing_structure.active_high_break_threshold": "144.20", "components.swing_point.confirmed_count": 5, "components.swing_point.confirmed.4.event_time": "2026-01-05T12:13:00Z", "components.swing_point.confirmed.4.detection_time": "2026-01-05T12:14:00Z"},
+    "15": {"availability.trend_leg": "NO_ACTIVE_LEG", "availability.trend_leg_qualification": "NO_ACTIVE_LEG", "components.trend_leg.active_leg": null, "market_events_this_bar.0.evidence.threshold": "86.90"}
+  }
+}

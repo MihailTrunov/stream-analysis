@@ -1,0 +1,24 @@
+{
+  "id": "range-default-14-20-120-warmup-v1",
+  "purpose": "150 alternating closes with fixed high/low; CHOP first available at index 13, bandwidth at 19, and strict 120-reference compression at 138. All equal reference bandwidths tie, so strict lower count is zero and compression score 100.",
+  "start_utc": "2026-01-05T12:00:00Z",
+  "instrument_id": "US30",
+  "timeframe": "1m",
+  "run_id": "fixture-run-111",
+  "dataset_revision_id": "fixture-dataset-111",
+  "components": [
+    {"id": "atr", "version": "1", "parameters": {"period": 14}},
+    {"id": "range_state", "version": "1", "parameters": {}}
+  ],
+  "repeated_bars_close_high_low": {"pattern": [["10", "12", "9"], ["11", "12", "9"]], "count": 150},
+  "expected_paths_by_bar": {
+    "0": {"availability.range_state": "WARMING_UP", "components.range_state.chop.status": "WARMING_UP", "components.range_state.bandwidth_evidence.status": "WARMING_UP", "components.range_state.compression.status": "WARMING_UP"},
+    "12": {"components.range_state.chop.status": "WARMING_UP"},
+    "13": {"components.range_state.chop.status": "AVAILABLE", "components.range_state.bandwidth_evidence.status": "WARMING_UP"},
+    "18": {"components.range_state.bandwidth_evidence.status": "WARMING_UP"},
+    "19": {"components.range_state.bandwidth_evidence.status": "AVAILABLE", "components.range_state.compression.status": "WARMING_UP"},
+    "137": {"components.range_state.compression.status": "WARMING_UP"},
+    "138": {"availability.range_state": "AVAILABLE", "components.range_state.compression.status": "AVAILABLE", "components.range_state.compression.strict_lower_count": 0, "components.range_state.compression.tie_count": 119, "components.range_state.compression_score": "100", "components.range_state.compression_regime": "COMPRESSED"},
+    "149": {"components.range_state.compression.strict_lower_count": 0, "components.range_state.compression.tie_count": 119, "components.range_state.compression_score": "100"}
+  }
+}

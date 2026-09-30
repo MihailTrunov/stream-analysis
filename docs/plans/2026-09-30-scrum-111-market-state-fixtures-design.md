@@ -1,0 +1,9 @@
+# SCRUM-111 — canonical MarketState fixture design
+
+Status: implementation plan, 2026-09-30. Authority: SCRUM-111, approved SCRUM-72–77 contracts, and the linked Product Scope and Technical Architecture documents.
+
+Two layouts are viable: one giant end-to-end golden snapshot, or small per-primitive references plus an integrated chain. The latter is selected. A giant snapshot is hard to review and can conceal semantic changes inside serialization noise. Small JSON cases keep input bars and hand-calculated expected values visible; one shared chain checks component order, event timing, and lineage together. Existing focused tests remain the boundary-case references; the new checked-in fixture catalog makes the central expectations discoverable and executable without generating them from the implementation.
+
+Each JSON case states its purpose, versioned configuration, ordered bars (or an explicit deterministic repetition notation for the 139-bar percentile warm-up), and selected per-bar expected values/events. Expected analytical values are authored literals. The test runner only parses inputs and compares actual projections with those literals. It never writes fixture files. The integrated chain uses the approved structural TrendLeg model; EMA-cross intervals are separate raw evidence, not leg boundaries. It includes event_time and detection_time and asserts that a delayed swing is invisible before confirmation.
+
+The work is complete when every market-state family has warm-up/unavailable, positive, and boundary coverage in this catalog or a directly identified focused fixture test; the integrated chain passes deterministically on repeated runs; and any deliberately changed analytical behavior requires a reviewed fixture/version update. No detector lifecycle or outcome data is added here (SCRUM-86 and later outcome Stories own those fixtures).
