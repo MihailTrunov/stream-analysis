@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 from types import MappingProxyType
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from market_analysis.config import (
     ConfigurationError,
@@ -53,12 +53,18 @@ from market_analysis.config import (
     resolve_detection_config,
 )
 from market_analysis.domain import Bar, TradingCalendar
-from market_analysis.indicators import MarketStateAggregator, MarketStateFrame
+from market_analysis.indicators import (
+    MarketStateAggregator,
+    MarketStateFrame,
+    market_event_semantic_ref,
+)
 from market_analysis.patterns import (
+    EventEvidenceError,
     LifecycleRunner,
     LifecycleTransition,
     PatternDefinition,
     PatternDefinitionError,
+    validate_event_evidence,
 )
 
 from .inputs import DetectorInput
@@ -171,6 +177,7 @@ class DetectorRuntime:
         "_dataset_revision_id",
         "_detection_config_hash",
         "_events",
+        "_event_refs",
         "_failed",
         "_instances",
         "_last_detection_time",
@@ -223,9 +230,7 @@ class DetectorRuntime:
         self._bindings = self._ordered(slots)
         for slot in self._bindings:
             selection = next(
-                item
-                for item in config.patterns
-                if item.pattern_id == slot.definition.pattern_id
+                item for item in config.patterns if item.pattern_id == slot.definition.pattern_id
             )
             overrides = {parameter.name: parameter.value for parameter in selection.parameters}
             try:
@@ -447,6 +452,7 @@ class DetectorRuntime:
         }
         self._sequences = {self._key(slot): 0 for slot in self._bindings}
         self._events: tuple[DetectorEvent, ...] = ()
+        self._event_refs: frozenset[str] = frozenset()
         self._ledger: dict[datetime, datetime] = {}
         self._last_detection_time: datetime | None = None
         self._reset_generation += 1
@@ -459,11 +465,16 @@ class DetectorRuntime:
                 f"frame detection_time {detection_time.isoformat()} must be strictly increasing"
             )
         ledger = dict(self._ledger)
+        event_refs = set(self._event_refs)
         for event in frame.market_events_this_bar:
             known = ledger.get(event.event_time)
             if known is None or event.detection_time < known:
                 ledger[event.event_time] = event.detection_time
-        prepared = [self._prepare(slot, frame, ledger, detection_time) for slot in self._bindings]
+            event_refs.add(market_event_semantic_ref(frame, event))
+        prepared = [
+            self._prepare(slot, frame, ledger, event_refs, detection_time)
+            for slot in self._bindings
+        ]
         events: list[DetectorEvent] = []
         instances = dict(self._instances)
         sequences = dict(self._sequences)
@@ -503,6 +514,7 @@ class DetectorRuntime:
         self._sequences = sequences
         self._events = (*self._events, *events)
         self._ledger = ledger
+        self._event_refs = frozenset(event_refs)
         self._last_detection_time = detection_time
         return DetectorRuntimeResult(
             frame=frame,
@@ -529,6 +541,7 @@ class DetectorRuntime:
         slot: _Slot,
         frame: MarketStateFrame,
         ledger: Mapping[datetime, datetime],
+        event_refs: set[str],
         detection_time: datetime,
     ) -> tuple[_Slot, DetectorOutput, tuple[TransitionIntent, ...]]:
         """Run one detector and validate its output without mutating any state."""
@@ -550,7 +563,7 @@ class DetectorRuntime:
             raise self._failure(slot, frame, detail) from exc
         if not isinstance(output, DetectorOutput):
             raise self._failure(slot, frame, "detector step must return a DetectorOutput")
-        self._validate_intents(slot, frame, instance, output, ledger, detection_time)
+        self._validate_intents(slot, frame, instance, output, ledger, event_refs, detection_time)
         return slot, output, output.transitions
 
     def _validate_intents(
@@ -560,6 +573,7 @@ class DetectorRuntime:
         instance: PatternInstance,
         output: DetectorOutput,
         ledger: Mapping[datetime, datetime],
+        event_refs: set[str],
         detection_time: datetime,
     ) -> None:
         definition = slot.definition
@@ -599,6 +613,22 @@ class DetectorRuntime:
                     slot, frame, f"trigger {intent.trigger_id!r} already participates in this bar"
                 )
             used.add(intent.trigger_id)
+            if definition.rationale_schema_version == "detector-evidence-v1":
+                try:
+                    evidence = validate_event_evidence(
+                        definition, intent.trigger_id, intent.rationale
+                    )
+                except EventEvidenceError as exc:
+                    raise self._failure(
+                        slot, frame, f"intent {position} has invalid evidence: {exc}"
+                    ) from exc
+                cited = set(cast(list[str], evidence["source_market_event_refs"]))
+                if cited - event_refs:
+                    raise self._failure(
+                        slot,
+                        frame,
+                        f"intent {position} cites a market event not observed by this bar",
+                    )
             if intent.detection_time != detection_time:
                 raise self._failure(
                     slot,
@@ -630,9 +660,7 @@ class DetectorRuntime:
                 slot, frame, f"emitted sequence rejected by the pattern lifecycle: {exc}"
             ) from exc
         if _triples(derived) != _triples(output.transitions):
-            derived_text = [
-                (item.from_state, item.to_state, item.trigger_id) for item in derived
-            ]
+            derived_text = [(item.from_state, item.to_state, item.trigger_id) for item in derived]
             raise self._failure(
                 slot,
                 frame,

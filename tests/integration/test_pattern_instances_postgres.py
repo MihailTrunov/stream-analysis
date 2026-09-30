@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DatabaseError, IntegrityError
 
 from alembic import command
 from alembic.config import Config
@@ -42,10 +42,18 @@ def test_postgres_pattern_instances_roundtrip_and_constraints(
     engine = create_engine(url)
     start = datetime(2026, 9, 30, 9, 0, tzinfo=UTC)
     definition = PatternDefinition(
-        "pg-reversal", "1", "PG reversal", "test", (), (), (),
+        "pg-reversal",
+        "1",
+        "PG reversal",
+        "test",
+        (),
+        (),
+        (),
         ("idle", "candidate", "completed"),
-        (TransitionSpec("idle", "candidate", "start"),
-         TransitionSpec("candidate", "completed", "finish")),
+        (
+            TransitionSpec("idle", "candidate", "start"),
+            TransitionSpec("candidate", "completed", "finish"),
+        ),
         (ConditionGroup("evidence", ("start", "finish")),),
         (),
         (ContextFieldSpec("count", "int"),),
@@ -53,54 +61,93 @@ def test_postgres_pattern_instances_roundtrip_and_constraints(
     )
     run_id = uuid4()
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_07"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_08"
         create_run_snapshot(
-            connection, run_id=run_id, dataset_revision_id="pg-dataset-1",
-            calendar_version="demo-v1", build_id="test-build",
+            connection,
+            run_id=run_id,
+            dataset_revision_id="pg-dataset-1",
+            calendar_version="demo-v1",
+            build_id="test-build",
             detection_config=DetectionAnalysisConfig(
-                instrument_id="US30", calendar_id="demo-v1",
+                instrument_id="US30",
+                calendar_id="demo-v1",
                 patterns=(PatternSelection.from_definition(definition),),
             ),
             pattern_definitions={definition.identity: definition},
         )
         occurrence = create_pattern_instance(
-            connection, run_id=run_id, definition=definition,
-            binding_fingerprint="a" * 64, occurrence_event_time=start,
-            occurrence_detection_time=start, occurrence_ordinal=0, at=start,
+            connection,
+            run_id=run_id,
+            definition=definition,
+            binding_fingerprint="a" * 64,
+            occurrence_event_time=start,
+            occurrence_detection_time=start,
+            occurrence_ordinal=0,
+            at=start,
         )
         with pytest.raises(PatternInstanceError, match="already exists"):
             create_pattern_instance(
-                connection, run_id=run_id, definition=definition,
-                binding_fingerprint="a" * 64, occurrence_event_time=start,
-                occurrence_detection_time=start, occurrence_ordinal=0, at=start,
+                connection,
+                run_id=run_id,
+                definition=definition,
+                binding_fingerprint="a" * 64,
+                occurrence_event_time=start,
+                occurrence_detection_time=start,
+                occurrence_ordinal=0,
+                at=start,
             )
         at = start + timedelta(minutes=1)
         advanced = advance_pattern_instance(
-            connection, occurrence.instance_id, definition, expected_revision=0,
+            connection,
+            occurrence.instance_id,
+            definition,
+            expected_revision=0,
             bar=Bar("US30", Timeframe.M1, at, Decimal(1), Decimal(2), Decimal(1), Decimal(2)),
-            steps=(LifecycleStep(
-                "idle", "candidate", "start", start, at,
-                {"condition": "start", "source_ordinal": 0},
-            ),),
+            steps=(
+                LifecycleStep(
+                    "idle",
+                    "candidate",
+                    "start",
+                    start,
+                    at,
+                    {"condition": "start", "source_ordinal": 0},
+                ),
+            ),
             context={"count": 3},
         )
         assert advanced.context["count"] == 3
         assert advanced.transitions[0].step.detection_time == at
         assert advanced.transitions[0].rationale == {
-            "condition": "start", "source_ordinal": 0,
+            "condition": "start",
+            "source_ordinal": 0,
         }
-        with pytest.raises(IntegrityError):
+        assert advanced.detector_events[0].event_id
+        with pytest.raises(DatabaseError, match="immutable"):
             with connection.begin_nested():
                 connection.execute(text(
-                    "INSERT INTO pattern_instance_transitions "
-                    "(instance_id, sequence, event_semantic_ref, bar_time, event_time, "
-                    "detection_time, from_state, to_state, trigger_id) "
-                    "VALUES (:id, 2, :ref, :bar, :event, :detection, 'candidate', "
-                    "'completed', 'finish')"
-                ), {
-                    "id": occurrence.instance_id, "ref": "b" * 64,
-                    "bar": at, "event": at, "detection": at + timedelta(minutes=1),
-                })
+                    "UPDATE pattern_instance_transitions SET rationale_json = '{}' "
+                    "WHERE instance_id = :instance_id"
+                ), {"instance_id": occurrence.instance_id})
+        with pytest.raises(IntegrityError):
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        "INSERT INTO pattern_instance_transitions "
+                        "(instance_id, sequence, event_id, event_semantic_ref, "
+                        "bar_time, event_time, "
+                        "detection_time, from_state, to_state, trigger_id) "
+                        "VALUES (:id, 2, :event_id, :ref, :bar, :event, :detection, 'candidate', "
+                        "'completed', 'finish')"
+                    ),
+                    {
+                        "id": occurrence.instance_id,
+                        "event_id": str(uuid4()),
+                        "ref": "b" * 64,
+                        "bar": at,
+                        "event": at,
+                        "detection": at + timedelta(minutes=1),
+                    },
+                )
     with engine.connect() as connection:
         assert load_pattern_instance(connection, occurrence.instance_id, definition) == advanced
     engine.dispose()

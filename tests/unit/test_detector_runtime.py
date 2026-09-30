@@ -42,6 +42,7 @@ from market_analysis.indicators import (
     MarketEventType,
     MarketStateAggregator,
     StructureBreak,
+    market_event_semantic_ref,
 )
 from market_analysis.patterns import (
     ConditionGroup,
@@ -75,8 +76,13 @@ TRIPLES = (
 
 def bar(index: int, close: str = "120", high: str = "125", low: str = "115") -> Bar:
     return Bar(
-        "US30", Timeframe.M1, START + timedelta(minutes=index),
-        Decimal(close), Decimal(high), Decimal(low), Decimal(close),
+        "US30",
+        Timeframe.M1,
+        START + timedelta(minutes=index),
+        Decimal(close),
+        Decimal(high),
+        Decimal(low),
+        Decimal(close),
     )
 
 
@@ -89,15 +95,18 @@ def chain_series() -> tuple[Bar, ...]:
 def component_selections() -> tuple[ComponentSelection, ...]:
     return (
         ComponentSelection(
-            component_id="atr", component_version="1",
+            component_id="atr",
+            component_version="1",
             parameters=(ConfigParameter(name="period", value=1),),
         ),
         ComponentSelection(
-            component_id="ema", component_version="1",
+            component_id="ema",
+            component_version="1",
             parameters=(ConfigParameter(name="period", value=3),),
         ),
         ComponentSelection(
-            component_id="swing_point", component_version="1",
+            component_id="swing_point",
+            component_version="1",
             parameters=(
                 ConfigParameter(name="atr_period", value=1),
                 ConfigParameter(name="reversal_atr_multiplier", value=Decimal("0.1")),
@@ -106,7 +115,8 @@ def component_selections() -> tuple[ComponentSelection, ...]:
         ComponentSelection(component_id="swing_structure", component_version="1"),
         ComponentSelection(component_id="trend_leg", component_version="1"),
         ComponentSelection(
-            component_id="trend_leg_qualification", component_version="1",
+            component_id="trend_leg_qualification",
+            component_version="1",
             parameters=(
                 ConfigParameter(name="min_duration_bars", value=4),
                 ConfigParameter(name="min_directional_move_points", value=Decimal("31")),
@@ -136,7 +146,10 @@ def pattern_selection(definition: PatternDefinition) -> PatternSelection:
 def reversal_definition(version: str = "1") -> PatternDefinition:
     """SCRUM-83 stand-in: an EMA cross opens a candidate, a close break confirms."""
     return PatternDefinition(
-        "trend-reversal", version, "Trend reversal", "Reversal hypothesis",
+        "trend-reversal",
+        version,
+        "Trend reversal",
+        "Reversal hypothesis",
         ("trend_leg", "ema"),
         ("opposing_ema_cross", "protected_swing_break"),
         (ParameterSpec("expiry_bars", ParameterType.INTEGER, 60, minimum=Decimal("1")),),
@@ -162,12 +175,15 @@ def reversal_definition(version: str = "1") -> PatternDefinition:
     )
 
 
-def continuation_definition(version: str = "1", confirm: str = "continuation_break") -> (
-    PatternDefinition
-):
+def continuation_definition(
+    version: str = "1", confirm: str = "continuation_break"
+) -> PatternDefinition:
     """SCRUM-85 stand-in: reclaim and break may land on one completed bar."""
     return PatternDefinition(
-        "trend-continuation", version, "Trend continuation", "Continuation hypothesis",
+        "trend-continuation",
+        version,
+        "Trend continuation",
+        "Continuation hypothesis",
         ("trend_leg", "ema"),
         (),
         (ParameterSpec("expiry_bars", ParameterType.INTEGER, 60, minimum=Decimal("1")),),
@@ -194,7 +210,10 @@ def continuation_definition(version: str = "1", confirm: str = "continuation_bre
 def compression_definition() -> PatternDefinition:
     """SCRUM-84 stand-in: compression entry, persistence and release states."""
     return PatternDefinition(
-        "range-compression", "1", "Range compression", "Compression hypothesis",
+        "range-compression",
+        "1",
+        "Range compression",
+        "Compression hypothesis",
         ("range_state",),
         (),
         (ParameterSpec("persistence_bars", ParameterType.INTEGER, 3, minimum=Decimal("1")),),
@@ -252,21 +271,23 @@ class ScriptedDetector:
             for trigger, from_state, to_state in chain:
                 context[f"{trigger}:ordinal"] = event.ordinal
                 end_state = to_state
-                intents.append(TransitionIntent(
-                    pattern_id=bar_input.pattern_id,
-                    pattern_version=bar_input.pattern_version,
-                    instance_id=bar_input.instance.instance_id,
-                    from_state=from_state,
-                    to_state=to_state,
-                    trigger_id=trigger,
-                    event_time=event.event_time,
-                    detection_time=bar_input.detection_time,
-                    rationale={
-                        "condition": trigger,
-                        "source_event": event.event_type.value,
-                        "source_ordinal": event.ordinal,
-                    },
-                ))
+                intents.append(
+                    TransitionIntent(
+                        pattern_id=bar_input.pattern_id,
+                        pattern_version=bar_input.pattern_version,
+                        instance_id=bar_input.instance.instance_id,
+                        from_state=from_state,
+                        to_state=to_state,
+                        trigger_id=trigger,
+                        event_time=event.event_time,
+                        detection_time=bar_input.detection_time,
+                        rationale={
+                            "condition": trigger,
+                            "source_event": event.event_type.value,
+                            "source_ordinal": event.ordinal,
+                        },
+                    )
+                )
             break  # one transition set per bar; same-bar chains ride one event
         return DetectorOutput(
             instance=replace(bar_input.instance, state=end_state, context=context),
@@ -309,8 +330,11 @@ def _chain(
     current = state
     for trigger in triggers:
         edge = next(
-            (item for item in definition.transitions
-             if item.from_state == current and item.trigger_id == trigger),
+            (
+                item
+                for item in definition.transitions
+                if item.from_state == current and item.trigger_id == trigger
+            ),
             None,
         )
         if edge is None:
@@ -321,27 +345,34 @@ def _chain(
 
 
 def reversal_detector(**kwargs: Any) -> ScriptedDetector:
-    return ScriptedDetector(reactions={
-        MarketEventType.EMA_CROSS: ("opposing_ema_cross",),
-        MarketEventType.SWING_HIGH_CLOSE_BREAK: ("protected_swing_break",),
-        MarketEventType.SWING_LOW_CLOSE_BREAK: ("protected_swing_break",),
-    }, **kwargs)
+    return ScriptedDetector(
+        reactions={
+            MarketEventType.EMA_CROSS: ("opposing_ema_cross",),
+            MarketEventType.SWING_HIGH_CLOSE_BREAK: ("protected_swing_break",),
+            MarketEventType.SWING_LOW_CLOSE_BREAK: ("protected_swing_break",),
+        },
+        **kwargs,
+    )
 
 
 def continuation_detector(confirm: str = "continuation_break") -> ScriptedDetector:
-    return ScriptedDetector(reactions={
-        MarketEventType.EMA_CROSS: ("opposing_ema_cross",),
-        MarketEventType.SWING_HIGH_CLOSE_BREAK: ("ema_reclaim", confirm),
-        MarketEventType.SWING_LOW_CLOSE_BREAK: ("ema_reclaim", confirm),
-    })
+    return ScriptedDetector(
+        reactions={
+            MarketEventType.EMA_CROSS: ("opposing_ema_cross",),
+            MarketEventType.SWING_HIGH_CLOSE_BREAK: ("ema_reclaim", confirm),
+            MarketEventType.SWING_LOW_CLOSE_BREAK: ("ema_reclaim", confirm),
+        }
+    )
 
 
 def compression_detector() -> ScriptedDetector:
-    return ScriptedDetector(reactions={
-        MarketEventType.SWING_STRUCTURE_CLASSIFIED: ("compression_entry_pass",),
-        MarketEventType.EMA_CROSS: ("persistence_met",),
-        MarketEventType.TREND_LEG_STARTED: ("compression_released",),
-    })
+    return ScriptedDetector(
+        reactions={
+            MarketEventType.SWING_STRUCTURE_CLASSIFIED: ("compression_entry_pass",),
+            MarketEventType.EMA_CROSS: ("persistence_met",),
+            MarketEventType.TREND_LEG_STARTED: ("compression_released",),
+        }
+    )
 
 
 def runtime_for(
@@ -421,8 +452,14 @@ def test_detector_input_contract_is_frozen_and_frame_scoped() -> None:
         instance=instance,
     )
     assert set(DetectorInput.__dataclass_fields__) == {
-        "frame", "definition", "parameters", "config",
-        "detection_config_hash", "run_id", "dataset_revision_id", "instance",
+        "frame",
+        "definition",
+        "parameters",
+        "config",
+        "detection_config_hash",
+        "run_id",
+        "dataset_revision_id",
+        "instance",
     }
     assert bar_input.market_events is frame.market_events_this_bar
     assert bar_input.bar is frame.bar
@@ -523,7 +560,8 @@ def test_two_detectors_execute_through_one_interface() -> None:
         assert isinstance(first, DetectorInput) and isinstance(second, DetectorInput)
         assert first.frame is second.frame
     assert {event.pattern_id for event in runtime.events} == {
-        "trend-reversal", "trend-continuation",
+        "trend-reversal",
+        "trend-continuation",
     }
     assert _transitions(runtime, "trend-reversal") == [
         (0, "idle", "candidate", "opposing_ema_cross"),
@@ -554,7 +592,9 @@ def test_representative_scrum_83_84_85_detectors_share_one_path() -> None:
         (2, "active", "completed", "compression_released"),
     ]
     assert [instance.state for instance in runtime.instances] == [
-        "completed", "confirmed", "confirmed",
+        "completed",
+        "confirmed",
+        "confirmed",
     ]
     # completion cites bar 11's extreme, whose TREND_LEG_STARTED event is
     # visible on the completion frame itself — an earlier extreme, no look-ahead
@@ -574,8 +614,7 @@ def test_same_bar_multi_transition_is_preserved_in_order() -> None:
     result = runtime.process_bar(series[13])
     chain = [event for event in result.events if event.pattern_id == "trend-continuation"]
     assert [
-        (event.sequence, event.from_state, event.to_state, event.trigger_id)
-        for event in chain
+        (event.sequence, event.from_state, event.to_state, event.trigger_id) for event in chain
     ] == [
         (1, "candidate", "reclaimed", "ema_reclaim"),
         (2, "reclaimed", "confirmed", "continuation_break"),
@@ -627,10 +666,12 @@ def test_pattern_tuple_order_never_changes_detector_order_events_or_hash() -> No
     assert forward.detection_config_hash == backward.detection_config_hash
     assert forward.binding_fingerprint == backward.binding_fingerprint
     assert [binding.definition.pattern_id for binding in forward.bindings] == [
-        "trend-continuation", "trend-reversal",
+        "trend-continuation",
+        "trend-reversal",
     ]
     assert [binding.definition.pattern_id for binding in backward.bindings] == [
-        "trend-continuation", "trend-reversal",
+        "trend-continuation",
+        "trend-reversal",
     ]
     series = chain_series()
     drive(forward, series)
@@ -725,6 +766,77 @@ def test_committed_events_carry_full_runtime_context() -> None:
         assert first.dataset_revision_id == "dataset-80"
 
 
+def test_strict_event_rationale_cites_only_observed_market_events() -> None:
+    definition = replace(continuation_definition(), rationale_schema_version="detector-evidence-v1")
+
+    class ReferencingDetector:
+        def __init__(self, *, invented: bool) -> None:
+            self.invented = invented
+
+        def reset(self) -> None:
+            pass
+
+        def process_bar(self, bar_input: DetectorInput) -> DetectorOutput:
+            if bar_input.instance.state != "idle" or not bar_input.market_events:
+                return DetectorOutput(bar_input.instance)
+            event = bar_input.market_events[0]
+            reference = (
+                "f" * 64 if self.invented else market_event_semantic_ref(bar_input.frame, event)
+            )
+            trigger = "opposing_ema_cross"
+            return DetectorOutput(
+                replace(bar_input.instance, state="candidate"),
+                (
+                    TransitionIntent(
+                        bar_input.pattern_id,
+                        bar_input.pattern_version,
+                        bar_input.instance.instance_id,
+                        "idle",
+                        "candidate",
+                        trigger,
+                        event.event_time,
+                        bar_input.detection_time,
+                        {
+                            "schema": "detector-evidence-v1",
+                            "condition": trigger,
+                            "source_market_event_refs": (reference,),
+                            "items": (
+                                {
+                                    "condition_id": trigger,
+                                    "status": "PASS",
+                                    "value": {"type": "event_ref", "value": reference},
+                                    "operator": "PRESENT",
+                                    "threshold": None,
+                                    "units": None,
+                                    "source_refs": (reference,),
+                                    "features": {},
+                                },
+                            ),
+                        },
+                    ),
+                ),
+            )
+
+    valid = DetectorRuntime(
+        config_with([pattern_selection(definition)]),
+        [DetectorBinding(definition, ReferencingDetector(invented=False))],
+        run_id="run-80",
+        dataset_revision_id="dataset-80",
+    )
+    drive(valid, chain_series())
+    assert valid.events[0].rationale["source_market_event_refs"]
+
+    invalid = DetectorRuntime(
+        config_with([pattern_selection(definition)]),
+        [DetectorBinding(definition, ReferencingDetector(invented=True))],
+        run_id="run-80",
+        dataset_revision_id="dataset-80",
+    )
+    with pytest.raises(DetectorRuntimeError, match="not observed by this bar"):
+        drive(invalid, chain_series())
+    assert invalid.events == ()
+
+
 def test_reset_replay_is_byte_identical_across_runs() -> None:
     runtime, _ = three_detector_runtime()
     series = chain_series()
@@ -771,17 +883,23 @@ def test_illegal_transitions_are_rejected_with_context() -> None:
     definition = continuation_definition()
     series = chain_series()
     undeclared = TransitionIntent(
-        pattern_id="trend-continuation", pattern_version="1",
+        pattern_id="trend-continuation",
+        pattern_version="1",
         instance_id="trend-continuation",
-        from_state="candidate", to_state="confirmed", trigger_id="ema_reclaim",
+        from_state="candidate",
+        to_state="confirmed",
+        trigger_id="ema_reclaim",
         event_time=START + timedelta(minutes=5),
         detection_time=START + timedelta(minutes=6),
         rationale={"condition": "ema_reclaim"},
     )
     wrong_source = TransitionIntent(
-        pattern_id="trend-continuation", pattern_version="1",
+        pattern_id="trend-continuation",
+        pattern_version="1",
         instance_id="trend-continuation",
-        from_state="reclaimed", to_state="confirmed", trigger_id="continuation_break",
+        from_state="reclaimed",
+        to_state="confirmed",
+        trigger_id="continuation_break",
         event_time=START + timedelta(minutes=5),
         detection_time=START + timedelta(minutes=6),
         rationale={"condition": "continuation_break"},
@@ -817,9 +935,12 @@ def test_causality_guard_rejects_unseen_event_times() -> None:
 
     def citing(event_time: datetime) -> TransitionIntent:
         return TransitionIntent(
-            pattern_id="trend-continuation", pattern_version="1",
+            pattern_id="trend-continuation",
+            pattern_version="1",
             instance_id="trend-continuation",
-            from_state="idle", to_state="candidate", trigger_id="opposing_ema_cross",
+            from_state="idle",
+            to_state="candidate",
+            trigger_id="opposing_ema_cross",
             event_time=event_time,
             detection_time=current_cross,
             rationale={"condition": "opposing_ema_cross"},
@@ -876,7 +997,8 @@ def test_two_registered_versions_execute_over_one_frozen_fixture() -> None:
         dataset_revision_id="dataset-80",
     )
     assert [binding.effective_instance_id for binding in runtime.bindings] == [
-        "continuation-v1", "continuation-v2",
+        "continuation-v1",
+        "continuation-v2",
     ]
     drive(runtime, series)
     assert [
@@ -912,9 +1034,7 @@ def test_frame_level_entry_point_and_lineage_guards() -> None:
     }
     with pytest.raises(DetectorRuntimeError, match="strictly increasing"):
         runtime.process_frame(frames[5])
-    definitions = {
-        binding.definition.identity: binding.definition for binding in runtime.bindings
-    }
+    definitions = {binding.definition.identity: binding.definition for binding in runtime.bindings}
     other = MarketStateAggregator(
         runtime.config,
         run_id="other-run",

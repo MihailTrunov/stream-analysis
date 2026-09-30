@@ -24,26 +24,27 @@ def freeze_mapping(context: Mapping[str, object]) -> Mapping[str, object]:
     """Validate and detach a record mapping into a read-only copy."""
     if not isinstance(context, Mapping):
         raise DetectorRecordError("record mapping must be a mapping")
+    detached: dict[str, object] = {}
     for key, value in context.items():
         if not isinstance(key, str) or not key.strip():
             raise DetectorRecordError("record mapping keys must be non-empty strings")
-        _frozen_value(value)
-    return MappingProxyType(dict(context))
+        detached[key] = _frozen_value(value)
+    return MappingProxyType(detached)
 
 
-def _frozen_value(value: object) -> None:
+def _frozen_value(value: object) -> object:
     if isinstance(value, datetime):
         if value.tzinfo is None or value.utcoffset() is None:
             raise DetectorRecordError("record timestamps must be timezone-aware")
-        return
+        return value
     if value is None or isinstance(value, str | bool | int | Decimal):
         if isinstance(value, Decimal) and not value.is_finite():
             raise DetectorRecordError("record decimals must be finite")
-        return
-    if isinstance(value, tuple):
-        for item in value:
-            _frozen_value(item)
-        return
+        return value
+    if isinstance(value, Mapping):
+        return freeze_mapping(value)
+    if isinstance(value, tuple | list):
+        return tuple(_frozen_value(item) for item in value)
     raise DetectorRecordError(f"unsupported record value: {type(value).__name__}")
 
 

@@ -11,11 +11,13 @@ from .definition import (
     TransitionSpec,
     assert_semantic_change_is_versioned,
 )
+from .event_evidence import EventEvidenceError, validate_event_evidence
 from .lifecycle import LifecycleRunner, LifecycleTransition
 
 __all__ = [
     "ConditionGroup",
     "ContextFieldSpec",
+    "EventEvidenceError",
     "LifecycleRunner",
     "LifecycleTransition",
     "ParameterSpec",
@@ -25,4 +27,5 @@ __all__ = [
     "PatternDefinitionRegistry",
     "TransitionSpec",
     "assert_semantic_change_is_versioned",
+    "validate_event_evidence",
 ]

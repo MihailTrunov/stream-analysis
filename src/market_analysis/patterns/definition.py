@@ -37,9 +37,7 @@ class ParameterSpec:
         lo = _decimal_or_none(self.minimum)
         hi = _decimal_or_none(self.maximum)
         if lo is not None and hi is not None and lo > hi:
-            raise PatternDefinitionError(
-                "parameter minimum cannot exceed maximum"
-            )
+            raise PatternDefinitionError("parameter minimum cannot exceed maximum")
         object.__setattr__(self, "minimum", lo)
         object.__setattr__(self, "maximum", hi)
         object.__setattr__(
@@ -63,40 +61,24 @@ class ParameterSpec:
     def normalize(self, value: object) -> object:
         if self.value_type is ParameterType.INTEGER:
             if isinstance(value, bool) or not isinstance(value, int):
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be an integer"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be an integer")
             normalized: object = value
         elif self.value_type is ParameterType.DECIMAL:
             if isinstance(value, bool):
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be a decimal"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be a decimal")
             try:
-                normalized = (
-                    value
-                    if isinstance(value, Decimal)
-                    else Decimal(str(value))
-                )
+                normalized = value if isinstance(value, Decimal) else Decimal(str(value))
             except (InvalidOperation, ValueError, TypeError) as exc:
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be a decimal"
-                ) from exc
+                raise PatternDefinitionError(f"{self.parameter_id} must be a decimal") from exc
             if not normalized.is_finite():
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be finite"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be finite")
         elif self.value_type is ParameterType.BOOLEAN:
             if not isinstance(value, bool):
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be a boolean"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be a boolean")
             normalized = value
         else:
             if not isinstance(value, str) or not value.strip():
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be a non-empty string"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be a non-empty string")
             normalized = value
 
         if isinstance(normalized, int | Decimal) and not isinstance(
@@ -105,13 +87,9 @@ class ParameterSpec:
         ):
             number = Decimal(normalized)
             if self.minimum is not None and number < self.minimum:
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be >= {self.minimum}"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be >= {self.minimum}")
             if self.maximum is not None and number > self.maximum:
-                raise PatternDefinitionError(
-                    f"{self.parameter_id} must be <= {self.maximum}"
-                )
+                raise PatternDefinitionError(f"{self.parameter_id} must be <= {self.maximum}")
         if self.supported_values and normalized not in self.supported_values:
             raise PatternDefinitionError(
                 f"{self.parameter_id} must be one of: "
@@ -133,9 +111,7 @@ class ParameterSpec:
             "maximum": _json_value(self.maximum),
         }
         if self.supported_values:
-            result["supported_values"] = [
-                _json_value(item) for item in self.supported_values
-            ]
+            result["supported_values"] = [_json_value(item) for item in self.supported_values]
         if include_default:
             result["default"] = _json_value(self.default)
         if include_description:
@@ -163,14 +139,10 @@ class ConditionGroup:
     def __post_init__(self) -> None:
         values = tuple(self.condition_ids)
         invalid = (
-            not self.group_id.strip()
-            or not values
-            or any(not value.strip() for value in values)
+            not self.group_id.strip() or not values or any(not value.strip() for value in values)
         )
         if invalid:
-            raise PatternDefinitionError(
-                "condition groups require non-empty ids"
-            )
+            raise PatternDefinitionError("condition groups require non-empty ids")
         _unique("condition ids", values)
         object.__setattr__(self, "condition_ids", values)
 
@@ -182,9 +154,7 @@ class ContextFieldSpec:
 
     def __post_init__(self) -> None:
         if not self.field_id.strip() or not self.type_name.strip():
-            raise PatternDefinitionError(
-                "context field id/type must be non-empty"
-            )
+            raise PatternDefinitionError("context field id/type must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +174,7 @@ class PatternDefinition:
     rationale_condition_ids: tuple[str, ...]
     terminal_states: tuple[str, ...] = ()
     same_bar_chains: tuple[tuple[str, str], ...] = ()
+    rationale_schema_version: str = "legacy-v0"
 
     def __post_init__(self) -> None:
         identity_fields = (
@@ -212,13 +183,8 @@ class PatternDefinition:
             "name",
             "description",
         )
-        if any(
-            not getattr(self, field_name).strip()
-            for field_name in identity_fields
-        ):
-            raise PatternDefinitionError(
-                "pattern identity/name/description must be non-empty"
-            )
+        if any(not getattr(self, field_name).strip() for field_name in identity_fields):
+            raise PatternDefinitionError("pattern identity/name/description must be non-empty")
 
         tuple_fields = (
             "required_components",
@@ -263,38 +229,26 @@ class PatternDefinition:
         _unique("terminal states", self.terminal_states)
         _unique("same-bar chains", self.same_bar_chains)
 
-        invalid_states = (
-            not self.lifecycle_states
-            or any(not state.strip() for state in self.lifecycle_states)
+        invalid_states = not self.lifecycle_states or any(
+            not state.strip() for state in self.lifecycle_states
         )
         if invalid_states:
-            raise PatternDefinitionError(
-                "lifecycle states must be non-empty"
-            )
+            raise PatternDefinitionError("lifecycle states must be non-empty")
 
         states = set(self.lifecycle_states)
         terminal = set(self.effective_terminal_states)
         if set(self.terminal_states) - states:
             raise PatternDefinitionError("terminal state is not a lifecycle state")
         conditions = {
-            condition_id
-            for group in self.condition_groups
-            for condition_id in group.condition_ids
+            condition_id for group in self.condition_groups for condition_id in group.condition_ids
         }
         transition_targets: dict[tuple[str, str], str] = {}
         outgoing_triggers: dict[str, set[str]] = {}
         for transition in self.transitions:
-            if (
-                transition.from_state not in states
-                or transition.to_state not in states
-            ):
-                raise PatternDefinitionError(
-                    "transition references unknown lifecycle state"
-                )
+            if transition.from_state not in states or transition.to_state not in states:
+                raise PatternDefinitionError("transition references unknown lifecycle state")
             if transition.trigger_id not in conditions:
-                raise PatternDefinitionError(
-                    "transition triggers must be declared conditions"
-                )
+                raise PatternDefinitionError("transition triggers must be declared conditions")
             if transition.from_state in terminal:
                 raise PatternDefinitionError("terminal states cannot have outgoing transitions")
             if transition.from_state == transition.to_state:
@@ -302,30 +256,20 @@ class PatternDefinition:
             transition_key = (transition.from_state, transition.trigger_id)
             prior_target = transition_targets.get(transition_key)
             if prior_target is not None:
-                raise PatternDefinitionError(
-                    "ambiguous transition from one state and trigger"
-                )
+                raise PatternDefinitionError("ambiguous transition from one state and trigger")
             transition_targets[transition_key] = transition.to_state
-            outgoing_triggers.setdefault(transition.from_state, set()).add(
-                transition.trigger_id
-            )
+            outgoing_triggers.setdefault(transition.from_state, set()).add(transition.trigger_id)
         for triggers in outgoing_triggers.values():
-            if len(triggers) > 1 and not triggers.issubset(
-                self.simultaneous_precedence
-            ):
-                raise PatternDefinitionError(
-                    "precedence must cover competing transitions"
-                )
+            if len(triggers) > 1 and not triggers.issubset(self.simultaneous_precedence):
+                raise PatternDefinitionError("precedence must cover competing transitions")
         if set(self.rationale_condition_ids) - conditions:
-            raise PatternDefinitionError(
-                "rationale ids must be declared conditions"
-            )
+            raise PatternDefinitionError("rationale ids must be declared conditions")
         if set(self.simultaneous_precedence) - conditions:
-            raise PatternDefinitionError(
-                "precedence ids must be declared conditions"
-            )
+            raise PatternDefinitionError("precedence ids must be declared conditions")
         if any(not state.strip() for state in self.terminal_states):
             raise PatternDefinitionError("terminal states must be non-empty")
+        if self.rationale_schema_version not in ("legacy-v0", "detector-evidence-v1"):
+            raise PatternDefinitionError("unsupported rationale schema version")
         edges = {
             (first.trigger_id, second.trigger_id)
             for first in self.transitions
@@ -363,18 +307,12 @@ class PatternDefinition:
         overrides: Mapping[str, object] | None = None,
     ) -> Mapping[str, object]:
         supplied = {} if overrides is None else dict(overrides)
-        specs = {
-            value.parameter_id: value
-            for value in self.parameters
-        }
+        specs = {value.parameter_id: value for value in self.parameters}
         unknown = set(supplied) - set(specs)
         if unknown:
-            raise PatternDefinitionError(
-                f"unknown parameters: {sorted(unknown)}"
-            )
+            raise PatternDefinitionError(f"unknown parameters: {sorted(unknown)}")
         resolved = {
-            key: spec.normalize(supplied.get(key, spec.default))
-            for key, spec in specs.items()
+            key: spec.normalize(supplied.get(key, spec.default)) for key, spec in specs.items()
         }
         return MappingProxyType(resolved)
 
@@ -416,16 +354,9 @@ class PatternDefinition:
                 }
                 for value in self.condition_groups
             ],
-            "simultaneous_precedence": list(
-                self.simultaneous_precedence
-            ),
-            "context_schema": [
-                vars_like(value)
-                for value in self.context_schema
-            ],
-            "rationale_condition_ids": list(
-                self.rationale_condition_ids
-            ),
+            "simultaneous_precedence": list(self.simultaneous_precedence),
+            "context_schema": [vars_like(value) for value in self.context_schema],
+            "rationale_condition_ids": list(self.rationale_condition_ids),
         }
         if not semantic_only:
             result.update(
@@ -436,6 +367,8 @@ class PatternDefinition:
             result["terminal_states"] = list(self.terminal_states)
         if self.same_bar_chains:
             result["same_bar_chains"] = [list(pair) for pair in self.same_bar_chains]
+        if self.rationale_schema_version != "legacy-v0":
+            result["rationale_schema_version"] = self.rationale_schema_version
         return result
 
     def canonical_json(self) -> str:
@@ -464,20 +397,14 @@ class PatternDefinitionRegistry:
 
     def register(self, definition: PatternDefinition) -> None:
         existing = self._items.get(definition.identity)
-        if (
-            existing is not None
-            and existing.canonical_json() != definition.canonical_json()
-        ):
+        if existing is not None and existing.canonical_json() != definition.canonical_json():
             raise PatternDefinitionError(
                 "pattern id/version cannot map to two different definitions"
             )
         self._items[definition.identity] = definition
 
     def definitions(self) -> tuple[PatternDefinition, ...]:
-        return tuple(
-            self._items[key]
-            for key in sorted(self._items)
-        )
+        return tuple(self._items[key] for key in sorted(self._items))
 
     def get(
         self,
@@ -497,18 +424,12 @@ def assert_semantic_change_is_versioned(
     candidate: PatternDefinition,
 ) -> None:
     if previous.pattern_id != candidate.pattern_id:
-        raise PatternDefinitionError(
-            "cannot compare different pattern ids"
-        )
+        raise PatternDefinitionError("cannot compare different pattern ids")
     same_version = previous.pattern_version == candidate.pattern_version
-    semantics_changed = (
-        previous.semantic_fingerprint()
-        != candidate.semantic_fingerprint()
-    )
+    semantics_changed = previous.semantic_fingerprint() != candidate.semantic_fingerprint()
     if same_version and semantics_changed:
         raise PatternDefinitionError(
-            "material pattern semantics changed "
-            "without a pattern_version change"
+            "material pattern semantics changed without a pattern_version change"
         )
 
 
@@ -518,32 +439,20 @@ def _unique(
 ) -> None:
     items = tuple(values)
     if len(items) != len(set(items)):
-        raise PatternDefinitionError(
-            f"{label} must be unique"
-        )
+        raise PatternDefinitionError(f"{label} must be unique")
 
 
 def _decimal_or_none(value: object) -> Decimal | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise PatternDefinitionError(
-            "numeric bound cannot be boolean"
-        )
+        raise PatternDefinitionError("numeric bound cannot be boolean")
     try:
-        result = (
-            value
-            if isinstance(value, Decimal)
-            else Decimal(str(value))
-        )
+        result = value if isinstance(value, Decimal) else Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError) as exc:
-        raise PatternDefinitionError(
-            "numeric bound must be decimal"
-        ) from exc
+        raise PatternDefinitionError("numeric bound must be decimal") from exc
     if not result.is_finite():
-        raise PatternDefinitionError(
-            "numeric bound must be finite"
-        )
+        raise PatternDefinitionError("numeric bound must be finite")
     return result
 
 
