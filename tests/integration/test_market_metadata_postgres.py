@@ -86,7 +86,7 @@ def test_market_metadata_migration_and_repository_on_postgres(monkeypatch) -> No
         try:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260930_06"
+                == "20260930_07"
             )
             assert register_instrument(connection, instrument) == instrument
             assert load_instrument(connection, instrument_id) == instrument

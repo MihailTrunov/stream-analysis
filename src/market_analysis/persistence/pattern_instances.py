@@ -1,4 +1,19 @@
-"""Run-scoped PatternInstance rows and immutable ordered lifecycle evidence."""
+"""Run-scoped PatternInstance rows and immutable ordered lifecycle evidence.
+
+Correlation contract: the cross-run ``event_semantic_ref`` derives from
+analytical identity only (never run/UUID fields). The application layer
+bridges runtime intents into persisted steps without making persistence
+depend on the detector runtime.
+
+Restart parity at this boundary means row round-trip fidelity: restoring a
+DetectorRuntime from persisted state (instances, context, sequences and the
+event-time ledger) is deliberately deferred to the replay/evaluation wiring
+that owns process restart; nothing here reconstructs runtime objects.
+
+Terminal protection is application-enforced (``advance_pattern_instance``
+rejects advancement; load-time chain validation detects raw tampering); the
+schema itself carries no trigger/CHECK guard.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +22,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
+from math import isfinite
 from types import MappingProxyType
 from typing import cast
 from uuid import UUID, uuid4
@@ -88,6 +104,7 @@ pattern_instance_transitions = Table(
     Column("from_state", String(100), nullable=False),
     Column("to_state", String(100), nullable=False),
     Column("trigger_id", String(200), nullable=False),
+    Column("rationale_json", Text, nullable=True),
     CheckConstraint("sequence >= 0", name="ck_pattern_transition_sequence"),
     CheckConstraint("event_time <= detection_time", name="ck_pattern_transition_time"),
     CheckConstraint("bar_time = detection_time", name="ck_pattern_transition_bar_time"),
@@ -112,6 +129,7 @@ class LifecycleStep:
     trigger_id: str
     event_time: datetime
     detection_time: datetime
+    rationale: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         for name in ("from_state", "to_state", "trigger_id"):
@@ -122,6 +140,71 @@ class LifecycleStep:
         object.__setattr__(self, "detection_time", utc_time(self.detection_time, "detection_time"))
         if self.event_time > self.detection_time:
             raise PatternInstanceError("event_time cannot follow detection_time")
+        if self.rationale is not None and not isinstance(self.rationale, Mapping):
+            raise PatternInstanceError("transition rationale must be a mapping or None")
+
+
+def _validate_rationale(
+    definition: PatternDefinition, rationale: Mapping[str, object] | None
+) -> str | None:
+    """Encode rationale canonically, validating the condition id (SCRUM-80 follow-up)."""
+    if rationale is None:
+        return None
+    condition = rationale.get("condition")
+    if not isinstance(condition, str) or not condition.strip():
+        raise PatternInstanceError("transition rationale requires a condition id")
+    if condition not in definition.rationale_condition_ids:
+        raise PatternInstanceError(
+            f"transition rationale condition {condition!r} is not declared by the pattern"
+        )
+    normalized = _plain_json_value(rationale)
+    return json.dumps(
+        normalized, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, allow_nan=False,
+    )
+
+
+def _plain_json_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise PatternInstanceError("transition rationale JSON keys must be strings")
+        return {key: _plain_json_value(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain_json_value(item) for item in value]
+    if value is None or type(value) in (str, bool, int):
+        return value
+    if type(value) is float and isfinite(value):
+        return value
+    raise PatternInstanceError("transition rationale must be plain JSON values")
+
+
+def _decode_rationale(
+    definition: PatternDefinition, encoded: str | None
+) -> Mapping[str, object] | None:
+    if encoded is None:
+        return None
+    try:
+        rationale = json.loads(encoded)
+    except ValueError as exc:
+        raise PatternInstanceError("persisted transition rationale is not JSON") from exc
+    if not isinstance(rationale, dict):
+        raise PatternInstanceError("persisted transition rationale is not an object")
+    if _validate_rationale(definition, rationale) != encoded:
+        raise PatternInstanceError("persisted transition rationale is not canonical")
+    return _freeze_json_mapping(rationale)
+
+
+def _freeze_json_mapping(value: Mapping[str, object]) -> Mapping[str, object]:
+    """Detach nested JSON values so a loaded rationale cannot be mutated."""
+    return MappingProxyType({key: _freeze_json_value(item) for key, item in value.items()})
+
+
+def _freeze_json_value(value: object) -> object:
+    if isinstance(value, dict):
+        return _freeze_json_mapping(value)
+    if isinstance(value, list | tuple):
+        return tuple(_freeze_json_value(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +213,7 @@ class PatternTransitionRecord:
     event_semantic_ref: str
     bar_time: datetime
     step: LifecycleStep
+    rationale: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,7 +288,6 @@ def _run_context(
         raise PatternInstanceError("run detection configuration is invalid") from exc
     if not any(
         item.enabled and item.pattern_id == definition.pattern_id
-        and item.pattern_version == definition.pattern_version
         for item in config.patterns
     ):
         raise PatternInstanceError("pattern definition is not selected by the run")
@@ -283,12 +366,45 @@ def load_pattern_instance(
     ).mappings().one_or_none()
     if row is None:
         return None
+    return _record_from_row(connection, dict(row), definition)
+
+
+def load_pattern_instance_by_key(
+    connection: Connection,
+    run_id: UUID | str,
+    instance_semantic_key: str,
+    definition: PatternDefinition,
+) -> PatternInstanceRecord | None:
+    """Resolve an occurrence by its deterministic cross-run key.
+
+    A restarted process re-derives the semantic key from analytical inputs and
+    cannot know the random run-scoped UUID, so this is the recovery lookup the
+    unique index (run_id, instance_semantic_key) exists for.
+    """
+    selected_run = _uuid(run_id, "run_id")
+    digest_value(instance_semantic_key, "instance_semantic_key")
+    row = connection.execute(
+        select(pattern_instances).where(
+            pattern_instances.c.run_id == selected_run,
+            pattern_instances.c.instance_semantic_key == instance_semantic_key,
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return _record_from_row(connection, dict(row), definition)
+
+
+def _record_from_row(
+    connection: Connection,
+    row: Mapping[str, object],
+    definition: PatternDefinition,
+) -> PatternInstanceRecord:
     if (
         (row["pattern_id"], row["pattern_version"]) != definition.identity
         or row["definition_fingerprint"] != definition.semantic_fingerprint()
     ):
         raise PatternInstanceError("incompatible PatternDefinition version or semantics")
-    snapshot, config = _run_context(connection, row["run_id"], definition)
+    snapshot, config = _run_context(connection, str(row["run_id"]), definition)
     if (
         row["dataset_revision_id"] != snapshot.dataset_revision_id
         or row["detection_config_hash"] != snapshot.detection_config_hash
@@ -299,34 +415,41 @@ def load_pattern_instance(
     ):
         raise PatternInstanceError("pattern instance run lineage differs")
     key = instance_semantic_key(
-        dataset_revision_id=row["dataset_revision_id"],
-        detection_config_hash=row["detection_config_hash"],
-        instrument_id=row["instrument_id"],
-        timeframe=row["timeframe"],
+        dataset_revision_id=str(row["dataset_revision_id"]),
+        detection_config_hash=str(row["detection_config_hash"]),
+        instrument_id=str(row["instrument_id"]),
+        timeframe=str(row["timeframe"]),
         definition=definition,
-        occurrence_event_time=_stored_time(row["occurrence_event_time"]),
-        occurrence_detection_time=_stored_time(row["occurrence_detection_time"]),
-        occurrence_ordinal=row["occurrence_ordinal"],
+        occurrence_event_time=_stored_time(cast(datetime, row["occurrence_event_time"])),
+        occurrence_detection_time=_stored_time(cast(datetime, row["occurrence_detection_time"])),
+        occurrence_ordinal=cast(int, row["occurrence_ordinal"]),
     )
     if key != row["instance_semantic_key"]:
         raise PatternInstanceError("pattern occurrence semantic key differs")
-    digest_value(row["binding_fingerprint"], "binding_fingerprint")
-    context = decode_context(definition, row["context_json"])
-    transitions = _load_transitions(connection, selected_id, key, definition, dict(row))
-    last_bar = None if row["last_bar_time"] is None else _stored_time(row["last_bar_time"])
+    digest_value(str(row["binding_fingerprint"]), "binding_fingerprint")
+    context = decode_context(definition, str(row["context_json"]))
+    transitions = _load_transitions(
+        connection, str(row["instance_id"]), key, definition, row
+    )
+    last_bar = None if row["last_bar_time"] is None else _stored_time(
+        cast(datetime, row["last_bar_time"])
+    )
     if (transitions and row["revision"] == 0) or (transitions and last_bar is None):
         raise PatternInstanceError("pattern instance revision is behind its transitions")
     if transitions and last_bar is not None and transitions[-1].bar_time > last_bar:
         raise PatternInstanceError("pattern transition occurs after the last processed bar")
     return PatternInstanceRecord(
-        selected_id, row["run_id"], key, row["dataset_revision_id"],
-        row["instrument_id"], Timeframe(row["timeframe"]), row["detection_config_hash"],
-        row["calendar_version"], row["build_id"], row["binding_fingerprint"],
-        row["pattern_id"], row["pattern_version"], row["definition_fingerprint"],
-        _stored_time(row["occurrence_event_time"]),
-        _stored_time(row["occurrence_detection_time"]), row["occurrence_ordinal"],
-        row["state"], row["revision"], last_bar, context, transitions,
-        _stored_time(row["created_at"]),
+        str(row["instance_id"]), str(row["run_id"]), key, str(row["dataset_revision_id"]),
+        str(row["instrument_id"]), Timeframe(str(row["timeframe"])),
+        str(row["detection_config_hash"]), str(row["calendar_version"]),
+        str(row["build_id"]), str(row["binding_fingerprint"]),
+        str(row["pattern_id"]), str(row["pattern_version"]),
+        str(row["definition_fingerprint"]),
+        _stored_time(cast(datetime, row["occurrence_event_time"])),
+        _stored_time(cast(datetime, row["occurrence_detection_time"])),
+        cast(int, row["occurrence_ordinal"]),
+        str(row["state"]), cast(int, row["revision"]), last_bar, context, transitions,
+        _stored_time(cast(datetime, row["created_at"])),
     )
 
 
@@ -350,9 +473,11 @@ def _load_transitions(
         (edge.from_state, edge.to_state, edge.trigger_id) for edge in definition.transitions
     }
     for row in rows:
+        rationale = _decode_rationale(definition, row["rationale_json"])
         step = LifecycleStep(
             row["from_state"], row["to_state"], row["trigger_id"],
             _stored_time(row["event_time"]), _stored_time(row["detection_time"]),
+            rationale,
         )
         bar_time = _stored_time(row["bar_time"])
         if (
@@ -376,7 +501,9 @@ def _load_transitions(
         if row["event_semantic_ref"] != _event_ref(key, len(records), step):
             raise PatternInstanceError("persisted transition semantic reference differs")
         records.append(
-            PatternTransitionRecord(len(records), row["event_semantic_ref"], bar_time, step)
+            PatternTransitionRecord(
+                len(records), row["event_semantic_ref"], bar_time, step, rationale
+            )
         )
         state = step.to_state
         previous_detection = step.detection_time
@@ -400,7 +527,9 @@ def advance_pattern_instance(
     record = load_pattern_instance(connection, instance_id, definition)
     if record is None:
         raise PatternInstanceError("pattern instance is unavailable")
-    if type(expected_revision) is not int or expected_revision != record.revision:
+    if type(expected_revision) is not int:
+        raise PatternInstanceError("expected_revision must be an integer")
+    if expected_revision != record.revision:
         raise PatternInstanceError("stale pattern instance revision")
     if record.state in definition.effective_terminal_states:
         raise PatternInstanceError("terminal pattern instance cannot advance")
@@ -427,6 +556,7 @@ def advance_pattern_instance(
         (item.from_state, item.to_state, item.trigger_id) for item in proposed
     ):
         raise PatternInstanceError("transition chain differs from declared lifecycle")
+    rationales = tuple(_validate_rationale(definition, step.rationale) for step in proposed)
     encoded = encode_context(definition, context)
     selected_id = record.instance_id
     try:
@@ -459,6 +589,7 @@ def advance_pattern_instance(
                     from_state=step.from_state,
                     to_state=step.to_state,
                     trigger_id=step.trigger_id,
+                    rationale_json=rationales[offset],
                 ))
     except IntegrityError as exc:
         raise PatternInstanceError("concurrent pattern transition conflicts") from exc

@@ -36,10 +36,15 @@ plus the executed detector binding fingerprint.
 An occurrence stores its current declared lifecycle state, optimistic row
 revision, last processed completed-bar time and a canonical typed context
 document. Only fields declared by the registered PatternDefinition context
-schema are persisted; undeclared in-memory debug values are not persisted.
-Present fields validate strictly as `int`, `decimal`, `bool`, `string`, UTC
+schema are accepted: undeclared context values are rejected on write and on
+load (strict validation — detectors must persist exactly the declared schema;
+richer debug values stay in-memory only). Present fields validate strictly as
+`int`, `decimal`, `bool`, `string`, UTC
 `datetime` or `event_ref`. An event reference is a deterministic semantic
 digest of a canonical observable market event, not a Python address or DB UUID.
+Each transition row additionally persists the detector's structured rationale
+(validated to reference a declared `rationale_condition_id`) so SCRUM-82
+evaluation consumes persisted evidence rather than in-memory records.
 The context document carries a schema/fingerprint pin; reading with a different
 PatternDefinition version or semantic fingerprint fails closed. Missing fields
 are allowed until their detector phase populates them; the detector Story owns
@@ -51,7 +56,9 @@ rows and context, then advances row revision. Transition rows hold event_time,
 detection_time, from/to state, trigger and a deterministic semantic event
 reference for SCRUM-82 to reuse. Multiple transitions on one bar retain one
 instance UUID/key and contiguous sequence numbers. Terminal states cannot
-advance. Phase timestamps are derived from the immutable transition history,
+advance (application-enforced by the persistence API and detected on load;
+the schema itself carries no trigger/CHECK guard). Phase timestamps are derived
+from the immutable transition history,
 so candidate/reclaim/confirmation/active/completion/invalidation/expiry times
 remain auditable without detector-specific columns. No transition may be
 backdated into observable state: detection_time is the completed-bar time.

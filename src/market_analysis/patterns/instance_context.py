@@ -61,7 +61,9 @@ def instance_semantic_key(
     detection_time = utc_time(occurrence_detection_time, "occurrence_detection_time")
     if event_time > detection_time:
         raise PatternInstanceError("occurrence event_time cannot follow detection_time")
-    if type(occurrence_ordinal) is not int or occurrence_ordinal < 0:
+    if type(occurrence_ordinal) is not int:
+        raise PatternInstanceError("occurrence ordinal must be an integer")
+    if occurrence_ordinal < 0:
         raise PatternInstanceError("occurrence ordinal must be non-negative")
     payload = {
         "dataset_revision_id": dataset_revision_id,

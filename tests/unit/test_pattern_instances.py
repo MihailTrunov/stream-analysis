@@ -8,7 +8,9 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import Connection, create_engine
 
+from market_analysis.application.pattern_instance_bridge import lifecycle_step_from_intent
 from market_analysis.config import DetectionAnalysisConfig, PatternSelection
+from market_analysis.detection.records import TransitionIntent
 from market_analysis.domain import Bar, Timeframe
 from market_analysis.indicators import (
     MarketEvent,
@@ -36,6 +38,7 @@ from market_analysis.persistence.pattern_instances import (
     advance_pattern_instance,
     create_pattern_instance,
     load_pattern_instance,
+    load_pattern_instance_by_key,
 )
 from market_analysis.persistence.runs import create_run_snapshot, metadata
 
@@ -44,9 +47,9 @@ BINDING = "a" * 64
 EVENT = "b" * 64
 
 
-def definition(pattern_id: str = "reversal") -> PatternDefinition:
+def definition(pattern_id: str = "reversal", version: str = "1") -> PatternDefinition:
     return PatternDefinition(
-        pattern_id, "1", pattern_id, "test lifecycle", (), (), (),
+        pattern_id, version, pattern_id, "test lifecycle", (), (), (),
         ("idle", "candidate", "active", "completed", "invalidated", "expired"),
         (
             TransitionSpec("idle", "candidate", "start"),
@@ -311,3 +314,107 @@ def test_frozen_market_event_reference_is_cross_run_stable_and_not_invented() ->
     assert decode_context(definition(), encode_context(definition(), {"frozen_event": reference}))[
         "frozen_event"
     ] == reference
+
+
+def test_lookup_by_semantic_key_and_registered_extra_version() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    selected = definition(version="1")
+    extra = definition(version="2")
+    with engine.begin() as connection:
+        run_id = run(connection, selected)
+        occurrence = create(connection, extra, run_id)
+        assert load_pattern_instance_by_key(
+            connection, run_id, occurrence.instance_semantic_key, extra
+        ) == occurrence
+        assert load_pattern_instance_by_key(
+            connection, uuid4(), occurrence.instance_semantic_key, extra
+        ) is None
+        with pytest.raises(PatternInstanceError, match="incompatible"):
+            load_pattern_instance_by_key(
+                connection, run_id, occurrence.instance_semantic_key, selected
+            )
+        with pytest.raises(PatternInstanceError, match="not selected"):
+            create(connection, definition("unselected"), run_id)
+    engine.dispose()
+
+
+def test_runtime_intent_rationale_round_trip_and_validation() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    selected = definition()
+    at = START + timedelta(minutes=1)
+    intent = TransitionIntent(
+        pattern_id=selected.pattern_id, pattern_version=selected.pattern_version,
+        instance_id="runtime-slot", from_state="idle", to_state="candidate",
+        trigger_id="start", event_time=START, detection_time=at,
+        rationale={
+            "condition": "start", "source_ordinal": 1,
+            "threshold": Decimal("2.5"), "observed_at": START,
+            "facts": ("cross", "confirmed"),
+        },
+    )
+    step = lifecycle_step_from_intent(intent)
+    assert step.rationale is not None
+    assert step.rationale["threshold"] == "2.5"
+    assert step.rationale["observed_at"] == "2026-09-30T09:00:00Z"
+    with engine.begin() as connection:
+        occurrence = create(connection, selected, run(connection, selected))
+        changed = advance_pattern_instance(
+            connection, occurrence.instance_id, selected, expected_revision=0,
+            bar=bar(at), steps=(step,), context={},
+        )
+        evidence = changed.transitions[0]
+        assert evidence.step.rationale == evidence.rationale
+        assert evidence.rationale is not None
+        assert evidence.rationale["condition"] == step.rationale["condition"]
+        assert evidence.rationale["threshold"] == step.rationale["threshold"]
+        assert evidence.rationale["facts"] == ("cross", "confirmed")
+        with pytest.raises(TypeError):
+            evidence.rationale["condition"] = "confirm"  # type: ignore[index]
+        assert load_pattern_instance(connection, occurrence.instance_id, selected) == changed
+        with pytest.raises(PatternInstanceError, match="not declared"):
+            advance_pattern_instance(
+                connection, occurrence.instance_id, selected, expected_revision=1,
+                bar=bar(at + timedelta(minutes=1)),
+                steps=(LifecycleStep(
+                    "candidate", "active", "confirm", at, at + timedelta(minutes=1),
+                    {"condition": "finish"},
+                ),),
+                context={},
+            )
+        with pytest.raises(PatternInstanceError, match="plain JSON"):
+            advance_pattern_instance(
+                connection, occurrence.instance_id, selected, expected_revision=1,
+                bar=bar(at + timedelta(minutes=1)),
+                steps=(LifecycleStep(
+                    "candidate", "active", "confirm", at, at + timedelta(minutes=1),
+                    {"condition": "confirm", "bad": float("nan")},
+                ),),
+                context={},
+            )
+        with pytest.raises(PatternInstanceError, match="keys must be strings"):
+            advance_pattern_instance(
+                connection, occurrence.instance_id, selected, expected_revision=1,
+                bar=bar(at + timedelta(minutes=1)),
+                steps=(LifecycleStep(
+                    "candidate", "active", "confirm", at, at + timedelta(minutes=1),
+                    {"condition": "confirm", "nested": {1: "would change on read"}},
+                ),),
+                context={},
+            )
+        assert load_pattern_instance(connection, occurrence.instance_id, selected) == changed
+        nested = advance_pattern_instance(
+            connection, occurrence.instance_id, selected, expected_revision=1,
+            bar=bar(at + timedelta(minutes=1)),
+            steps=(LifecycleStep(
+                "candidate", "active", "confirm", at, at + timedelta(minutes=1),
+                {"condition": "confirm", "nested": {"threshold": "2.5"}},
+            ),),
+            context={},
+        )
+        nested_rationale = nested.transitions[-1].rationale
+        assert nested_rationale is not None
+        with pytest.raises(TypeError):
+            nested_rationale["nested"]["threshold"] = "changed"  # type: ignore[index]
+    engine.dispose()

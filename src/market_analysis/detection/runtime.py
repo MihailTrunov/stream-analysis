@@ -565,10 +565,10 @@ class DetectorRuntime:
         definition = slot.definition
         expected = (definition.pattern_id, definition.pattern_version, slot.instance_id)
         # NOTE: instance context and intent rationale are frozen and identity-
-        # checked here, but validated against the definition's context_schema
-        # and rationale_condition_ids only at the SCRUM-81 persistence
-        # boundary (deferred there by design; detectors may carry richer
-        # debug context than the persisted schema allows).
+        # checked here; schema enforcement happens at the SCRUM-81 persistence
+        # boundary (encode_context validates against context_schema, and the
+        # persisted rationale must reference a declared rationale_condition_id
+        # — undeclared values are rejected there, not silently dropped).
         if output.instance.identity != expected:
             raise self._failure(
                 slot,

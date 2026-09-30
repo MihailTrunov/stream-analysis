@@ -53,7 +53,7 @@ def test_postgres_pattern_instances_roundtrip_and_constraints(
     )
     run_id = uuid4()
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_06"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_07"
         create_run_snapshot(
             connection, run_id=run_id, dataset_revision_id="pg-dataset-1",
             calendar_version="demo-v1", build_id="test-build",
@@ -78,11 +78,17 @@ def test_postgres_pattern_instances_roundtrip_and_constraints(
         advanced = advance_pattern_instance(
             connection, occurrence.instance_id, definition, expected_revision=0,
             bar=Bar("US30", Timeframe.M1, at, Decimal(1), Decimal(2), Decimal(1), Decimal(2)),
-            steps=(LifecycleStep("idle", "candidate", "start", start, at),),
+            steps=(LifecycleStep(
+                "idle", "candidate", "start", start, at,
+                {"condition": "start", "source_ordinal": 0},
+            ),),
             context={"count": 3},
         )
         assert advanced.context["count"] == 3
         assert advanced.transitions[0].step.detection_time == at
+        assert advanced.transitions[0].rationale == {
+            "condition": "start", "source_ordinal": 0,
+        }
         with pytest.raises(IntegrityError):
             with connection.begin_nested():
                 connection.execute(text(
