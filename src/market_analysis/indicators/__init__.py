@@ -9,6 +9,7 @@ from .market_state import (
     MarketEventType,
     MarketStateAggregator,
     MarketStateFrame,
+    market_event_semantic_ref,
 )
 from .range_state import (
     RANGE_STATE_DEFINITION_ID,
@@ -85,4 +86,5 @@ __all__ = [
     "RangeAvailability", "RangeLineage", "RangeObservation", "RangeParameters", "RangeState",
     "MarketEvent", "MarketEventEvidence", "MarketEventType", "MarketStateAggregator",
     "MarketStateFrame",
+    "market_event_semantic_ref",
 ]

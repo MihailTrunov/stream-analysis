@@ -58,6 +58,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from hashlib import sha256
 from types import MappingProxyType
 
 from market_analysis.config import (
@@ -214,6 +215,33 @@ class MarketStateFrame:
             ],
         }
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def market_event_semantic_ref(frame: MarketStateFrame, event: MarketEvent) -> str:
+    """Stable reference to an actually emitted event, independent of run UUID.
+
+    Compute this while the source event's frame is available and persist the
+    digest in a detector's versioned context. The full evidence payload is
+    included so equal-type events with different frozen facts do not collide.
+    """
+    if not any(item is event for item in frame.market_events_this_bar):
+        raise MarketStateError("market event was not emitted by this frame")
+    if event.event_time > event.detection_time or event.detection_time != frame.bar.timestamp:
+        raise MarketStateError("market event is not observable on this completed bar")
+    payload = {
+        "dataset_revision_id": frame.dataset_revision_id,
+        "detection_config_hash": frame.detection_config_hash,
+        "instrument_id": frame.bar.instrument_id,
+        "timeframe": frame.bar.timeframe.value,
+        "event_type": event.event_type.value,
+        "event_time": _json_value(event.event_time),
+        "detection_time": _json_value(event.detection_time),
+        "ordinal": event.ordinal,
+        "source_instance_id": event.source_instance_id,
+        "evidence": _json_value(event.evidence),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return sha256(f"market-event-ref-v1\n{canonical}".encode()).hexdigest()
 
 
 class MarketStateAggregator:
