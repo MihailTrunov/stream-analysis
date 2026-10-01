@@ -14,3 +14,5 @@ label { display: inline-flex; align-items: center; gap: .5rem; margin: .35rem .7
 input, select { padding: .4rem; }
 fieldset { margin: .75rem 0; border: 1px solid #d5dde3; }
 code { overflow-wrap: anywhere; }
+.chart-viewport { overflow-x: auto; max-width: 100%; }
+.chart-viewport svg { width: 100%; min-width: 500px; height: auto; background: #fbfcfd; border: 1px solid #d5dde3; }

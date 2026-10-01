@@ -17,9 +17,18 @@ def database_status(database_url: str | None) -> tuple[bool, str | None]:
         return False, None
     engine = None
     try:
-        engine = create_engine(database_url, connect_args={"connect_timeout": 2})
+        options = {"connect_args": {"connect_timeout": 2}} if database_url.startswith(
+            "postgresql"
+        ) else {}
+        engine = create_engine(database_url, **options)
         with engine.connect() as connection:
-            exists = connection.scalar(text("SELECT to_regclass('public.alembic_version')"))
+            if engine.dialect.name == "sqlite":
+                exists = connection.scalar(text(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='alembic_version'"
+                ))
+            else:
+                exists = connection.scalar(text("SELECT to_regclass('public.alembic_version')"))
             if not exists:
                 return True, None
             version = connection.scalar(text("SELECT version_num FROM alembic_version"))

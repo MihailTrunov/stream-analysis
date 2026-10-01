@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { CandlestickChart } from './CandlestickChart';
 import {
   apiJson,
   type ConfigSelection,
   type DetectionConfig,
   type ReplayConfig,
+  type ReplayBar,
+  type ReplayBarsResponse,
   type ReplaySource,
   type ReplayState,
 } from './replay';
@@ -25,6 +28,7 @@ export function ReplayWalkthrough() {
   const [editedConfig, setEditedConfig] = useState<DetectionConfig | null>(null);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const [state, setState] = useState<ReplayState | null>(null);
+  const [chartBars, setChartBars] = useState<ReplayBar[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = sources.find((source) => source.dataset_revision_id === selectedId);
@@ -49,6 +53,22 @@ export function ReplayWalkthrough() {
       .then((value) => { setConfig(value); setEditedConfig(value.detection_config); setPreviewHash(value.detection_config_hash); })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, [selectedId, selected?.instrument_id, state]);
+
+  useEffect(() => {
+    if (!state) { setChartBars([]); return; }
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      start: state.selected_start,
+      end: state.selected_end,
+      limit: '100',
+    });
+    void apiJson<ReplayBarsResponse>(`/replay/${state.run_id}/bars?${params}`, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setChartBars(result.bars); })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => controller.abort();
+  }, [state?.run_id, state?.cursor_index]);
 
   function changeParameter(group: 'components' | 'patterns', index: number, name: string, text: string) {
     if (!editedConfig) return;
@@ -110,6 +130,16 @@ export function ReplayWalkthrough() {
     } finally { setBusy(false); }
   }
 
+  async function step() {
+    if (!state) return;
+    setBusy(true); setError(null);
+    try {
+      setState(await apiJson<ReplayState>(`/replay/${state.run_id}/step`, { method: 'POST' }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setBusy(false); }
+  }
+
   return <section aria-labelledby="replay-heading">
     <h2 id="replay-heading">Detector walkthrough</h2>
     <p>Local, single-user replay over a pinned immutable dataset. The offline samples are non-research-grade.</p>
@@ -146,6 +176,8 @@ export function ReplayWalkthrough() {
         <dt>Dataset checksum</dt><dd><code>{state.canonical_checksum}</code></dd>
         <dt>Config hash</dt><dd><code>{state.detection_config_hash}</code></dd>
         <dt>Warm-up</dt><dd>{state.warmup_processed} / {state.warmup_required} bars</dd></dl>
+      <CandlestickChart bars={chartBars} cursorTime={state.cursor_time} />
+      <button type="button" onClick={() => void step()} disabled={busy || !state.has_next}>Step one visible bar</button>
       <button type="button" onClick={() => void stop()} disabled={busy}>Stop walkthrough</button>
     </>}
   </section>;

@@ -124,3 +124,47 @@ def test_launch_fails_closed_on_unregistered_calendar_version(client: TestClient
     response = client.post("/replay", json=_launch())
     assert response.status_code == 422
     assert "calendar" in response.json()["detail"].lower()
+
+
+def test_chart_payload_only_exposes_processed_selected_bars(client: TestClient):
+    launched = client.post("/replay", json=_launch()).json()
+    run_id = launched["run_id"]
+    path = f"/replay/{run_id}/bars"
+    params = {
+        "start": DEMO_SELECTED_START.isoformat(),
+        "end": DEMO_END.isoformat(),
+        "limit": 2,
+    }
+    assert client.get(path, params=params).json()["bars"] == []
+    first = client.post(f"/replay/{run_id}/step")
+    assert first.status_code == 200, first.text
+    assert first.json()["visible_bars"] == 1
+    assert first.json()["warmup_processed"] == 11
+    bars = client.get(path, params=params).json()["bars"]
+    assert len(bars) == 1
+    assert bars[0]["timestamp"] == DEMO_SELECTED_START.isoformat().replace("+00:00", "Z")
+    assert "2026-01-05T12:12" not in str(bars)
+    assert client.post(f"/replay/{run_id}/step").json()["visible_bars"] == 2
+    assert len(client.get(path, params=params).json()["bars"]) == 2
+    final = client.post(f"/replay/{run_id}/step")
+    assert final.status_code == 200, final.text
+    assert final.json()["status"] == "completed"
+    bounded = client.get(path, params=params).json()["bars"]
+    assert len(bounded) == 2
+    last_visible_time = (DEMO_END - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+    assert bounded[-1]["timestamp"] == last_visible_time
+
+
+def test_chart_rejects_future_or_unbounded_viewports(client: TestClient):
+    launched = client.post("/replay", json=_launch()).json()
+    run_id = launched["run_id"]
+    path = f"/replay/{run_id}/bars"
+    assert client.get(path, params={
+        "start": DEMO_SELECTED_START.isoformat(),
+        "end": (DEMO_END + timedelta(minutes=1)).isoformat(),
+    }).status_code == 422
+    assert client.get(path, params={
+        "start": DEMO_SELECTED_START.isoformat(),
+        "end": DEMO_END.isoformat(),
+        "limit": 501,
+    }).status_code == 422

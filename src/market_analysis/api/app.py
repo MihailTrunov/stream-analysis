@@ -52,6 +52,7 @@ from market_analysis.persistence.import_jobs import (
     resume_import_job,
 )
 from market_analysis.persistence.market_data import MetadataConflictError, register_instrument
+from market_analysis.persistence.runs import metadata
 
 
 class DiagnosticsResponse(BaseModel):
@@ -187,6 +188,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if database_url and os.getenv("STREAM_ANALYSIS_SEED_REPLAY_DEMO", "1") == "1":
         engine = create_engine(database_url)
         try:
+            if os.getenv("STREAM_ANALYSIS_SMOKE_INIT_DB") == "1":
+                # Isolated browser-test SQLite only; normal installations use Alembic.
+                if not database_url.startswith("sqlite+"):
+                    raise RuntimeError("smoke schema initialization requires SQLite")
+                metadata.create_all(engine)
             with engine.begin() as connection:
                 seed_replay_datasets(
                     connection, DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
@@ -311,6 +317,24 @@ def stop_browser_replay(run_id: str) -> dict[str, object]:
         return browser_replay.stop(run_id)
     except BrowserReplayError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/step")
+def step_browser_replay(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.step_visible(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/replay/{run_id}/bars")
+def browser_replay_bars(
+    run_id: str, start: datetime, end: datetime, limit: int = 100,
+) -> dict[str, object]:
+    try:
+        return browser_replay.visible_bars(run_id, start, end, limit)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/imports", response_model=ImportResponse, status_code=202)

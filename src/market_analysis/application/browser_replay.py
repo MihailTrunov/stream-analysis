@@ -261,5 +261,85 @@ class BrowserReplayManager:
             finally:
                 engine.dispose()
 
+    def step_visible(self, run_id: str) -> dict[str, object]:
+        """Process warm-up causally, then expose exactly one new selected bar."""
+        with self._lock:
+            session = self._current(run_id)
+            engine = self._connection()
+            failure: Exception | None = None
+            result: dict[str, object] | None = None
+            try:
+                with engine.begin() as connection:
+                    try:
+                        record = load_replay_run(connection, UUID(run_id))
+                        assert record is not None
+                        if record.status is ReplayStatus.CREATED:
+                            session.pipeline.start(connection, at=datetime.now(UTC))
+                        elif record.status is ReplayStatus.PAUSED:
+                            session.pipeline.resume(connection, at=datetime.now(UTC))
+                        elif record.status is not ReplayStatus.RUNNING:
+                            raise BrowserReplayError("replay cannot advance after terminal status")
+                        if not session.pipeline.has_next:
+                            raise BrowserReplayError(
+                                "replay is at the end of the selected interval"
+                            )
+                        while session.pipeline.has_next:
+                            step = session.pipeline.step(connection)
+                            if step.is_visible:
+                                break
+                        if session.pipeline.has_next:
+                            transition_replay_run(
+                                connection, UUID(run_id), ReplayStatus.PAUSED,
+                                at=datetime.now(UTC),
+                            )
+                        else:
+                            session.pipeline.run_to_completion(connection, at=datetime.now(UTC))
+                        result = self._state(connection, session)
+                    except Exception as exc:
+                        # ReplayPipeline records FAILED after its nested rollback.
+                        # Commit that audit row even though this HTTP action fails.
+                        failure = exc
+                if failure is not None:
+                    raise BrowserReplayError(str(failure)) from failure
+                assert result is not None
+                return result
+            finally:
+                engine.dispose()
+
+    def visible_bars(
+        self, run_id: str, start: datetime, end: datetime, limit: int,
+    ) -> dict[str, object]:
+        """Return a bounded, cursor-clamped price viewport, never source-future bars."""
+        if (
+            start.tzinfo is None or end.tzinfo is None or end <= start
+            or not 1 <= limit <= 500
+        ):
+            raise BrowserReplayError("viewport needs ordered UTC bounds and limit 1..500")
+        with self._lock:
+            session = self._current(run_id)
+            if start < session.selected_start or end > session.selected_end:
+                raise BrowserReplayError("viewport must lie inside the selected interval")
+            visible = [
+                step.view.current_bar
+                for step in session.pipeline.steps
+                if step.is_visible and start <= step.view.timestamp < end
+            ][-limit:]
+            return {
+                "run_id": run_id,
+                "cursor_index": session.pipeline.cursor_index,
+                "cursor_time": (
+                    session.pipeline.steps[-1].view.timestamp
+                    if session.pipeline.steps else None
+                ),
+                "bars": [{
+                    "timestamp": bar.timestamp,
+                    "open": str(bar.open),
+                    "high": str(bar.high),
+                    "low": str(bar.low),
+                    "close": str(bar.close),
+                } for bar in visible],
+                "limit": limit,
+            }
+
 
 browser_replay = BrowserReplayManager()

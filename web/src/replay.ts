@@ -57,6 +57,20 @@ export interface ReplayState {
   has_next: boolean;
   events: Array<{ pattern_id: string; trigger_id: string; to_state: string; detection_time: string }>;
 }
+export interface ReplayBar {
+  timestamp: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+}
+export interface ReplayBarsResponse {
+  run_id: string;
+  cursor_index: number;
+  cursor_time: string | null;
+  bars: ReplayBar[];
+  limit: number;
+}
 
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
