@@ -31,6 +31,7 @@ from market_analysis.application.logging import (
     StructuredJsonFormatter,
     configure_logging,
 )
+from market_analysis.application.playback import PlaybackController, PlaybackMode
 from market_analysis.application.replay_pipeline import (
     COMPONENT,
     ReplayPipeline,
@@ -55,6 +56,7 @@ from market_analysis.detection import (
 from market_analysis.domain import (
     BAR_CHECKSUM_VERSION,
     Bar,
+    BarSequence,
     DatasetLineage,
     Instrument,
     ObservableBars,
@@ -556,58 +558,63 @@ def _without_run_id(payload: object) -> object:
     return payload
 
 
+class CaptureRuntimePipeline:
+    """Ephemeral real-chain adapter for causal seek and speed parity fixtures."""
+
+    def __init__(self, run_id: str) -> None:
+        self.runtime = DetectorRuntime(
+            config(),
+            [DetectorBinding(reversal_definition(), reversal_detector())],
+            run_id=run_id,
+            dataset_revision_id=REVISION,
+            calendar=calendar(),
+            pinned_calendar_version=CALENDAR_VERSION,
+        )
+        self.frames: list[str] = []
+
+    def process_bar(self, view: ObservableBars) -> None:
+        self.frames.append(self.runtime.process_bar(view.current_bar).frame.debug_json())
+
+    def reset(self) -> None:
+        self.runtime.reset()
+        self.frames.clear()
+
+
+def make_ephemeral_cursor(
+    sequence: BarSequence, run_id: str
+) -> tuple[ReplayCursor, CaptureRuntimePipeline]:
+    pipeline = CaptureRuntimePipeline(run_id)
+    return (
+        ReplayCursor(
+            SimulationClock(sequence, selected_start=VISIBLE_START, selected_end=SELECTED_END),
+            pipeline,
+        ),
+        pipeline,
+    )
+
+
+def state_hashes(pipeline: CaptureRuntimePipeline) -> tuple[str, ...]:
+    return tuple(sha256(frame.encode("utf-8")).hexdigest() for frame in pipeline.frames)
+
+
 def test_seek_rebuilds_real_market_state_and_detector_events_from_origin() -> None:
     """Seek parity includes warm-up, canonical frames, and actual detector output."""
     engine = create_engine("sqlite://")
     metadata.create_all(engine)
     run_id = str(uuid4())
 
-    class CapturePipeline:
-        def __init__(self) -> None:
-            self.runtime = DetectorRuntime(
-                config(),
-                [DetectorBinding(reversal_definition(), reversal_detector())],
-                run_id=run_id,
-                dataset_revision_id=REVISION,
-                calendar=calendar(),
-                pinned_calendar_version=CALENDAR_VERSION,
-            )
-            self.frames: list[str] = []
-
-        def process_bar(self, view: ObservableBars) -> None:
-            self.frames.append(self.runtime.process_bar(view.current_bar).frame.debug_json())
-
-        def reset(self) -> None:
-            self.runtime.reset()
-            self.frames.clear()
-
     with engine.begin() as connection:
         prepare(connection)
         sequence = load_bar_sequence(connection, REVISION, "US30", Timeframe.M1, BARS)
 
-    def make_cursor() -> tuple[ReplayCursor, CapturePipeline]:
-        pipeline = CapturePipeline()
-        return (
-            ReplayCursor(
-                SimulationClock(
-                    sequence, selected_start=VISIBLE_START, selected_end=SELECTED_END
-                ),
-                pipeline,
-            ),
-            pipeline,
-        )
-
-    def state_hashes(pipeline: CapturePipeline) -> tuple[str, ...]:
-        return tuple(sha256(frame.encode("utf-8")).hexdigest() for frame in pipeline.frames)
-
-    seek, actual = make_cursor()
+    seek, actual = make_ephemeral_cursor(sequence, run_id)
     seek.run_to_end()
     for target in (0, 4, 5, 13, 8, 14):
         if target == 8:
             view = seek.seek_to_time(BAR_TIMESTAMPS[target])
         else:
             view = seek.seek_to_index(target)
-        uninterrupted, expected = make_cursor()
+        uninterrupted, expected = make_ephemeral_cursor(sequence, run_id)
         uninterrupted.step_n(target + 1)
         assert view is not None and view.index == target
         assert view.is_visible == (target >= WARMUP_BARS)
@@ -620,7 +627,7 @@ def test_seek_rebuilds_real_market_state_and_detector_events_from_origin() -> No
 
     seek.seek_to_index(5)
     seek.run_to_end()
-    uninterrupted, expected = make_cursor()
+    uninterrupted, expected = make_ephemeral_cursor(sequence, run_id)
     uninterrupted.run_to_end()
     assert actual.frames == expected.frames
     assert state_hashes(actual) == state_hashes(expected)
@@ -628,6 +635,48 @@ def test_seek_rebuilds_real_market_state_and_detector_events_from_origin() -> No
     assert actual.runtime.events  # the fixture exercises real detector transitions
     seek.seek_to_index(-1)
     assert seek.index == -1 and actual.frames == [] and actual.runtime.events == ()
+    engine.dispose()
+
+
+def test_playback_speeds_preserve_real_market_state_and_detector_event_parity() -> None:
+    """Manual, paced and maximum scheduling share one deterministic chain."""
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        prepare(connection)
+        sequence = load_bar_sequence(connection, REVISION, "US30", Timeframe.M1, BARS)
+    run_id = str(uuid4())
+
+    manual_cursor, manual = make_ephemeral_cursor(sequence, run_id)
+    manual_control = PlaybackController(manual_cursor)
+    while manual_cursor.has_next:
+        manual_control.step_one()
+    assert manual.runtime.events
+
+    slow_cursor, slow = make_ephemeral_cursor(sequence, run_id)
+    slow_control = PlaybackController(slow_cursor)
+    slow_control.play(Decimal("0.5"))
+    for _ in BARS:
+        assert slow_control.tick(timedelta(seconds=2)) == 1
+
+    fast_cursor, fast = make_ephemeral_cursor(sequence, run_id)
+    fast_control = PlaybackController(fast_cursor)
+    fast_control.play(Decimal("3"))
+    assert [fast_control.tick(timedelta(seconds=1)) for _ in range(5)] == [3] * 5
+
+    maximum_cursor, maximum = make_ephemeral_cursor(sequence, run_id)
+    maximum_control = PlaybackController(maximum_cursor)
+    maximum_control.play_maximum()
+    assert maximum_control.tick() == len(BARS)
+
+    for control, pipeline in (
+        (slow_control, slow), (fast_control, fast), (maximum_control, maximum)
+    ):
+        assert control.mode is PlaybackMode.PAUSED
+        assert control.cursor.index == manual_cursor.index == len(BARS) - 1
+        assert state_hashes(pipeline) == state_hashes(manual)
+        assert pipeline.runtime.instances == manual.runtime.instances
+        assert pipeline.runtime.events == manual.runtime.events
     engine.dispose()
 
 

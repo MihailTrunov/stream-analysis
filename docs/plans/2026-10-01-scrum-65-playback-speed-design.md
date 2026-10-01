@@ -18,9 +18,11 @@ The controller starts paused. Manual `step_one` is allowed only while paused.
 fractional bar credit and call `ReplayCursor.step_one` once per due bar, in
 order. `play_maximum()` removes intentional delay and drains the remaining
 cursor through its existing `run_to_end` path on the next tick. Pause stops
-advancement immediately and preserves analytical state. Pause/resume and a
-rate change discard fractional *wall-time credit* to avoid a surprise burst;
-they do not reset the cursor. Repeating the same active speed is a no-op.
+advancement immediately and preserves analytical state. `resume()` restores
+the last selected paced or maximum mode; it errors before any mode was selected.
+Pause/resume and a rate change discard fractional *wall-time credit* to avoid
+a surprise burst; they do not reset the cursor. Repeating the same active speed
+is a no-op.
 
 A tick returns the number of bars processed, not a duplicate event stream.
 The owned analytical pipeline remains the source of MarketState and
