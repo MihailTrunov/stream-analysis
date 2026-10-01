@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { visibleBars, type DemoBar } from './demo';
+import { ReplayWalkthrough } from './ReplayWalkthrough';
 import './style.css';
 
 interface DemoResponse {
@@ -62,6 +63,7 @@ export function App() {
         <p>Local installation check · seeded demo data · not research-grade</p>
       </header>
       {error && <p role="alert">{error}</p>}
+      <ReplayWalkthrough />
       <section aria-labelledby="demo-heading">
         <h2 id="demo-heading">Offline bar walkthrough</h2>
         <p>This verifies that the API and browser can read and step through local bars. Detector evaluation is not implemented in this installation demo.</p>

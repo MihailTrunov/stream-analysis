@@ -13,8 +13,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine
 
 from market_analysis import __version__
+from market_analysis.application.browser_replay import (
+    BrowserReplayError,
+    browser_replay,
+    replay_sources,
+)
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
 from market_analysis.application.logging import configure_logging, research_logger
+from market_analysis.application.replay_catalog import (
+    DEMO_CONFIG_ID,
+    DEMO_CONFIG_VERSION,
+    PATTERN_DEFINITIONS,
+    demo_detection_config,
+    required_warmup_bars,
+)
 from market_analysis.config import (
     DetectionAnalysisConfig,
     detection_config_hash,
@@ -27,7 +39,9 @@ from market_analysis.config.oanda_uk_calendars import (
     build_oanda_uk_instrument,
 )
 from market_analysis.demo.data import load_demo_bars
+from market_analysis.demo.replay_seed import seed_replay_datasets
 from market_analysis.domain import SessionCalendarError, Timeframe
+from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.import_jobs import (
     ImportJob,
     ImportJobError,
@@ -82,6 +96,19 @@ class ImportResponse(BaseModel):
     fetch_complete: bool
     heartbeat_at: datetime | None
     failure_reason: str | None
+
+
+class ReplayLaunchRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    dataset_revision_id: str
+    instrument_id: str
+    timeframe: Timeframe = Timeframe.M1
+    selected_start: datetime
+    selected_end: datetime
+    config_id: str = DEMO_CONFIG_ID
+    config_version: str = DEMO_CONFIG_VERSION
+    detection_config: DetectionAnalysisConfig | None = None
 
 
 def _import_response(job: ImportJob) -> ImportResponse:
@@ -156,6 +183,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         build_id=os.getenv("STREAM_ANALYSIS_BUILD_ID", "development"),
     )
     logger.info("API started")
+    database_url = os.getenv("STREAM_ANALYSIS_DATABASE_URL")
+    if database_url and os.getenv("STREAM_ANALYSIS_SEED_REPLAY_DEMO", "1") == "1":
+        engine = create_engine(database_url)
+        try:
+            with engine.begin() as connection:
+                seed_replay_datasets(
+                    connection, DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
+                )
+        finally:
+            engine.dispose()
     try:
         yield
     finally:
@@ -198,13 +235,82 @@ def component_definitions() -> dict[str, object]:
 def preview_detection_config(config: DetectionAnalysisConfig) -> dict[str, object]:
     """Resolve and hash a proposed config; never change a running snapshot."""
     try:
-        resolved = resolve_detection_config(config)
+        resolved = resolve_detection_config(config, pattern_definitions=PATTERN_DEFINITIONS)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
         "detection_config": resolved.canonical_dict(),
-        "detection_config_hash": detection_config_hash(resolved),
+        "detection_config_hash": detection_config_hash(
+            resolved, pattern_definitions=PATTERN_DEFINITIONS
+        ),
     }
+
+
+@app.get("/replay/sources")
+def browser_replay_sources() -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            return {"sources": replay_sources(connection)}
+    finally:
+        engine.dispose()
+
+
+@app.get("/replay/config-default")
+def browser_replay_default_config(instrument_id: str) -> dict[str, object]:
+    try:
+        resolved = resolve_detection_config(
+            demo_detection_config(instrument_id), pattern_definitions=PATTERN_DEFINITIONS
+        )
+        return {
+            "config_id": DEMO_CONFIG_ID,
+            "config_version": DEMO_CONFIG_VERSION,
+            # The canonical hash payload includes value_type audit fields, while
+            # the editable request model accepts only name/value pairs.
+            "detection_config": resolved.model_dump(mode="json"),
+            "detection_config_hash": detection_config_hash(
+                resolved, pattern_definitions=PATTERN_DEFINITIONS
+            ),
+            "warmup_bars": required_warmup_bars(resolved),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/replay", status_code=201)
+def launch_browser_replay(request: ReplayLaunchRequest) -> dict[str, object]:
+    if (request.config_id, request.config_version) != (DEMO_CONFIG_ID, DEMO_CONFIG_VERSION):
+        raise HTTPException(status_code=422, detail="unknown replay configuration version")
+    if request.timeframe is not Timeframe.M1:
+        raise HTTPException(status_code=422, detail="browser replay requires M1")
+    config = request.detection_config or demo_detection_config(request.instrument_id)
+    if config.instrument_id != request.instrument_id or config.timeframe != request.timeframe:
+        raise HTTPException(status_code=422, detail="configuration instrument/timeframe mismatch")
+    try:
+        return browser_replay.launch(
+            request.dataset_revision_id, config, request.selected_start, request.selected_end
+        )
+    except BrowserReplayError as exc:
+        status = 409 if "active walkthrough" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/replay/{run_id}")
+def browser_replay_state(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.state(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/stop")
+def stop_browser_replay(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.stop(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/imports", response_model=ImportResponse, status_code=202)
