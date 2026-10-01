@@ -56,6 +56,11 @@ export interface ReplayState {
   cursor_time: string | null;
   has_next: boolean;
   events: Array<{ pattern_id: string; trigger_id: string; to_state: string; detection_time: string }>;
+  navigation?: {
+    processed_bars: number;
+    stopped_on_event: boolean;
+    matched_event: { pattern_id: string; trigger_id: string; to_state: string } | null;
+  };
 }
 export interface ReplayBar {
   timestamp: string;

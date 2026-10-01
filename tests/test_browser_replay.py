@@ -15,6 +15,7 @@ from market_analysis.application import browser_replay as replay_module
 from market_analysis.demo.replay_seed import DEMO_END, DEMO_SELECTED_START, seed_replay_datasets
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.market_data import dataset_revisions
+from market_analysis.persistence.replay_runs import ReplayStatus, load_replay_run
 from market_analysis.persistence.runs import metadata
 
 
@@ -168,3 +169,113 @@ def test_chart_rejects_future_or_unbounded_viewports(client: TestClient):
         "end": DEMO_END.isoformat(),
         "limit": 501,
     }).status_code == 422
+
+
+def test_play_pause_ticks_and_end_state_are_causal(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    assert client.post(f"/replay/{run_id}/play").json()["status"] == "running"
+    first = client.post(f"/replay/{run_id}/tick").json()
+    assert first["visible_bars"] == 1
+    assert first["status"] == "running"
+    assert client.post(f"/replay/{run_id}/pause").json()["status"] == "paused"
+    assert client.post(f"/replay/{run_id}/play").json()["status"] == "running"
+    assert client.post(f"/replay/{run_id}/tick").json()["visible_bars"] == 2
+    last = client.post(f"/replay/{run_id}/tick").json()
+    assert last["status"] == "completed"
+    assert last["has_next"] is False
+    assert client.post(f"/replay/{run_id}/tick").status_code == 409
+    assert client.post(f"/replay/{run_id}/play").status_code == 409
+
+
+def test_next_event_stops_at_first_visible_transition(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    next_event = client.post(f"/replay/{run_id}/next-event")
+    assert next_event.status_code == 200, next_event.text
+    state = next_event.json()
+    assert state["status"] == "paused"
+    assert state["visible_bars"] == 2
+    assert state["navigation"]["stopped_on_event"] is True
+    assert state["navigation"]["matched_event"]["trigger_id"] == "persistence_confirmed"
+    assert state["events"][0]["detection_time"] == state["cursor_time"]
+    assert client.post(f"/replay/{run_id}/next-event").json()["status"] == "completed"
+
+
+def test_reset_and_seek_make_fresh_runs_with_same_observable_output(client: TestClient):
+    original = client.post("/replay", json=_launch()).json()
+    first = client.post(f"/replay/{original['run_id']}/step").json()
+    target = (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat()
+    sought = client.post(
+        f"/replay/{original['run_id']}/seek", json={"target": target}
+    )
+    assert sought.status_code == 200, sought.text
+    state = sought.json()
+    assert state["run_id"] != original["run_id"]
+    assert state["status"] == "paused"
+    assert state["visible_bars"] == 2
+    assert state["detection_config_hash"] == original["detection_config_hash"]
+    assert state["events"][0]["trigger_id"] == "persistence_confirmed"
+    assert client.get(f"/replay/{original['run_id']}").status_code == 404
+    assert client.post(f"/replay/{original['run_id']}/step").status_code == 409
+    reset = client.post(f"/replay/{state['run_id']}/reset")
+    assert reset.status_code == 200, reset.text
+    fresh = reset.json()
+    assert fresh["run_id"] not in (state["run_id"], original["run_id"])
+    assert fresh["cursor_index"] == -1
+    assert fresh["visible_bars"] == 0
+    assert fresh["events"] == []
+    repeat = client.post(f"/replay/{fresh['run_id']}/step").json()
+    assert repeat["cursor_time"] == first["cursor_time"]
+    assert repeat["events"] == first["events"]
+    engine = create_engine(os.environ["STREAM_ANALYSIS_DATABASE_URL"])
+    from uuid import UUID
+    with engine.connect() as connection:
+        assert load_replay_run(connection, UUID(original["run_id"])).status is ReplayStatus.ABORTED
+        assert load_replay_run(connection, UUID(state["run_id"])).status is ReplayStatus.ABORTED
+    engine.dispose()
+
+
+def test_seek_rejects_non_bar_target_without_replacing_active_run(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    wrong = (DEMO_SELECTED_START + timedelta(seconds=30)).isoformat()
+    assert client.post(f"/replay/{run_id}/seek", json={"target": wrong}).status_code == 422
+    assert client.get(f"/replay/{run_id}").json()["status"] == "created"
+
+
+def test_manual_and_play_ticks_emit_same_event_sequence(client: TestClient):
+    manual_id = client.post("/replay", json=_launch()).json()["run_id"]
+    manual: list[tuple[str, list[tuple[str, str]]]] = []
+    while True:
+        state = client.post(f"/replay/{manual_id}/step").json()
+        manual.append((
+            state["cursor_time"],
+            [(event["trigger_id"], event["to_state"]) for event in state["events"]],
+        ))
+        if not state["has_next"]:
+            break
+    client.post(f"/replay/{manual_id}/stop")
+    played_id = client.post("/replay", json=_launch()).json()["run_id"]
+    assert client.post(f"/replay/{played_id}/play").json()["status"] == "running"
+    played: list[tuple[str, list[tuple[str, str]]]] = []
+    while True:
+        state = client.post(f"/replay/{played_id}/tick").json()
+        played.append((
+            state["cursor_time"],
+            [(event["trigger_id"], event["to_state"]) for event in state["events"]],
+        ))
+        if not state["has_next"]:
+            break
+    assert played == manual
+    assert [events for _, events in played if events] == [
+        [("persistence_confirmed", "ACTIVE")],
+        [("compression_released", "COMPLETED")],
+    ]
+
+
+def test_local_browser_can_reattach_without_replaying_or_changing_run_id(client: TestClient):
+    assert client.get("/replay/active").json()["active"] is None
+    launched = client.post("/replay", json=_launch()).json()
+    stepped = client.post(f"/replay/{launched['run_id']}/step").json()
+    attached = client.get("/replay/active").json()["active"]
+    assert attached["run_id"] == launched["run_id"]
+    assert attached["cursor_index"] == stepped["cursor_index"]
+    assert attached["visible_bars"] == 1

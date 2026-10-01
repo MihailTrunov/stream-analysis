@@ -16,3 +16,4 @@ fieldset { margin: .75rem 0; border: 1px solid #d5dde3; }
 code { overflow-wrap: anywhere; }
 .chart-viewport { overflow-x: auto; max-width: 100%; }
 .chart-viewport svg { width: 100%; min-width: 500px; height: auto; background: #fbfcfd; border: 1px solid #d5dde3; }
+.replay-controls { align-items: center; }

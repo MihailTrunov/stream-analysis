@@ -29,16 +29,25 @@ export function ReplayWalkthrough() {
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const [state, setState] = useState<ReplayState | null>(null);
   const [chartBars, setChartBars] = useState<ReplayBar[]>([]);
+  const [speed, setSpeed] = useState(1);
+  const [seekTime, setSeekTime] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = sources.find((source) => source.dataset_revision_id === selectedId);
 
   useEffect(() => {
-    void apiJson<{ sources: ReplaySource[] }>('/replay/sources')
-      .then((result) => {
-        setSources(result.sources);
-        const first = result.sources.find((item) => item.instrument_id === 'US30') ?? result.sources[0];
+    void Promise.all([
+      apiJson<{ sources: ReplaySource[] }>('/replay/sources'),
+      apiJson<{ active: ReplayState | null }>('/replay/active'),
+    ])
+      .then(([catalog, active]) => {
+        setSources(catalog.sources);
+        const first = catalog.sources.find((item) => item.instrument_id === 'US30') ?? catalog.sources[0];
         if (first) setSelectedId(first.dataset_revision_id);
+        if (active.active) {
+          setState(active.active);
+          setSeekTime(localInput(active.active.selected_start));
+        }
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
@@ -69,6 +78,18 @@ export function ReplayWalkthrough() {
       });
     return () => controller.abort();
   }, [state?.run_id, state?.cursor_index]);
+
+  useEffect(() => {
+    if (!state || state.status !== 'running' || !state.has_next || busy) return;
+    const timer = window.setTimeout(() => {
+      setBusy(true);
+      void apiJson<ReplayState>(`/replay/${state.run_id}/tick`, { method: 'POST' })
+        .then(setState)
+        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+        .finally(() => setBusy(false));
+    }, 1000 / speed);
+    return () => window.clearTimeout(timer);
+  }, [state?.run_id, state?.status, state?.cursor_index, state?.has_next, speed, busy]);
 
   function changeParameter(group: 'components' | 'patterns', index: number, name: string, text: string) {
     if (!editedConfig) return;
@@ -114,6 +135,7 @@ export function ReplayWalkthrough() {
         }),
       });
       setState(launched);
+      setSeekTime(localInput(launched.selected_start));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally { setBusy(false); }
@@ -135,6 +157,37 @@ export function ReplayWalkthrough() {
     setBusy(true); setError(null);
     try {
       setState(await apiJson<ReplayState>(`/replay/${state.run_id}/step`, { method: 'POST' }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setBusy(false); }
+  }
+
+  async function control(action: 'play' | 'pause' | 'next-event' | 'reset') {
+    if (!state) return;
+    setBusy(true); setError(null);
+    try {
+      const next = await apiJson<ReplayState>(`/replay/${state.run_id}/${action}`, {
+        method: 'POST',
+      });
+      if (action === 'reset') {
+        setChartBars([]);
+        setSeekTime(localInput(next.selected_start));
+      }
+      setState(next);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setBusy(false); }
+  }
+
+  async function seek() {
+    if (!state || !seekTime) return;
+    setBusy(true); setError(null);
+    try {
+      const next = await apiJson<ReplayState>(`/replay/${state.run_id}/seek`, {
+        method: 'POST', body: JSON.stringify({ target: utcInput(seekTime) }),
+      });
+      setChartBars([]);
+      setState(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally { setBusy(false); }
@@ -177,7 +230,25 @@ export function ReplayWalkthrough() {
         <dt>Config hash</dt><dd><code>{state.detection_config_hash}</code></dd>
         <dt>Warm-up</dt><dd>{state.warmup_processed} / {state.warmup_required} bars</dd></dl>
       <CandlestickChart bars={chartBars} cursorTime={state.cursor_time} />
-      <button type="button" onClick={() => void step()} disabled={busy || !state.has_next}>Step one visible bar</button>
+      <p aria-live="polite">{state.visible_bars} visible bars · {state.has_next ? 'more bars available' : 'end of selected interval'}</p>
+      {state.events.length > 0 && <p aria-live="polite">Current detector event: {state.events.map((event) => `${event.pattern_id} ${event.trigger_id} → ${event.to_state}`).join('; ')}</p>}
+      {state.navigation && <p aria-live="polite">{state.navigation.stopped_on_event
+        ? `Stopped on ${state.navigation.matched_event?.trigger_id} after ${state.navigation.processed_bars} bars`
+        : `No further detector event; reached end after ${state.navigation.processed_bars} bars`}</p>}
+      <div className="form-row replay-controls">
+        <button type="button" onClick={() => void control('play')} disabled={busy || !state.has_next || state.status === 'running'}>Play</button>
+        <button type="button" onClick={() => void control('pause')} disabled={busy || state.status !== 'running'}>Pause</button>
+        <button type="button" onClick={() => void step()} disabled={busy || !state.has_next || state.status === 'running'}>Step one visible bar</button>
+        <label>Speed <select aria-label="Playback speed" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
+          <option value={0.5}>0.5 bars/s</option><option value={1}>1 bar/s</option><option value={2}>2 bars/s</option><option value={4}>4 bars/s</option>
+        </select></label>
+        <button type="button" onClick={() => void control('next-event')} disabled={busy || !state.has_next || state.status === 'running'}>Next detector event</button>
+        <button type="button" onClick={() => void control('reset')} disabled={busy}>Reset replay</button>
+      </div>
+      <div className="form-row">
+        <label>Seek to completed bar (UTC) <input aria-label="Seek time UTC" type="datetime-local" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} /></label>
+        <button type="button" onClick={() => void seek()} disabled={busy || !seekTime || state.status === 'running'}>Seek</button>
+      </div>
       <button type="button" onClick={() => void stop()} disabled={busy}>Stop walkthrough</button>
     </>}
   </section>;

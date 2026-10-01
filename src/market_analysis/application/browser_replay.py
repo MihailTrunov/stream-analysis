@@ -21,7 +21,7 @@ from market_analysis.application.replay_catalog import (
     required_warmup_bars,
     resolve_replay_calendar,
 )
-from market_analysis.application.replay_pipeline import ReplayPipeline
+from market_analysis.application.replay_pipeline import DetectorEventFilter, ReplayPipeline
 from market_analysis.application.replay_run import create_replay_run
 from market_analysis.config import DetectionAnalysisConfig, resolve_detection_config
 from market_analysis.demo.replay_seed import DEMO_END, DEMO_SELECTED_START
@@ -241,6 +241,19 @@ class BrowserReplayManager:
             finally:
                 engine.dispose()
 
+    def active(self) -> dict[str, object] | None:
+        """Allow a refreshed local browser to reattach to the same API process."""
+        with self._lock:
+            session = self._session
+            if session is None:
+                return None
+            engine = self._connection()
+            try:
+                with engine.connect() as connection:
+                    return self._state(connection, session)
+            finally:
+                engine.dispose()
+
     def stop(self, run_id: str) -> dict[str, object]:
         with self._lock:
             session = self._current(run_id)
@@ -261,7 +274,7 @@ class BrowserReplayManager:
             finally:
                 engine.dispose()
 
-    def step_visible(self, run_id: str) -> dict[str, object]:
+    def step_visible(self, run_id: str, *, keep_running: bool = False) -> dict[str, object]:
         """Process warm-up causally, then expose exactly one new selected bar."""
         with self._lock:
             session = self._current(run_id)
@@ -274,8 +287,12 @@ class BrowserReplayManager:
                         record = load_replay_run(connection, UUID(run_id))
                         assert record is not None
                         if record.status is ReplayStatus.CREATED:
+                            if keep_running:
+                                raise BrowserReplayError("play before requesting playback ticks")
                             session.pipeline.start(connection, at=datetime.now(UTC))
                         elif record.status is ReplayStatus.PAUSED:
+                            if keep_running:
+                                raise BrowserReplayError("playback is paused")
                             session.pipeline.resume(connection, at=datetime.now(UTC))
                         elif record.status is not ReplayStatus.RUNNING:
                             raise BrowserReplayError("replay cannot advance after terminal status")
@@ -288,10 +305,11 @@ class BrowserReplayManager:
                             if step.is_visible:
                                 break
                         if session.pipeline.has_next:
-                            transition_replay_run(
-                                connection, UUID(run_id), ReplayStatus.PAUSED,
-                                at=datetime.now(UTC),
-                            )
+                            if not keep_running:
+                                transition_replay_run(
+                                    connection, UUID(run_id), ReplayStatus.PAUSED,
+                                    at=datetime.now(UTC),
+                                )
                         else:
                             session.pipeline.run_to_completion(connection, at=datetime.now(UTC))
                         result = self._state(connection, session)
@@ -303,6 +321,163 @@ class BrowserReplayManager:
                     raise BrowserReplayError(str(failure)) from failure
                 assert result is not None
                 return result
+            finally:
+                engine.dispose()
+
+    def play(self, run_id: str) -> dict[str, object]:
+        """Start or resume; browser cadence only schedules later step requests."""
+        with self._lock:
+            session = self._current(run_id)
+            engine = self._connection()
+            try:
+                with engine.begin() as connection:
+                    record = load_replay_run(connection, UUID(run_id))
+                    assert record is not None
+                    if record.status is ReplayStatus.CREATED:
+                        session.pipeline.start(connection, at=datetime.now(UTC))
+                    elif record.status is ReplayStatus.PAUSED:
+                        session.pipeline.resume(connection, at=datetime.now(UTC))
+                    elif record.status is not ReplayStatus.RUNNING:
+                        raise BrowserReplayError("completed or failed replay cannot play")
+                    return self._state(connection, session)
+            finally:
+                engine.dispose()
+
+    def pause(self, run_id: str) -> dict[str, object]:
+        with self._lock:
+            session = self._current(run_id)
+            engine = self._connection()
+            try:
+                with engine.begin() as connection:
+                    record = load_replay_run(connection, UUID(run_id))
+                    assert record is not None
+                    if record.status is ReplayStatus.RUNNING:
+                        transition_replay_run(
+                            connection, UUID(run_id), ReplayStatus.PAUSED,
+                            at=datetime.now(UTC),
+                        )
+                    elif record.status not in (ReplayStatus.CREATED, ReplayStatus.PAUSED):
+                        raise BrowserReplayError("completed or failed replay cannot pause")
+                    return self._state(connection, session)
+            finally:
+                engine.dispose()
+
+    def next_event(
+        self, run_id: str, event_filter: DetectorEventFilter | None = None,
+    ) -> dict[str, object]:
+        """Run the shared pipeline sequentially; no future event index is consulted."""
+        with self._lock:
+            session = self._current(run_id)
+            engine = self._connection()
+            failure: Exception | None = None
+            state: dict[str, object] | None = None
+            try:
+                with engine.begin() as connection:
+                    try:
+                        outcome = session.pipeline.run_until_event(
+                            connection, event_filter, at=datetime.now(UTC)
+                        )
+                        if outcome.stopped_on_event and not session.pipeline.has_next:
+                            # Keep the terminal event as the navigation result,
+                            # but complete the exhausted persisted lifecycle.
+                            session.pipeline.run_until_event(
+                                connection, event_filter, at=datetime.now(UTC)
+                            )
+                        state = self._state(connection, session)
+                        state["navigation"] = {
+                            "processed_bars": outcome.processed_bars,
+                            "stopped_on_event": outcome.stopped_on_event,
+                            "matched_event": (
+                                outcome.matched_event.to_canonical_dict()
+                                if outcome.matched_event else None
+                            ),
+                        }
+                    except Exception as exc:
+                        failure = exc
+                if failure is not None:
+                    raise BrowserReplayError(str(failure)) from failure
+                assert state is not None
+                return state
+            finally:
+                engine.dispose()
+
+    def replace(
+        self, run_id: str, *, target: datetime | None = None,
+    ) -> dict[str, object]:
+        """Reset or seek with a fresh persisted identity and fresh analytical state."""
+        with self._lock:
+            old = self._current(run_id)
+            normalized_target = target.astimezone(UTC) if target and target.tzinfo else None
+            if target is not None and (
+                normalized_target is None
+                or not old.selected_start <= normalized_target < old.selected_end
+            ):
+                raise BrowserReplayError("seek target must lie inside the selected interval")
+            engine = self._connection()
+            try:
+                with engine.begin() as connection:
+                    resolved, sequence, warmup = _preflight(
+                        connection, old.revision_id, old.config,
+                        old.selected_start, old.selected_end,
+                    )
+                    if normalized_target is not None:
+                        target_index = bisect_left(
+                            sequence.bars, normalized_target,
+                            key=lambda bar: bar.timestamp,
+                        )
+                        if (
+                            target_index >= len(sequence.bars)
+                            or sequence.bars[target_index].timestamp != normalized_target
+                        ):
+                            raise BrowserReplayError(
+                                "seek target is not a completed selected bar"
+                            )
+                    new_id = uuid4()
+                    create_replay_run(
+                        connection, run_id=new_id, dataset_revision_id=old.revision_id,
+                        detection_config=resolved,
+                        selected_start=old.selected_start, selected_end=old.selected_end,
+                        created_at=datetime.now(UTC),
+                        build_id=os.getenv("STREAM_ANALYSIS_BUILD_ID", "development"),
+                        pattern_definitions=PATTERN_DEFINITIONS,
+                    )
+                    pipeline = ReplayPipeline.from_run(
+                        connection, new_id, bars=sequence.bars,
+                        bindings_factory=lambda: detector_bindings(resolved),
+                        pattern_definitions=PATTERN_DEFINITIONS,
+                        calendar_resolver=calendar_resolver(resolved.instrument_id),
+                    )
+                    new = _Session(
+                        pipeline, old.revision_id, resolved, old.selected_start,
+                        old.selected_end, warmup,
+                        sequence.lineage.source_dataset_id,
+                        sequence.lineage.canonical_checksum,
+                    )
+                    if normalized_target is not None:
+                        pipeline.start(connection, at=datetime.now(UTC))
+                        while pipeline.has_next:
+                            step = pipeline.step(connection)
+                            if step.view.timestamp == normalized_target:
+                                break
+                        if pipeline.has_next:
+                            transition_replay_run(
+                                connection, new_id, ReplayStatus.PAUSED,
+                                at=datetime.now(UTC),
+                            )
+                        else:
+                            pipeline.run_to_completion(connection, at=datetime.now(UTC))
+                    old_record = load_replay_run(connection, UUID(run_id))
+                    assert old_record is not None
+                    if old_record.status in (
+                        ReplayStatus.CREATED, ReplayStatus.RUNNING, ReplayStatus.PAUSED
+                    ):
+                        transition_replay_run(
+                            connection, UUID(run_id), ReplayStatus.ABORTED,
+                            at=datetime.now(UTC),
+                        )
+                    state = self._state(connection, new)
+                self._session = new
+                return state
             finally:
                 engine.dispose()
 

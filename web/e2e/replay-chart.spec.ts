@@ -20,4 +20,5 @@ test('pinned offline replay reveals only current and past candles', async ({ pag
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   await expect(page.getByTestId('candle')).toHaveCount(2);
   await expect(page.locator('[data-testid="candle"][data-time="2026-01-05T12:13:00Z"]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
 });

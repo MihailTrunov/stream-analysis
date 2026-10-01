@@ -27,6 +27,7 @@ from market_analysis.application.replay_catalog import (
     demo_detection_config,
     required_warmup_bars,
 )
+from market_analysis.application.replay_pipeline import DetectorEventFilter
 from market_analysis.config import (
     DetectionAnalysisConfig,
     detection_config_hash,
@@ -110,6 +111,23 @@ class ReplayLaunchRequest(BaseModel):
     config_id: str = DEMO_CONFIG_ID
     config_version: str = DEMO_CONFIG_VERSION
     detection_config: DetectionAnalysisConfig | None = None
+
+
+class ReplaySeekRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target: datetime
+
+
+class ReplayEventFilterRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    pattern_id: str | None = None
+    pattern_version: str | None = None
+    instance_id: str | None = None
+    trigger_id: str | None = None
+    from_state: str | None = None
+    to_state: str | None = None
 
 
 def _import_response(job: ImportJob) -> ImportResponse:
@@ -303,6 +321,11 @@ def launch_browser_replay(request: ReplayLaunchRequest) -> dict[str, object]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get("/replay/active")
+def active_browser_replay() -> dict[str, object]:
+    return {"active": browser_replay.active()}
+
+
 @app.get("/replay/{run_id}")
 def browser_replay_state(run_id: str) -> dict[str, object]:
     try:
@@ -325,6 +348,57 @@ def step_browser_replay(run_id: str) -> dict[str, object]:
         return browser_replay.step_visible(run_id)
     except BrowserReplayError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/tick")
+def tick_browser_replay(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.step_visible(run_id, keep_running=True)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/play")
+def play_browser_replay(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.play(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/pause")
+def pause_browser_replay(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.pause(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/next-event")
+def next_browser_replay_event(
+    run_id: str, request: ReplayEventFilterRequest | None = None,
+) -> dict[str, object]:
+    try:
+        event_filter = DetectorEventFilter(**request.model_dump()) if request else None
+        return browser_replay.next_event(run_id, event_filter)
+    except (BrowserReplayError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/reset")
+def reset_browser_replay(run_id: str) -> dict[str, object]:
+    try:
+        return browser_replay.replace(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/replay/{run_id}/seek")
+def seek_browser_replay(run_id: str, request: ReplaySeekRequest) -> dict[str, object]:
+    try:
+        return browser_replay.replace(run_id, target=request.target)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/replay/{run_id}/bars")

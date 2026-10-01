@@ -7,6 +7,7 @@ const smokeRoot = mkdtempSync(join(tmpdir(), 'stream-analysis-smoke-'));
 
 export default defineConfig({
   testDir: './e2e',
+  workers: 1, // The MVP API deliberately permits one active walkthrough.
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: 'http://127.0.0.1:5173',
