@@ -390,7 +390,9 @@ class ReversalDetector:
             )
         age = bar_input.completed_bars - cast(int, context["candidate_bar_index"])
         maximum = bar_input.parameters["max_candidate_age_bars"]
-        if type(maximum) is not int or maximum < 1 or age < maximum:
+        if type(maximum) is not int or maximum < 1:
+            raise ValueError("max_candidate_age_bars must be a positive integer")
+        if age < maximum:
             ema = self._current_ema(bar_input)
             if ema is None:
                 return DetectorOutput(bar_input.instance)

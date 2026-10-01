@@ -1,5 +1,9 @@
 # Pattern detection runtime area review — 2026-10-01
 
+Follow-up amended 2026-10-01: the original review scope and historical run
+counts below are retained, while the findings are corrected against the
+canonical runtime and the feasible defensive fix is recorded.
+
 ## Review scope
 
 Read-only review of the pattern-detection runtime area, Jira Stories
@@ -20,55 +24,45 @@ at their decision points (eligibility, precedence, thresholds, invalidation,
 expiry); `detection/runtime.py` was reviewed at the reentrancy, causality and
 identity sections; `patterns/event_evidence.py` and the persisted
 `PersistedDetectorEvent` records were checked against the SCRUM-82 contract;
-the fixture suite was checked for authored-ness and coverage claims. Gates on
-HEAD: `719 passed, 10 skipped` with Ruff and mypy strict clean on repeated
-runs (see finding 4 for one exception).
+the fixture suite was checked for authored-ness and coverage claims. At the
+original review HEAD, three clean runs reported `719 passed, 10 skipped`
+with Ruff and mypy strict clean; the first run had the unidentified failure
+described in finding 4. These are historical counts, not current HEAD results.
 
-## Findings
+## Findings and follow-up disposition
 
-1. **Low — `SCRUM-83`: an invalid `max_candidate_age_bars` silently disables
-   expiry instead of failing.** In
-   `src/market_analysis/detection/reversal.py:393`, the branch
-   `if type(maximum) is not int or maximum < 1 or age < maximum:` treats an
-   invalid configured maximum as "not yet expired", so a malformed value
-   reaching the detector produces candidates that never expire rather than a
-   defensive error. Resolution-level parameter validation (`minimum=1`)
-   normally prevents this, so it is a defense-in-depth gap, not a reachable
-   bug through the public config path. Recommended fix: raise on the invalid
-   value before the age comparison.
-2. **Low — `SCRUM-80`: the reentrancy roll happens on the first
-   post-terminal bar even when no new occurrence opens.**
-   `src/market_analysis/detection/runtime.py:520-544` creates the fresh
-   `base:{n+1}` instance whenever the current occurrence is terminal,
-   incrementing `occurrence_index` and swapping `slot.instance_id` on that
-   bar regardless of whether the detector emits anything. Correctness holds
-   (each terminal occurrence rolls exactly once; sequences reset under the
-   new key), but `runtime.occurrences` then includes an empty never-started
-   INACTIVE occurrence after every terminal one, and the `instances` dict
-   accumulates stale keys under the old ids. Recommended fix: roll lazily —
-   keep the terminal occurrence current and construct the fresh identity
-   only on a bar where the detector actually emits an entry transition.
-3. **Low — `SCRUM-85`: the same-bar source-leg-end guard blocks entry on any
-   `TREND_LEG_ENDED` from the bound leg instance.**
-   `src/market_analysis/detection/continuation.py:253-258` returns without a
-   candidate if any `TREND_LEG_ENDED` for the bound instance is visible on
-   the cross bar. The approved rule is that a leg ending *on the candidate
-   bar* cannot seed a candidate; if a different, earlier leg's end event
-   lands on the same bar as a fresh active leg's opposing cross, the
-   detector stays ineligible. Same-bar leg succession of this shape is rare,
-   so this is over-conservative rather than wrong. Recommended fix: check
-   that the ended leg is the *active* source leg (`leg_index` match) before
-   suppressing entry.
-4. **Medium (verification hygiene): one unreproduced intermittent test
-   failure.** On the first full-suite run of this review the result was
-   `1 failed, 719 passed, 10 skipped`; three subsequent runs were fully
-   green with identical counts. The failing test's identity was not captured
-   before the re-run. This is consistent with an order- or state-dependent
-   test (plausibly in the newer detector or fixture modules sharing module
-   state), but it is unconfirmed. Recommended action: run the suite under
-   `pytest -p no:cacheprovider --count 5` (or repeat runs in CI) once to
-   identify the test, then fix its ordering dependence before it erodes
-   trust in the suite.
+1. **Low — `SCRUM-83` defensive validation: resolved in the follow-up.**
+   The original `reversal.py` branch treated a malformed
+   `max_candidate_age_bars` as "not yet expired". Normal pattern-parameter
+   resolution (`minimum=1`) already rejected it at the public config
+   boundary, but the detector now raises `ValueError` before its age
+   comparison if the input is not a positive integer. A focused test covers
+   `None`, zero, negative, boolean and string values at the
+   detector boundary.
+2. **`SCRUM-80` reentrancy identity: optional behavior decision, not the
+   reported accumulation bug.** The runtime does create a fresh current
+   `INACTIVE` instance ID on the first post-terminal bar even if no entry
+   transition occurs. However, `runtime.occurrences` explicitly filters
+   initial-state instances, so it does **not** expose an empty never-started
+   occurrence. The retained older keys are terminal audit records; each
+   terminal rolls once, rather than repeatedly creating unused IDs. Lazy
+   allocation would change observable `runtime.instances`/debug identity
+   timing and merits an explicit contract decision and parity tests before
+   implementation. No runtime change is made in this follow-up.
+3. **`SCRUM-85` same-bar leg succession: withdrawn as an actionable finding.**
+   Although `continuation.py` suppresses entry for any bound-instance
+   `TREND_LEG_ENDED` on the bar, the canonical `TrendLegState` clears its
+   active leg on termination and skips all establishment/progression on that
+   same bar. Therefore a different, fresh active leg cannot coexist with
+   that end event in a canonical frame. The guard remains as conservative
+   defense; revisit it only if same-bar leg succession becomes supported.
+4. **Verification hygiene: one historical, unidentified failure.** The
+   original review observed `1 failed, 719 passed, 10 skipped` once, then
+   three green runs, without capturing the failing test. Order/state
+   dependence was a hypothesis, not an established cause. The project does
+   not install the plugin that supplies `pytest --count`; repeat separate
+   full-suite processes with `-p no:cacheprovider` and preserve any failing
+   test identity before proposing a fix. Follow-up results are recorded below.
 
 ## Verified sound (not findings)
 
@@ -144,6 +138,21 @@ every literal in the 694-line fixture module, and the row-level constraints
 of the detector-event migration. The two review subagents originally
 tasked for this area were terminated by API rate limits; this review was
 performed directly instead, with proportionately narrower empirical probing.
+
+## Follow-up verification — 2026-10-01
+
+The `SCRUM-83` defensive guard and five malformed-input cases were added in
+`reversal.py` and `test_reversal_detector.py`. The focused reversal suite
+passed. Five separate full-suite runs using
+`pytest -p no:cacheprovider -q --tb=short` all passed. The full local Nx CI
+command also passed (`725 passed, 10 skipped`; Ruff, mypy and build green).
+The historical intermittent failure was not reproduced, so no root cause or
+flaky-test fix is claimed. PostgreSQL tests still skip without the test
+database, and the original review's line-by-line limits remain. The
+reentrancy and continuation implementations were not changed. Revisit lazy
+occurrence allocation only after deciding when a new current instance ID
+should become observable; revisit same-bar end matching only if canonical
+TrendLeg succession semantics change.
 
 Relevant Story links:
 [SCRUM-78](https://mihailtrunov.atlassian.net/browse/SCRUM-78),

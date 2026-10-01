@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import replace
 from decimal import Decimal
 
+import pytest
 from test_detector_runtime import bar, chain_series, config_with, pattern_selection
 
 from market_analysis.config import ConfigParameter, PatternSelection
 from market_analysis.detection import (
     REVERSAL_V1,
     DetectorBinding,
+    DetectorInput,
     DetectorRuntime,
     ReversalDetector,
 )
@@ -228,6 +230,29 @@ def test_configured_candidate_age_is_hashed_and_respected() -> None:
     assert [(event.trigger_id, event.to_state) for event in result.events] == [
         ("candidate_age_limit", "EXPIRED")
     ]
+
+
+@pytest.mark.parametrize("invalid_maximum", [None, 0, -1, True, "60"])
+def test_malformed_candidate_age_fails_closed_at_detector_boundary(
+    invalid_maximum: object,
+) -> None:
+    runtime = _runtime()
+    for item in chain_series():
+        runtime.process_bar(item)
+    assert runtime.instances[0].state == "CANDIDATE"
+    frame = runtime.aggregator.update(bar(15, "120", "121", "119"))
+    bar_input = DetectorInput(
+        frame=frame,
+        definition=REVERSAL_V1,
+        parameters={"max_candidate_age_bars": invalid_maximum},
+        config=runtime.config,
+        detection_config_hash=runtime.detection_config_hash,
+        run_id=runtime.run_id,
+        dataset_revision_id=runtime.dataset_revision_id,
+        instance=runtime.instances[0],
+    )
+    with pytest.raises(ValueError, match="max_candidate_age_bars must be a positive integer"):
+        ReversalDetector().process_bar(bar_input)
 
 
 def test_unqualified_and_misaligned_chain_does_not_open_candidate() -> None:
