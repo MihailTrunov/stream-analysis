@@ -170,6 +170,20 @@ class SimulationClock:
             raise SimulationClockError("no bar is observable before the first step")
         return self._current
 
+    def index_for_timestamp(self, timestamp: datetime) -> int:
+        """Resolve an exact bar timestamp for replay navigation, without exposing bars."""
+        if (
+            not isinstance(timestamp, datetime)
+            or timestamp.tzinfo is None
+            or timestamp.utcoffset() is None
+        ):
+            raise SimulationClockError("seek timestamp must be timezone-aware")
+        selected = timestamp.astimezone(UTC)
+        index = bisect_left(self._bars, selected, key=lambda bar: bar.timestamp)
+        if index == self.bar_count or self._bars[index].timestamp != selected:
+            raise SimulationClockError("seek timestamp is not an observable bar")
+        return index
+
     def step(self) -> ObservableBars:
         if not self.has_next:
             raise SimulationClockError("simulation clock is at the final bar")

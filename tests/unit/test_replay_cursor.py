@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -15,6 +15,7 @@ from market_analysis.domain import (
     ReplayCursor,
     ReplayCursorError,
     SimulationClock,
+    SimulationClockError,
     Timeframe,
     ValidationStatus,
     canonical_bar_checksum,
@@ -70,7 +71,7 @@ def observed(pipeline: RecordingPipeline) -> tuple[list[int], list[Bar], list[st
     return (
         [view.index for view in pipeline.views],
         [view.current_bar for view in pipeline.views],
-        pipeline.events,
+        list(pipeline.events),
     )
 
 
@@ -323,3 +324,133 @@ def test_constructor_rejects_non_clock_and_non_pipeline() -> None:
         ReplayCursor("clock", RecordingPipeline())  # type: ignore[arg-type]
     with pytest.raises(ReplayCursorError, match="AnalyticalPipeline"):
         ReplayCursor(SimulationClock(sequence()), object())  # type: ignore[arg-type]
+
+
+def test_seek_backward_forward_and_resume_match_uninterrupted_prefix() -> None:
+    replay, pipeline = cursor(5)
+    replay.run_to_end()
+    for target in (2, 4, 0, 3):
+        view = replay.seek_to_index(target)
+        fresh, fresh_pipeline = cursor(5)
+        fresh.step_n(target + 1)
+        assert view is not None and view.index == target
+        assert replay.index == fresh.index
+        assert replay.timestamp == fresh.timestamp
+        assert [item.current_bar for item in pipeline.views] == [
+            item.current_bar for item in fresh_pipeline.views
+        ]
+        assert pipeline.events[-(target + 1):] == fresh_pipeline.events
+        with pytest.raises(SimulationClockError, match="future"):
+            view.bar_at(target + 1)
+    replay.run_to_end()
+    fresh, fresh_pipeline = cursor(5)
+    fresh.run_to_end()
+    assert [item.current_bar for item in pipeline.views] == [
+        item.current_bar for item in fresh_pipeline.views
+    ]
+    assert pipeline.events[-5:] == fresh_pipeline.events
+
+
+def test_seek_from_origin_and_to_pre_first_bar() -> None:
+    replay, pipeline = cursor(3)
+    assert replay.seek_to_index(-1) is None
+    assert pipeline.resets == 0
+    first = replay.seek_to_index(0)
+    assert first is not None and first.index == 0
+    assert pipeline.resets == 0
+    assert replay.seek_to_index(0) is first
+    assert pipeline.events == ["bar:0"]
+    assert replay.seek_to_index(-1) is None
+    assert replay.index == -1 and replay.timestamp is None
+    assert pipeline.views == [] and pipeline.resets == 1
+    assert replay.seek_to_index(-1) is None and pipeline.resets == 1
+
+
+def test_seek_to_time_requires_exact_aware_bar_and_accepts_timezone_equivalence() -> None:
+    replay, pipeline = cursor(3)
+    eastern = timezone(timedelta(hours=-4))
+    target = (START + timedelta(minutes=2)).astimezone(eastern)
+    view = replay.seek_to_time(target)
+    assert view.index == 2 and replay.timestamp == START + timedelta(minutes=2)
+    assert pipeline.events == ["bar:0", "bar:1", "bar:2"]
+    assert replay.seek_to_time(target) is view
+    assert pipeline.resets == 0
+
+
+@pytest.mark.parametrize(("target", "reason"), [
+    (-2, "between"),
+    (3, "between"),
+    (True, "integer"),
+    (1.0, "integer"),
+    ("1", "integer"),
+    (None, "integer"),
+])
+def test_invalid_seek_index_is_atomic(target: object, reason: str) -> None:
+    replay, pipeline = cursor(3)
+    replay.step_n(2)
+    before = observed(pipeline)
+    with pytest.raises(ReplayCursorError, match=reason):
+        replay.seek_to_index(target)  # type: ignore[arg-type]
+    assert replay.index == 1 and observed(pipeline) == before
+    assert pipeline.resets == 0 and not replay.failed
+
+
+@pytest.mark.parametrize(("target", "reason"), [
+    (START.replace(tzinfo=None), "timezone-aware"),
+    (START - timedelta(minutes=1), "not an observable bar"),
+    (START + timedelta(seconds=30), "not an observable bar"),
+    (START + timedelta(minutes=3), "not an observable bar"),
+    ("2026-09-27T12:00:00Z", "timezone-aware"),
+])
+def test_invalid_seek_timestamp_is_atomic(target: object, reason: str) -> None:
+    replay, pipeline = cursor(3)
+    replay.step_one()
+    before = observed(pipeline)
+    with pytest.raises(ReplayCursorError, match=reason):
+        replay.seek_to_time(target)  # type: ignore[arg-type]
+    assert replay.index == 0 and observed(pipeline) == before
+    assert pipeline.resets == 0 and not replay.failed
+
+
+def test_seek_failure_latches_and_requires_explicit_reset() -> None:
+    class FailingPipeline(RecordingPipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_on_replay = False
+
+        def process_bar(self, view: ObservableBars) -> None:
+            if self.fail_on_replay and view.index == 1:
+                raise RuntimeError("seek rebuild failed")
+            super().process_bar(view)
+
+    pipeline = FailingPipeline()
+    replay = ReplayCursor(SimulationClock(sequence(3)), pipeline)
+    replay.run_to_end()
+    pipeline.fail_on_replay = True
+    with pytest.raises(RuntimeError, match="seek rebuild failed"):
+        replay.seek_to_index(1)
+    assert replay.index == 1 and replay.failed
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.seek_to_index(0)
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.seek_to_time(START)
+    pipeline.fail_on_replay = False
+    replay.reset()
+    assert replay.seek_to_index(2) is not None
+    assert not replay.failed and [view.index for view in pipeline.views] == [0, 1, 2]
+
+
+def test_failed_reset_during_seek_latches_without_replaying() -> None:
+    class ResetFailingPipeline(RecordingPipeline):
+        def reset(self) -> None:
+            raise RuntimeError("seek reset failed")
+
+    pipeline = ResetFailingPipeline()
+    replay = ReplayCursor(SimulationClock(sequence(3)), pipeline)
+    replay.step_n(2)
+    with pytest.raises(RuntimeError, match="seek reset failed"):
+        replay.seek_to_index(0)
+    assert replay.failed and replay.index == 1
+    assert [view.index for view in pipeline.views] == [0, 1]
+    with pytest.raises(ReplayCursorError, match="latched"):
+        replay.step_one()

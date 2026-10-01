@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from .simulation_clock import ObservableBars, SimulationClock
+from .simulation_clock import ObservableBars, SimulationClock, SimulationClockError
 
 
 class ReplayCursorError(ValueError):
@@ -24,10 +24,11 @@ class AnalyticalPipeline(Protocol):
 class ReplayCursor:
     """Advance a clock one bar at a time, invoking the pipeline once per bar.
 
-    The cursor starts before bar zero and never seeks; every bar is processed
-    exactly once until the observable range is exhausted. Replaying identical
-    data through an identical pipeline is reproducible after reset. A pipeline
-    exception mid-step may leave that bar consumed and analytical state partly
+    The cursor starts before bar zero. Each uninterrupted pass processes every
+    bar exactly once until the observable range is exhausted; seeking resets
+    and replays the canonical prefix when already partway through a pass.
+    Replaying identical data through an identical pipeline is reproducible.
+    A pipeline exception mid-step may leave that bar consumed and analytical state partly
     mutated. Further advancement is prohibited; recovery is reset plus a full
     replay.
     """
@@ -134,6 +135,43 @@ class ReplayCursor:
             self.step_one()
             processed += 1
         return processed
+
+    def seek_to_index(self, target: int) -> ObservableBars | None:
+        """Reconstruct state through an exact zero-based index, including warm-up.
+
+        ``-1`` selects the initial state before bar zero. Invalid targets are
+        rejected before any reset or processing. A seek to the current index
+        is a no-op; all other non-initial seeks from a processed position reset
+        and replay from bar zero. A processing/reset failure latches the cursor.
+        """
+        self._require_healthy()
+        if isinstance(target, bool) or not isinstance(target, int):
+            raise ReplayCursorError("seek index must be an integer")
+        if not -1 <= target < self.bar_count:
+            raise ReplayCursorError(
+                f"seek index must be between -1 and {self.bar_count - 1}"
+            )
+        if target == self.index:
+            return None if target == -1 else self._clock.current
+        if self.index != -1:
+            self.reset()
+        if target == -1:
+            return None
+        result: ObservableBars | None = None
+        while self.index < target:
+            result = self.step_one()
+        return result
+
+    def seek_to_time(self, timestamp: datetime) -> ObservableBars:
+        """Seek to a completed bar at this exact aware timestamp; never clamp."""
+        self._require_healthy()
+        try:
+            target = self._clock.index_for_timestamp(timestamp)
+        except SimulationClockError as exc:
+            raise ReplayCursorError(str(exc)) from exc
+        result = self.seek_to_index(target)
+        assert result is not None
+        return result
 
     def reset(self) -> None:
         """Reset analytical state and return to the initial position before bar zero."""
