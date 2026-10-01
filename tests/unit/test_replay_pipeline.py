@@ -44,6 +44,8 @@ from market_analysis.config import (
     ConfigParameter,
     DetectionAnalysisConfig,
     PatternSelection,
+    detection_config_hash,
+    resolve_detection_config,
 )
 from market_analysis.detection import (
     DetectorBinding,
@@ -569,13 +571,18 @@ class CaptureRuntimePipeline:
     """Ephemeral real-chain adapter for causal seek and speed parity fixtures."""
 
     def __init__(self, run_id: str) -> None:
+        resolved = resolve_detection_config(config(), pattern_definitions=definitions())
+        pinned = DetectionAnalysisConfig.from_canonical_json(resolved.canonical_json())
         self.runtime = DetectorRuntime(
-            config(),
+            pinned,
             [DetectorBinding(reversal_definition(), reversal_detector())],
             run_id=run_id,
             dataset_revision_id=REVISION,
             calendar=calendar(),
             pinned_calendar_version=CALENDAR_VERSION,
+            pinned_config_hash=detection_config_hash(
+                pinned, pattern_definitions=definitions()
+            ),
         )
         self.frames: list[str] = []
 
@@ -684,6 +691,183 @@ def test_playback_speeds_preserve_real_market_state_and_detector_event_parity() 
         assert state_hashes(pipeline) == state_hashes(manual)
         assert pipeline.runtime.instances == manual.runtime.instances
         assert pipeline.runtime.events == manual.runtime.events
+    engine.dispose()
+
+
+def _regression_trace(pipeline: ReplayPipeline) -> tuple[tuple[object, ...], ...]:
+    """Small, readable golden over the warm-up edge and meaningful transitions."""
+    selected = (0, 4, 5, 6, 13, 14)
+    return tuple(
+        (
+            step.index,
+            step.is_visible,
+            str(step.result.frame.components["ema"]["ema"]),
+            str(step.result.frame.components["atr"]["atr"]),
+            step.result.frame.availability["trend_leg"],
+            tuple(
+                (event.ordinal, event.event_type.value,
+                 (event.event_time - START) // timedelta(minutes=1))
+                for event in step.result.frame.market_events_this_bar
+            ),
+            tuple(
+                (event.sequence, event.from_state, event.to_state, event.trigger_id)
+                for event in step.result.events
+            ),
+        )
+        for step in pipeline.steps if step.index in selected
+    )
+
+
+def test_replay_regression_golden_trace_and_execution_mode_matrix() -> None:
+    """A common drift fails the golden; mode-specific drift fails full-frame parity."""
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id)
+        sequence = load_bar_sequence(connection, REVISION, "US30", Timeframe.M1, BARS)
+
+        persisted = run_to_completion(connection, run_id)
+        assert _regression_trace(persisted) == (
+            (0, False, "None", "2", "NO_ACTIVE_LEG", (), ()),
+            (4, False, "100.00", "2", "NO_ACTIVE_LEG", (), ()),
+            (5, True, "114.500", "30", "NO_ACTIVE_LEG",
+             ((0, "EMA_CROSS", 5),),
+             ((0, "idle", "candidate", "opposing_ema_cross"),)),
+            (6, True, "112.2500", "20", "NO_ACTIVE_LEG",
+             ((0, "SWING_POINT_CONFIRMED", 5),
+              (1, "SWING_STRUCTURE_CLASSIFIED", 5), (2, "EMA_CROSS", 6)), ()),
+            (13, True, "122.43945312500", "32", "NO_ACTIVE_LEG",
+             ((0, "SWING_HIGH_CLOSE_BREAK", 13),),
+             ((1, "candidate", "confirmed", "protected_swing_break"),)),
+            (14, True, "121.219726562500", "21", "ACTIVE",
+             ((0, "SWING_POINT_CONFIRMED", 13),
+              (1, "SWING_STRUCTURE_CLASSIFIED", 13),
+              (2, "EMA_CROSS", 14), (3, "TREND_LEG_STARTED", 11),
+              (4, "TREND_LEG_QUALIFIED", 14)), ()),
+        )
+        baseline_frames = tuple(step.result.frame.debug_json() for step in persisted.steps)
+        baseline_events = persisted.runtime.events
+        baseline_instances = persisted.runtime.instances
+        baseline_occurrences = persisted.runtime.occurrences
+
+        for mode in ("step_one", "step_n", "run_to_end", "paced_slow", "paced_fast",
+                     "maximum", "seek"):
+            cursor, analytical = make_ephemeral_cursor(sequence, str(run_id))
+            if mode == "step_one":
+                while cursor.has_next:
+                    cursor.step_one()
+            elif mode == "step_n":
+                for count in (2, 3, 1, 9):
+                    cursor.step_n(count)
+            elif mode == "run_to_end":
+                assert cursor.run_to_end() == len(BARS)
+            elif mode == "paced_slow":
+                control = PlaybackController(cursor)
+                control.play(Decimal("0.5"))
+                for _ in BARS:
+                    assert control.tick(timedelta(seconds=2)) == 1
+            elif mode == "paced_fast":
+                control = PlaybackController(cursor)
+                control.play(Decimal("3"))
+                for _ in range(5):
+                    assert control.tick(timedelta(seconds=1)) == 3
+            elif mode == "maximum":
+                control = PlaybackController(cursor)
+                control.play_maximum()
+                assert control.tick() == len(BARS)
+            else:
+                cursor.run_to_end()
+                assert cursor.seek_to_index(4) is not None  # warm-up
+                assert tuple(analytical.frames) == baseline_frames[:5]
+                assert analytical.runtime.events == ()
+                assert cursor.seek_to_time(BAR_TIMESTAMPS[13]).index == 13
+                assert tuple(analytical.frames) == baseline_frames[:14]
+                assert analytical.runtime.events == baseline_events
+                assert cursor.seek_to_index(8) is not None  # backward again
+                assert tuple(analytical.frames) == baseline_frames[:9]
+                assert analytical.runtime.events == baseline_events[:1]
+                assert cursor.run_to_end() == 6
+            assert cursor.index == len(BARS) - 1 and not cursor.has_next, mode
+            assert tuple(analytical.frames) == baseline_frames, mode
+            assert analytical.runtime.events == baseline_events, mode
+            assert analytical.runtime.instances == baseline_instances, mode
+            assert analytical.runtime.occurrences == baseline_occurrences, mode
+
+        fresh_id = uuid4()
+        create_run(connection, fresh_id)
+        fresh = run_to_completion(connection, fresh_id)
+        assert [
+            _without_run_id(json.loads(step.result.frame.debug_json()))
+            for step in fresh.steps
+        ] == [
+            _without_run_id(json.loads(frame)) for frame in baseline_frames
+        ]
+        assert [
+            {key: value for key, value in event.to_canonical_dict().items()
+             if key != "run_id"}
+            for event in fresh.runtime.events
+        ] == [
+            {key: value for key, value in event.to_canonical_dict().items()
+             if key != "run_id"}
+            for event in baseline_events
+        ]
+        assert fresh.runtime.instances == baseline_instances
+        assert fresh.runtime.occurrences == baseline_occurrences
+    engine.dispose()
+
+
+def test_replay_regression_rejects_future_access_at_every_step_and_after_seek() -> None:
+    """A future getter or retroactively expanding old view fails in normal CI."""
+    class FutureProbePipeline(CaptureRuntimePipeline):
+        def __init__(self, run_id: str) -> None:
+            super().__init__(run_id)
+            self.views: list[ObservableBars] = []
+
+        def process_bar(self, view: ObservableBars) -> None:
+            self.views.append(view)
+            assert view.history() == BARS[:view.index + 1]
+            assert view.bar_at(view.index) == BARS[view.index]
+            if view.index + 1 < len(BARS):
+                with pytest.raises(SimulationClockError, match="future"):
+                    view.bar_at(view.index + 1)
+                with pytest.raises(SimulationClockError, match="future"):
+                    view.bar_at_time(BAR_TIMESTAMPS[view.index + 1])
+            super().process_bar(view)
+
+        def reset(self) -> None:
+            super().reset()
+            self.views.clear()
+
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        prepare(connection)
+        sequence = load_bar_sequence(connection, REVISION, "US30", Timeframe.M1, BARS)
+    analytical = FutureProbePipeline(str(uuid4()))
+    cursor = ReplayCursor(
+        SimulationClock(sequence, selected_start=VISIBLE_START, selected_end=SELECTED_END),
+        analytical,
+    )
+    early = cursor.step_one()
+    assert not early.is_visible
+    cursor.run_to_end()
+    assert early.history() == (BARS[0],)
+    with pytest.raises(SimulationClockError, match="future"):
+        early.bar_at(1)
+    cursor.seek_to_index(5)
+    assert [view.index for view in analytical.views] == list(range(6))
+    assert early.history() == (BARS[0],)
+    with pytest.raises(SimulationClockError, match="future"):
+        early.bar_at_time(BAR_TIMESTAMPS[1])
+    detector_inputs = analytical.runtime.bindings[0].detector.inputs
+    assert [bar_input.frame.bar for bar_input in detector_inputs] == list(BARS[:6])
+    assert all(
+        event.detection_time <= bar_input.bar_timestamp
+        for bar_input in detector_inputs
+        for event in bar_input.market_events
+    )
     engine.dispose()
 
 
