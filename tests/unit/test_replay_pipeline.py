@@ -34,6 +34,7 @@ from market_analysis.application.logging import (
 from market_analysis.application.playback import PlaybackController, PlaybackMode
 from market_analysis.application.replay_pipeline import (
     COMPONENT,
+    DetectorEventFilter,
     ReplayPipeline,
     ReplayPipelineError,
 )
@@ -346,10 +347,16 @@ def prepare(connection) -> None:
     ))
 
 
-def create_run(connection, run_id: UUID, *, selected_end: datetime = SELECTED_END) -> None:
+def create_run(
+    connection,
+    run_id: UUID,
+    *,
+    selected_start: datetime = VISIBLE_START,
+    selected_end: datetime = SELECTED_END,
+) -> None:
     create_replay_run(
         connection, run_id=run_id, dataset_revision_id=REVISION,
-        detection_config=config(), selected_start=VISIBLE_START,
+        detection_config=config(), selected_start=selected_start,
         selected_end=selected_end, created_at=START,
         build_id=BUILD_ID, pattern_definitions=definitions(),
     )
@@ -677,6 +684,232 @@ def test_playback_speeds_preserve_real_market_state_and_detector_event_parity() 
         assert state_hashes(pipeline) == state_hashes(manual)
         assert pipeline.runtime.instances == manual.runtime.instances
         assert pipeline.runtime.events == manual.runtime.events
+    engine.dispose()
+
+
+def test_run_until_stops_on_each_visible_event_then_resumes_without_skipping() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id, uninterrupted_id = uuid4(), uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id)
+        pipeline, _ = build_pipeline(connection, run_id)
+
+        first = pipeline.run_until_event(connection, at=START)
+        assert first.stopped_on_event and first.record.status is ReplayStatus.PAUSED
+        assert first.processed_bars == 6 and first.record.cursor_index == 5
+        assert first.stop_step is not None and first.stop_step.index == 5
+        assert first.matched_event is not None
+        assert first.matched_event.to_state == "candidate"
+        assert pipeline.cursor_index == load_replay_run(connection, run_id).cursor_index == 5
+
+        second = pipeline.run_until_event(connection, at=START)
+        assert second.stopped_on_event and second.record.status is ReplayStatus.PAUSED
+        assert second.processed_bars == 8 and second.record.cursor_index == 13
+        assert second.matched_event is not None
+        assert second.matched_event.to_state == "confirmed"
+        assert pipeline.cursor_index == load_replay_run(connection, run_id).cursor_index == 13
+
+        completed = pipeline.run_until_event(connection, at=SELECTED_END)
+        assert not completed.stopped_on_event
+        assert completed.stop_step is None and completed.matched_event is None
+        assert completed.processed_bars == 1
+        assert completed.record.status is ReplayStatus.COMPLETED
+        assert completed.record.cursor_index == len(BARS) - 1
+
+        create_run(connection, uninterrupted_id)
+        uninterrupted = run_to_completion(connection, uninterrupted_id)
+        assert transitions_in_runtime(pipeline) == transitions_in_runtime(uninterrupted)
+        assert [
+            _without_run_id(json.loads(step.result.frame.debug_json()))
+            for step in pipeline.steps
+        ] == [
+            _without_run_id(json.loads(step.result.frame.debug_json()))
+            for step in uninterrupted.steps
+        ]
+        assert [step.index for step in pipeline.steps] == list(range(len(BARS)))
+    engine.dispose()
+
+
+def test_run_until_filter_skips_nonmatching_events_and_no_match_completes() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        prepare(connection)
+        selected_id = uuid4()
+        create_run(connection, selected_id)
+        selected, _ = build_pipeline(connection, selected_id)
+        result = selected.run_until_event(
+            connection,
+            DetectorEventFilter(
+                pattern_id="trend-reversal", trigger_id="protected_swing_break",
+                from_state="candidate", to_state="confirmed",
+            ),
+            at=START,
+        )
+        assert result.stopped_on_event
+        assert result.record.cursor_index == 13 and result.processed_bars == 14
+        assert result.matched_event is selected.runtime.events[1]
+        assert len(selected.runtime.events) == 2  # earlier nonmatching candidate was retained
+
+        no_match_id = uuid4()
+        create_run(connection, no_match_id)
+        no_match, _ = build_pipeline(connection, no_match_id)
+        completed = no_match.run_until_event(
+            connection, DetectorEventFilter(pattern_id="another-pattern"), at=SELECTED_END
+        )
+        assert completed.record.status is ReplayStatus.COMPLETED
+        assert completed.processed_bars == len(BARS)
+        assert completed.matched_event is None
+        assert transitions_in_runtime(no_match) == transitions_in_runtime(selected)
+    engine.dispose()
+
+
+def test_run_until_processes_warmup_but_does_not_stop_on_warmup_event() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id, selected_start=START + timedelta(minutes=10))
+        pipeline, _ = build_pipeline(connection, run_id)
+        result = pipeline.run_until_event(connection, at=START)
+        assert result.stopped_on_event and result.record.cursor_index == 13
+        assert result.matched_event is not None
+        assert result.matched_event.to_state == "confirmed"
+        assert pipeline.warmup_bars == 10 and pipeline.visible_bars == 4
+        assert pipeline.steps[5].result.events[0].to_state == "candidate"
+        assert not pipeline.steps[5].is_visible
+    engine.dispose()
+
+
+def test_run_until_matches_second_of_multiple_events_on_one_bar() -> None:
+    class DoubleTransitionDetector(ScriptedDetector):
+        def __init__(self) -> None:
+            super().__init__()
+            self._reactions[MarketEventType.EMA_CROSS] = (
+                "opposing_ema_cross", "protected_swing_break"
+            )
+
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        prepare(connection)
+        run_id = uuid4()
+        definition = replace(
+            reversal_definition(),
+            same_bar_chains=(("opposing_ema_cross", "protected_swing_break"),),
+        )
+        custom_definitions = {definition.identity: definition}
+        create_replay_run(
+            connection, run_id=run_id, dataset_revision_id=REVISION,
+            detection_config=config(), selected_start=VISIBLE_START,
+            selected_end=SELECTED_END, created_at=START, build_id=BUILD_ID,
+            pattern_definitions=custom_definitions,
+        )
+        pipeline = ReplayPipeline.from_run(
+            connection, run_id, bars=BARS,
+            bindings_factory=lambda: [DetectorBinding(definition, DoubleTransitionDetector())],
+            pattern_definitions=custom_definitions,
+            calendar_resolver=calendar_resolver(),
+        )
+        result = pipeline.run_until_event(
+            connection, DetectorEventFilter(to_state="confirmed"), at=START
+        )
+        assert result.stopped_on_event and result.record.cursor_index == 5
+        assert result.stop_step is not None
+        assert [event.to_state for event in result.stop_step.result.events] == [
+            "candidate", "confirmed"
+        ]
+        assert result.matched_event is result.stop_step.result.events[1]
+        assert pipeline.runtime.events == result.stop_step.result.events
+    engine.dispose()
+
+
+def test_run_until_final_bar_match_pauses_then_next_call_completes() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id, selected_end=START + timedelta(minutes=14))
+        pipeline, _ = build_pipeline(connection, run_id)
+        stopped = pipeline.run_until_event(
+            connection, DetectorEventFilter(to_state="confirmed"), at=START
+        )
+        assert stopped.record.status is ReplayStatus.PAUSED
+        assert stopped.record.cursor_index == 13 and not pipeline.has_next
+        completed = pipeline.run_until_event(connection, at=SELECTED_END)
+        assert completed.record.status is ReplayStatus.COMPLETED
+        assert completed.processed_bars == 0 and completed.matched_event is None
+        assert len(pipeline.steps) == 14
+    engine.dispose()
+
+
+def test_run_until_rejects_invalid_filter_before_starting() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id)
+        pipeline, _ = build_pipeline(connection, run_id)
+        with pytest.raises(ReplayPipelineError, match="DetectorEventFilter"):
+            pipeline.run_until_event(connection, object(), at=START)  # type: ignore[arg-type]
+        with pytest.raises(ReplayPipelineError, match="pattern_id"):
+            DetectorEventFilter(pattern_id=" ")
+        assert pipeline.steps == () and pipeline.cursor_index == -1
+        assert load_replay_run(connection, run_id).status is ReplayStatus.CREATED
+    engine.dispose()
+
+
+def test_run_until_analytical_failure_latches_and_marks_run_failed() -> None:
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id)
+        pipeline, _ = build_pipeline(connection, run_id, reversal_detector(fail_on_completed_bar=2))
+        with pytest.raises(DetectorRuntimeError, match="scripted detector failure"):
+            pipeline.run_until_event(connection, at=START)
+        record = load_replay_run(connection, run_id)
+        assert record is not None and record.status is ReplayStatus.FAILED
+        assert record.cursor_index == 0 and pipeline.cursor_index == 1
+        with pytest.raises(ReplayPipelineError, match="latched"):
+            pipeline.run_until_event(connection, at=START)
+    engine.dispose()
+
+
+def test_run_until_pause_write_failure_latches_at_the_matching_bar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from market_analysis.application import replay_pipeline
+
+    original_transition = replay_pipeline.transition_replay_run
+
+    def pause_unavailable(connection, run_id, target, **kwargs):
+        if target is ReplayStatus.PAUSED:
+            raise RuntimeError("pause write failed")
+        return original_transition(connection, run_id, target, **kwargs)
+
+    monkeypatch.setattr(replay_pipeline, "transition_replay_run", pause_unavailable)
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    run_id = uuid4()
+    with engine.begin() as connection:
+        prepare(connection)
+        create_run(connection, run_id)
+        pipeline, _ = build_pipeline(connection, run_id)
+        with pytest.raises(RuntimeError, match="pause write failed"):
+            pipeline.run_until_event(connection, at=START)
+        record = load_replay_run(connection, run_id)
+        assert record is not None and record.status is ReplayStatus.FAILED
+        assert record.cursor_index == pipeline.cursor_index == 5
+        assert pipeline.failure_context is not None
+        with pytest.raises(ReplayPipelineError, match="latched"):
+            pipeline.run_until_event(connection, at=START)
     engine.dispose()
 
 

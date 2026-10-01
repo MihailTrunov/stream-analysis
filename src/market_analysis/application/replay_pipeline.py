@@ -61,6 +61,7 @@ from market_analysis.application.logging import ResearchLogger, research_logger
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
 from market_analysis.detection import (
     DetectorBinding,
+    DetectorEvent,
     DetectorRuntime,
     DetectorRuntimeError,
     DetectorRuntimeResult,
@@ -130,6 +131,55 @@ class ReplayCompletion:
     record: ReplayRunRecord
     warmup_bars: int
     visible_bars: int
+
+
+@dataclass(frozen=True, slots=True)
+class DetectorEventFilter:
+    """Exact AND-filter over a newly emitted detector transition.
+
+    ``trigger_id`` is the event reason/type. All fields unset matches any
+    DetectorEvent; only events emitted by the current completed bar are tested.
+    """
+
+    pattern_id: str | None = None
+    pattern_version: str | None = None
+    instance_id: str | None = None
+    trigger_id: str | None = None
+    from_state: str | None = None
+    to_state: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "pattern_id", "pattern_version", "instance_id", "trigger_id",
+            "from_state", "to_state",
+        ):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ReplayPipelineError(f"{name} filter must be a non-empty string")
+
+    def matches(self, event: DetectorEvent) -> bool:
+        for name in (
+            "pattern_id", "pattern_version", "instance_id", "trigger_id",
+            "from_state", "to_state",
+        ):
+            selected = getattr(self, name)
+            if selected is not None and getattr(event, name) != selected:
+                return False
+        return True
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayUntilResult:
+    """An event stop or normal end-of-data completion."""
+
+    record: ReplayRunRecord
+    processed_bars: int
+    stop_step: ReplayStep | None
+    matched_event: DetectorEvent | None
+
+    @property
+    def stopped_on_event(self) -> bool:
+        return self.matched_event is not None
 
 
 class _RuntimePipeline:
@@ -393,6 +443,28 @@ class ReplayPipeline:
         )
         return record
 
+    def resume(self, connection: Connection, *, at: datetime) -> ReplayRunRecord:
+        """Resume a paused run with its intact in-memory analytical state."""
+        self._require_healthy()
+        context = self._verified_context(connection)
+        if context.lifecycle.status is not ReplayStatus.PAUSED:
+            raise ReplayPipelineError("only a paused replay run can resume")
+        try:
+            self._validate_continuity(context)
+        except Exception as exc:
+            self._record_failure(connection, context, exc)
+            raise
+        record = transition_replay_run(connection, self._run_id, ReplayStatus.RUNNING, at=at)
+        self._log().info(
+            "replay run resumed",
+            extra={
+                "phase": "execution",
+                "bar_index": self._clock.index,
+                **self._component_context(),
+            },
+        )
+        return record
+
     def step(self, connection: Connection) -> ReplayStep:
         """Process exactly one completed bar and persist the cursor advance.
 
@@ -475,6 +547,67 @@ class ReplayPipeline:
             warmup_bars=self._warmup_bars,
             visible_bars=self._visible_bars,
         )
+
+    def run_until_event(
+        self,
+        connection: Connection,
+        event_filter: DetectorEventFilter | None = None,
+        *,
+        at: datetime,
+    ) -> ReplayUntilResult:
+        """Step sequentially to the first matching visible event or end of data.
+
+        The current bar's committed event tuple is the only evidence examined.
+        A matching event pauses the persisted run after that bar, so the next
+        call resumes at the next unprocessed bar. Warm-up bars still execute
+        but cannot stop the visible walkthrough.
+        """
+        if event_filter is None:
+            event_filter = DetectorEventFilter()
+        if not isinstance(event_filter, DetectorEventFilter):
+            raise ReplayPipelineError("run-until requires a DetectorEventFilter")
+        self._require_healthy()
+        context = self._verified_context(connection)
+        if context.lifecycle.status is ReplayStatus.CREATED:
+            self.start(connection, at=at)
+        elif context.lifecycle.status is ReplayStatus.PAUSED:
+            self.resume(connection, at=at)
+        elif context.lifecycle.status is not ReplayStatus.RUNNING:
+            raise ReplayPipelineError("only a created, running, or paused replay can run until")
+        context = self._verified_context(connection)
+        try:
+            self._validate_continuity(context)
+        except Exception as exc:
+            self._record_failure(connection, context, exc)
+            raise
+        processed = 0
+        while self._cursor.has_next:
+            step = self.step(connection)
+            processed += 1
+            if not step.is_visible:
+                continue
+            matched = next(
+                (event for event in step.result.events if event_filter.matches(event)), None
+            )
+            if matched is None:
+                continue
+            try:
+                record = transition_replay_run(
+                    connection, self._run_id, ReplayStatus.PAUSED, at=at
+                )
+            except Exception as exc:
+                self._record_failure(connection, context, exc)
+                raise
+            return ReplayUntilResult(record, processed, step, matched)
+        record = complete_replay(
+            connection,
+            self._run_id,
+            self._clock,
+            at=at,
+            component_parameters=self._component_parameters,
+            pattern_definitions=self._pattern_definitions,
+        )
+        return ReplayUntilResult(record, processed, None, None)
 
     def reset(self) -> None:
         """Refuse an in-place reset: SCRUM-61 reset means a fresh run id.
