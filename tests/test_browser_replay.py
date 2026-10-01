@@ -156,6 +156,46 @@ def test_chart_payload_only_exposes_processed_selected_bars(client: TestClient):
     assert bounded[-1]["timestamp"] == last_visible_time
 
 
+def test_market_state_view_is_causal_and_identical_after_seek(client: TestClient):
+    config = client.get("/replay/config-default?instrument_id=US30").json()["detection_config"]
+    config["components"].append({
+        "component_id": "ema", "component_version": "1",
+        "parameters": [{"name": "period", "value": 2}],
+    })
+    request = _launch()
+    request["detection_config"] = config
+    launched = client.post("/replay", json=request)
+    assert launched.status_code == 201, launched.text
+    run_id = launched.json()["run_id"]
+    params = {"start": DEMO_SELECTED_START.isoformat(), "end": DEMO_END.isoformat(), "limit": 100}
+    path = f"/replay/{run_id}/view"
+    empty = client.get(path, params=params).json()
+    assert empty["bars"] == empty["observations"] == empty["events"] == []
+    client.post(f"/replay/{run_id}/step")
+    first = client.get(path, params=params).json()
+    assert len(first["bars"]) == len(first["observations"]) == 1
+    frame = first["observations"][0]
+    assert frame["timestamp"] == first["bars"][0]["timestamp"]
+    assert frame["components"]["ema"]["period"] == 2
+    assert frame["components"]["ema"]["ema"] is not None
+    assert frame["components"]["session"]["session_name"]
+    assert all(event["detection_time"] <= first["cursor_time"] for event in first["events"])
+    assert client.get(path, params={**params, "limit": 501}).status_code == 422
+    client.post(f"/replay/{run_id}/step")
+    second = client.get(path, params=params).json()
+    assert len(second["bars"]) == len(second["observations"]) == 2
+    seek = client.post(f"/replay/{run_id}/seek", json={
+        "target": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat()
+    }).json()
+    replayed = client.get(f"/replay/{seek['run_id']}/view", params=params).json()
+    assert replayed["bars"] == second["bars"]
+    for old, new in zip(second["observations"], replayed["observations"], strict=True):
+        assert old["timestamp"] == new["timestamp"]
+        assert old["availability"] == new["availability"]
+        assert old["components"]["ema"] == new["components"]["ema"]
+        assert old["market_events"] == new["market_events"]
+
+
 def test_chart_rejects_future_or_unbounded_viewports(client: TestClient):
     launched = client.post("/replay", json=_launch()).json()
     run_id = launched["run_id"]

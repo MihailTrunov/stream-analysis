@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { CandlestickChart } from './CandlestickChart';
+import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import {
   apiJson,
   type ConfigSelection,
   type DetectionConfig,
   type ReplayConfig,
   type ReplayBar,
-  type ReplayBarsResponse,
+  type ReplayObservation,
+  type ReplayViewResponse,
   type ReplaySource,
   type ReplayState,
 } from './replay';
@@ -29,6 +30,8 @@ export function ReplayWalkthrough() {
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const [state, setState] = useState<ReplayState | null>(null);
   const [chartBars, setChartBars] = useState<ReplayBar[]>([]);
+  const [observations, setObservations] = useState<ReplayObservation[]>([]);
+  const [overlays, setOverlays] = useState<OverlayVisibility>({ ema: true, trend: true, swing: true, range: true, session: true });
   const [speed, setSpeed] = useState(1);
   const [seekTime, setSeekTime] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,15 +67,15 @@ export function ReplayWalkthrough() {
   }, [selectedId, selected?.instrument_id, state]);
 
   useEffect(() => {
-    if (!state) { setChartBars([]); return; }
+    if (!state) { setChartBars([]); setObservations([]); return; }
     const controller = new AbortController();
     const params = new URLSearchParams({
       start: state.selected_start,
       end: state.selected_end,
       limit: '100',
     });
-    void apiJson<ReplayBarsResponse>(`/replay/${state.run_id}/bars?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setChartBars(result.bars); })
+    void apiJson<ReplayViewResponse>(`/replay/${state.run_id}/view?${params}`, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) { setChartBars(result.bars); setObservations(result.observations); } })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
       });
@@ -170,7 +173,7 @@ export function ReplayWalkthrough() {
         method: 'POST',
       });
       if (action === 'reset') {
-        setChartBars([]);
+        setChartBars([]); setObservations([]);
         setSeekTime(localInput(next.selected_start));
       }
       setState(next);
@@ -186,7 +189,7 @@ export function ReplayWalkthrough() {
       const next = await apiJson<ReplayState>(`/replay/${state.run_id}/seek`, {
         method: 'POST', body: JSON.stringify({ target: utcInput(seekTime) }),
       });
-      setChartBars([]);
+      setChartBars([]); setObservations([]);
       setState(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -229,7 +232,14 @@ export function ReplayWalkthrough() {
         <dt>Dataset checksum</dt><dd><code>{state.canonical_checksum}</code></dd>
         <dt>Config hash</dt><dd><code>{state.detection_config_hash}</code></dd>
         <dt>Warm-up</dt><dd>{state.warmup_processed} / {state.warmup_required} bars</dd></dl>
-      <CandlestickChart bars={chartBars} cursorTime={state.cursor_time} />
+      <div className="form-row overlay-controls" aria-label="Chart overlays">
+        {(Object.keys(overlays) as Array<keyof OverlayVisibility>).map((key) => <label key={key}>
+          <input type="checkbox" checked={overlays[key]} onChange={(event) => setOverlays({ ...overlays, [key]: event.target.checked })} />
+          {key === 'ema' ? 'EMA' : key === 'trend' ? 'Trend legs' : key === 'swing' ? 'Swings and structure' : key === 'range' ? 'Range/compression' : 'Sessions'}
+        </label>)}
+      </div>
+      <CandlestickChart bars={chartBars} observations={observations} cursorTime={state.cursor_time} overlays={overlays} />
+      {observations.at(-1) && <p aria-live="polite">Current market state: {Object.entries(observations.at(-1)!.availability).map(([name, status]) => `${name} ${status}`).join(' · ')}</p>}
       <p aria-live="polite">{state.visible_bars} visible bars · {state.has_next ? 'more bars available' : 'end of selected interval'}</p>
       {state.events.length > 0 && <p aria-live="polite">Current detector event: {state.events.map((event) => `${event.pattern_id} ${event.trigger_id} → ${event.to_state}`).join('; ')}</p>}
       {state.navigation && <p aria-live="polite">{state.navigation.stopped_on_event

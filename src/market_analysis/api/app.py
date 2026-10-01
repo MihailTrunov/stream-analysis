@@ -411,6 +411,16 @@ def browser_replay_bars(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get("/replay/{run_id}/view")
+def browser_replay_view(
+    run_id: str, start: datetime, end: datetime, limit: int = 100,
+) -> dict[str, object]:
+    try:
+        return browser_replay.visible_view(run_id, start, end, limit)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/imports", response_model=ImportResponse, status_code=202)
 def create_import(request: ImportCreateRequest) -> ImportResponse:
     """Schedule one local UK/live M1 import without putting credentials in PostgreSQL."""

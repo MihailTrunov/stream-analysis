@@ -9,12 +9,19 @@ test('pinned offline replay reveals only current and past candles', async ({ pag
   await expect(page.getByTestId('candle')).toHaveCount(0);
 
   const firstPayload = page.waitForResponse((response) =>
-    response.url().includes('/api/replay/') && response.url().includes('/bars?') && response.status() === 200);
+    response.url().includes('/api/replay/') && response.url().includes('/view?') && response.status() === 200);
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   const first = await (await firstPayload).json() as { bars: Array<{ timestamp: string }> };
   expect(first.bars).toHaveLength(1);
   expect(first.bars[0].timestamp).toBe('2026-01-05T12:11:00Z');
   await expect(page.getByTestId('candle')).toHaveCount(1);
+  await expect(page.getByTestId('session-marker')).toHaveCount(1);
+  await expect(page.getByText(/Current market state:/)).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Sessions' }).uncheck();
+  await expect(page.getByTestId('session-marker')).toHaveCount(0);
+  await expect(page.getByTestId('candle')).toHaveCount(1);
+  await page.getByRole('checkbox', { name: 'Sessions' }).check();
+  await expect(page.getByTestId('session-marker')).toHaveCount(1);
   await expect(page.locator('[data-testid="candle"][data-time="2026-01-05T12:12:00Z"]')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Step one visible bar' }).click();

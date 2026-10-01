@@ -77,6 +77,38 @@ export interface ReplayBarsResponse {
   limit: number;
 }
 
+export interface ReplayObservation {
+  timestamp: string;
+  availability: Record<string, string>;
+  components: Record<string, Record<string, unknown>>;
+  market_events: Array<{
+    ordinal: number;
+    event_type: string;
+    event_time: string;
+    detection_time: string;
+    source_instance_id: string;
+    evidence: Record<string, unknown>;
+  }>;
+}
+export interface ReplayDetectorEvent {
+  run_id: string;
+  pattern_id: string;
+  pattern_version: string;
+  instance_id: string;
+  sequence: number;
+  from_state: string;
+  to_state: string;
+  trigger_id: string;
+  event_time: string;
+  detection_time: string;
+  rationale: Record<string, unknown>;
+  emission_order: number;
+}
+export interface ReplayViewResponse extends ReplayBarsResponse {
+  observations: ReplayObservation[];
+  events: ReplayDetectorEvent[];
+}
+
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,

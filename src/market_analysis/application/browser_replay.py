@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from bisect import bisect_left
 from dataclasses import dataclass
@@ -513,6 +514,55 @@ class BrowserReplayManager:
                     "low": str(bar.low),
                     "close": str(bar.close),
                 } for bar in visible],
+                "limit": limit,
+            }
+
+    def visible_view(
+        self, run_id: str, start: datetime, end: datetime, limit: int,
+    ) -> dict[str, object]:
+        """One coherent, causal chart and event snapshot from committed steps."""
+        if (start.tzinfo is None or end.tzinfo is None or end <= start
+                or not 1 <= limit <= 500):
+            raise BrowserReplayError("viewport needs ordered UTC bounds and limit 1..500")
+        with self._lock:
+            session = self._current(run_id)
+            if start < session.selected_start or end > session.selected_end:
+                raise BrowserReplayError("viewport must lie inside the selected interval")
+            steps = tuple(step for step in session.pipeline.steps if step.is_visible)
+            viewport = tuple(
+                step for step in steps if start <= step.view.timestamp < end
+            )[-limit:]
+            observations = []
+            for step in viewport:
+                frame = json.loads(step.result.frame.debug_json())
+                observations.append({
+                    "timestamp": frame["bar"]["timestamp"],
+                    "availability": frame["availability"],
+                    "components": frame["components"],
+                    "market_events": frame["market_events_this_bar"],
+                })
+            events: list[dict[str, object]] = []
+            for step in steps:
+                for event in step.result.events:
+                    # Preserve the runtime's within-bar emission order, even
+                    # when two instances emit at the same detection timestamp.
+                    events.append({
+                        **event.to_canonical_dict(),
+                        "emission_order": len(events),
+                    })
+            return {
+                "run_id": run_id,
+                "cursor_index": session.pipeline.cursor_index,
+                "cursor_time": steps[-1].view.timestamp if steps else None,
+                "bars": [{
+                    "timestamp": step.view.timestamp,
+                    "open": str(step.view.current_bar.open),
+                    "high": str(step.view.current_bar.high),
+                    "low": str(step.view.current_bar.low),
+                    "close": str(step.view.current_bar.close),
+                } for step in viewport],
+                "observations": observations,
+                "events": events,
                 "limit": limit,
             }
 
