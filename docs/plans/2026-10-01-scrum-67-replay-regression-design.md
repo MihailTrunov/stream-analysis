@@ -11,8 +11,11 @@ detector events and occurrence state across fresh runs and these control
 paths: `step_one`, mixed `step_n`, `run_to_end`, paced playback at two rates,
 maximum-speed playback, and backward/forward seeks. Include a persisted
 `ReplayPipeline` pass to prove the headless walkthrough and persisted replay
-share analytical output. Exclude only the deliberately fresh `run_id` from
-cross-run comparisons; all other pinned lineage and output stays in scope.
+share analytical output. A direct shared-runtime pass stands in for the
+autonomous evaluation driver until that outer workflow exists; that driver
+must join this matrix when implemented. Exclude only the deliberately fresh
+`run_id` from cross-run comparisons; all other pinned lineage and output
+stays in scope.
 
 Parity alone cannot detect a regression common to every path. Therefore keep
 a short, hand-reviewed golden trace of selected warm-up-boundary and detector

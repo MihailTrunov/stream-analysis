@@ -752,6 +752,21 @@ def test_replay_regression_golden_trace_and_execution_mode_matrix() -> None:
         baseline_instances = persisted.runtime.instances
         baseline_occurrences = persisted.runtime.occurrences
 
+        # Autonomous evaluation's outer driver is not built yet; its shared
+        # completed-bar analytical core must already agree with replay.
+        direct = DetectorRuntime(
+            persisted.detection_config,
+            [DetectorBinding(reversal_definition(), reversal_detector())],
+            run_id=str(run_id), dataset_revision_id=REVISION,
+            calendar=calendar(), pinned_calendar_version=CALENDAR_VERSION,
+            pinned_config_hash=persisted.snapshot.detection_config_hash,
+        )
+        direct_results = tuple(direct.process_bar(item) for item in BARS)
+        assert tuple(result.frame.debug_json() for result in direct_results) == baseline_frames
+        assert direct.events == baseline_events
+        assert direct.instances == baseline_instances
+        assert direct.occurrences == baseline_occurrences
+
         for mode in ("step_one", "step_n", "run_to_end", "paced_slow", "paced_fast",
                      "maximum", "seek"):
             cursor, analytical = make_ephemeral_cursor(sequence, str(run_id))
