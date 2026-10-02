@@ -5,16 +5,18 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 from market_analysis.api.app import app
 from market_analysis.application import browser_replay as replay_module
 from market_analysis.demo.replay_seed import DEMO_END, DEMO_SELECTED_START, seed_replay_datasets
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.market_data import dataset_revisions
+from market_analysis.persistence.pattern_instances import pattern_instance_transitions
 from market_analysis.persistence.replay_runs import ReplayStatus, load_replay_run
 from market_analysis.persistence.runs import metadata
 
@@ -32,6 +34,7 @@ def client(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
     engine.dispose()
     replay_module.browser_replay = replay_module.BrowserReplayManager()
     from market_analysis.api import app as api_module
+
     monkeypatch.setattr(api_module, "browser_replay", replay_module.browser_replay)
     return TestClient(app)
 
@@ -104,7 +107,9 @@ def test_edited_parameters_preview_and_launch_pin_same_hash(client: TestClient):
 def test_launch_fails_closed_on_corrupted_revision(client: TestClient):
     parquet = (
         Path(os.environ["STREAM_ANALYSIS_DATA_ROOT"])
-        / "datasets" / "offline-replay-us30-v1" / "bars.parquet"
+        / "datasets"
+        / "offline-replay-us30-v1"
+        / "bars.parquet"
     )
     with parquet.open("ab") as stream:
         stream.write(b"tampered")
@@ -158,10 +163,13 @@ def test_chart_payload_only_exposes_processed_selected_bars(client: TestClient):
 
 def test_market_state_view_is_causal_and_identical_after_seek(client: TestClient):
     config = client.get("/replay/config-default?instrument_id=US30").json()["detection_config"]
-    config["components"].append({
-        "component_id": "ema", "component_version": "1",
-        "parameters": [{"name": "period", "value": 2}],
-    })
+    config["components"].append(
+        {
+            "component_id": "ema",
+            "component_version": "1",
+            "parameters": [{"name": "period", "value": 2}],
+        }
+    )
     request = _launch()
     request["detection_config"] = config
     launched = client.post("/replay", json=request)
@@ -184,9 +192,10 @@ def test_market_state_view_is_causal_and_identical_after_seek(client: TestClient
     client.post(f"/replay/{run_id}/step")
     second = client.get(path, params=params).json()
     assert len(second["bars"]) == len(second["observations"]) == 2
-    seek = client.post(f"/replay/{run_id}/seek", json={
-        "target": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat()
-    }).json()
+    seek = client.post(
+        f"/replay/{run_id}/seek",
+        json={"target": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat()},
+    ).json()
     replayed = client.get(f"/replay/{seek['run_id']}/view", params=params).json()
     assert replayed["bars"] == second["bars"]
     for old, new in zip(second["observations"], replayed["observations"], strict=True):
@@ -212,9 +221,10 @@ def test_detector_view_emits_exact_lifecycle_event_only_at_detection(client: Tes
     assert event["sequence"] >= 0
     assert event["pattern_name"] == "Range Compression v1"
     assert len(event["definition_fingerprint"]) == 64
-    assert event["detection_config_hash"] == client.get(f"/replay/{run_id}").json()[
-        "detection_config_hash"
-    ]
+    assert (
+        event["detection_config_hash"]
+        == client.get(f"/replay/{run_id}").json()["detection_config_hash"]
+    )
     assert event["dataset_revision_id"] == "offline-replay-us30-v1"
     assert event["run_id"] == run_id
     assert event["build_id"]
@@ -224,6 +234,175 @@ def test_detector_view_emits_exact_lifecycle_event_only_at_detection(client: Tes
     assert event["detection_time"] == "2026-01-05T12:12:00Z"
     assert event["event_time"] <= event["detection_time"]
     assert isinstance(event["rationale"], dict)
+    assert event["event_id"]
+    assert event["runtime_instance_id"]
+
+
+def test_manual_event_review_is_audited_and_not_copied_to_fresh_run(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    path = f"/replay/{run_id}/annotations"
+    assert client.get(path).json() == {"annotations": []}
+    assert (
+        client.post(
+            path,
+            json={
+                "target_kind": "event",
+                "event_id": str(uuid4()),
+                "label": "correct",
+            },
+        ).status_code
+        == 422
+    )
+    client.post(f"/replay/{run_id}/step")
+    client.post(f"/replay/{run_id}/step")
+    view = client.get(
+        f"/replay/{run_id}/view",
+        params={
+            "start": DEMO_SELECTED_START.isoformat(),
+            "end": DEMO_END.isoformat(),
+        },
+    ).json()
+    event = view["events"][0]
+    engine = create_engine(os.environ["STREAM_ANALYSIS_DATABASE_URL"])
+    with engine.connect() as connection:
+        original = (
+            connection.execute(
+                select(pattern_instance_transitions).where(
+                    pattern_instance_transitions.c.event_id == event["event_id"]
+                )
+            )
+            .mappings()
+            .one()
+        )
+        before = dict(original)
+    created_response = client.post(
+        path,
+        json={
+            "target_kind": "event",
+            "event_id": event["event_id"],
+            "label": "needs_review",
+            "note": "check swing",
+        },
+    )
+    assert created_response.status_code == 201, created_response.text
+    created = created_response.json()
+    assert created["event_id"] == event["event_id"]
+    assert created["instance_id"] == event["instance_id"]
+    assert created["run_id"] == run_id
+    assert created["pattern_version"] == event["pattern_version"]
+    assert client.get(path).json()["annotations"] == [created]
+    invalid = client.post(
+        path,
+        json={
+            "target_kind": "event",
+            "event_id": event["event_id"],
+            "label": "profitable",
+        },
+    )
+    assert invalid.status_code == 422
+    assert client.post(path, json={
+        "target_kind": "event", "event_id": event["event_id"],
+        "label": "correct", "reviewer_id": "unverified-claim",
+    }).status_code == 422
+    edited_response = client.patch(
+        f"/annotations/{created['annotation_id']}",
+        json={
+            "expected_revision": 1,
+            "label": "correct",
+            "note": "confirmed",
+        },
+    )
+    assert edited_response.status_code == 200, edited_response.text
+    edited = edited_response.json()
+    assert [item["label"] for item in edited["history"]] == ["needs_review", "correct"]
+    assert client.get(f"/annotations/{created['annotation_id']}").json() == edited
+    assert client.get(f"/annotations/{created['annotation_id']}/export").json() == edited
+    assert (
+        client.patch(
+            f"/annotations/{created['annotation_id']}",
+            json={
+                "expected_revision": 1,
+                "label": "incorrect",
+            },
+        ).status_code
+        == 409
+    )
+    instance_response = client.post(
+        path,
+        json={
+            "target_kind": "instance",
+            "instance_id": event["instance_id"],
+            "label": "partially_correct",
+        },
+    )
+    assert instance_response.status_code == 201, instance_response.text
+    with engine.connect() as connection:
+        after = dict(
+            connection.execute(
+                select(pattern_instance_transitions).where(
+                    pattern_instance_transitions.c.event_id == event["event_id"]
+                )
+            )
+            .mappings()
+            .one()
+        )
+    assert after == before
+    engine.dispose()
+    fresh = client.post(f"/replay/{run_id}/reset").json()
+    assert fresh["run_id"] != run_id
+    assert client.get(f"/replay/{fresh['run_id']}/annotations").json() == {"annotations": []}
+    assert client.get(f"/annotations/{created['annotation_id']}").json() == edited
+
+
+def test_missed_pattern_review_is_bounded_to_visible_chart(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    path = f"/replay/{run_id}/annotations"
+    interval = {
+        "target_kind": "missed_pattern",
+        "label": "missed_pattern",
+        "pattern_id": "RANGE_COMPRESSION_V1",
+        "pattern_version": "1",
+        "interval_start": DEMO_SELECTED_START.isoformat(),
+        "interval_end": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat(),
+        "note": "visually expected a compression",
+    }
+    assert client.post(path, json=interval).status_code == 422
+    client.post(f"/replay/{run_id}/step")
+    created_response = client.post(path, json=interval)
+    assert created_response.status_code == 201, created_response.text
+    created = created_response.json()
+    assert created["event_id"] is None
+    assert created["run_id"] is None
+    assert created["dataset_revision_id"] == "offline-replay-us30-v1"
+    assert client.get(path).json()["annotations"] == [created]
+    assert client.post(path, json={**interval, "label": "correct"}).status_code == 422
+    assert (
+        client.post(
+            path,
+            json={
+                **interval,
+                "interval_end": DEMO_END.isoformat(),
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.patch(
+            f"/annotations/{created['annotation_id']}",
+            json={
+                "expected_revision": 1,
+                "label": "needs_review",
+                "note": "inspect later",
+            },
+        ).status_code
+        == 200
+    )
+    fresh = client.post(f"/replay/{run_id}/reset").json()["run_id"]
+    assert client.get(f"/replay/{fresh}/annotations").json() == {"annotations": []}
+    client.post(f"/replay/{fresh}/step")
+    visible = client.get(f"/replay/{fresh}/annotations").json()["annotations"]
+    assert [item["annotation_id"] for item in visible] == [created["annotation_id"]]
+    assert visible[0]["history"][-1]["label"] == "needs_review"
 
 
 def test_timeline_order_survives_chart_focus_and_fresh_seek(client: TestClient):
@@ -232,22 +411,29 @@ def test_timeline_order_survives_chart_focus_and_fresh_seek(client: TestClient):
         client.post(f"/replay/{run_id}/step")
     params = {"start": DEMO_SELECTED_START.isoformat(), "end": DEMO_END.isoformat()}
     full = client.get(f"/replay/{run_id}/view", params=params).json()
-    focused = client.get(f"/replay/{run_id}/view", params={
-        **params, "end": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat(),
-    }).json()
+    focused = client.get(
+        f"/replay/{run_id}/view",
+        params={
+            **params,
+            "end": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat(),
+        },
+    ).json()
     assert focused["bars"] == full["bars"][:1]
     assert focused["cursor_index"] == full["cursor_index"]
     assert focused["events"] == full["events"]
     assert [item["emission_order"] for item in full["events"]] == list(range(len(full["events"])))
-    sought = client.post(f"/replay/{run_id}/seek", json={
-        "target": (DEMO_END - timedelta(minutes=1)).isoformat(),
-    }).json()
+    sought = client.post(
+        f"/replay/{run_id}/seek",
+        json={
+            "target": (DEMO_END - timedelta(minutes=1)).isoformat(),
+        },
+    ).json()
     repeated = client.get(f"/replay/{sought['run_id']}/view", params=params).json()
     assert [
-        (item["pattern_id"], item["instance_id"], item["sequence"], item["detection_time"])
+        (item["pattern_id"], item["runtime_instance_id"], item["sequence"], item["detection_time"])
         for item in repeated["events"]
     ] == [
-        (item["pattern_id"], item["instance_id"], item["sequence"], item["detection_time"])
+        (item["pattern_id"], item["runtime_instance_id"], item["sequence"], item["detection_time"])
         for item in full["events"]
     ]
 
@@ -256,15 +442,27 @@ def test_chart_rejects_future_or_unbounded_viewports(client: TestClient):
     launched = client.post("/replay", json=_launch()).json()
     run_id = launched["run_id"]
     path = f"/replay/{run_id}/bars"
-    assert client.get(path, params={
-        "start": DEMO_SELECTED_START.isoformat(),
-        "end": (DEMO_END + timedelta(minutes=1)).isoformat(),
-    }).status_code == 422
-    assert client.get(path, params={
-        "start": DEMO_SELECTED_START.isoformat(),
-        "end": DEMO_END.isoformat(),
-        "limit": 501,
-    }).status_code == 422
+    assert (
+        client.get(
+            path,
+            params={
+                "start": DEMO_SELECTED_START.isoformat(),
+                "end": (DEMO_END + timedelta(minutes=1)).isoformat(),
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            path,
+            params={
+                "start": DEMO_SELECTED_START.isoformat(),
+                "end": DEMO_END.isoformat(),
+                "limit": 501,
+            },
+        ).status_code
+        == 422
+    )
 
 
 def test_play_pause_ticks_and_end_state_are_causal(client: TestClient):
@@ -300,9 +498,7 @@ def test_reset_and_seek_make_fresh_runs_with_same_observable_output(client: Test
     original = client.post("/replay", json=_launch()).json()
     first = client.post(f"/replay/{original['run_id']}/step").json()
     target = (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat()
-    sought = client.post(
-        f"/replay/{original['run_id']}/seek", json={"target": target}
-    )
+    sought = client.post(f"/replay/{original['run_id']}/seek", json={"target": target})
     assert sought.status_code == 200, sought.text
     state = sought.json()
     assert state["run_id"] != original["run_id"]
@@ -324,6 +520,7 @@ def test_reset_and_seek_make_fresh_runs_with_same_observable_output(client: Test
     assert repeat["events"] == first["events"]
     engine = create_engine(os.environ["STREAM_ANALYSIS_DATABASE_URL"])
     from uuid import UUID
+
     with engine.connect() as connection:
         assert load_replay_run(connection, UUID(original["run_id"])).status is ReplayStatus.ABORTED
         assert load_replay_run(connection, UUID(state["run_id"])).status is ReplayStatus.ABORTED
@@ -342,10 +539,12 @@ def test_manual_and_play_ticks_emit_same_event_sequence(client: TestClient):
     manual: list[tuple[str, list[tuple[str, str]]]] = []
     while True:
         state = client.post(f"/replay/{manual_id}/step").json()
-        manual.append((
-            state["cursor_time"],
-            [(event["trigger_id"], event["to_state"]) for event in state["events"]],
-        ))
+        manual.append(
+            (
+                state["cursor_time"],
+                [(event["trigger_id"], event["to_state"]) for event in state["events"]],
+            )
+        )
         if not state["has_next"]:
             break
     client.post(f"/replay/{manual_id}/stop")
@@ -354,10 +553,12 @@ def test_manual_and_play_ticks_emit_same_event_sequence(client: TestClient):
     played: list[tuple[str, list[tuple[str, str]]]] = []
     while True:
         state = client.post(f"/replay/{played_id}/tick").json()
-        played.append((
-            state["cursor_time"],
-            [(event["trigger_id"], event["to_state"]) for event in state["events"]],
-        ))
+        played.append(
+            (
+                state["cursor_time"],
+                [(event["trigger_id"], event["to_state"]) for event in state["events"]],
+            )
+        )
         if not state["has_next"]:
             break
     assert played == manual

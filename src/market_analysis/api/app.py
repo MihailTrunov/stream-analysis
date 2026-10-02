@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -54,6 +55,17 @@ from market_analysis.persistence.import_jobs import (
 )
 from market_analysis.persistence.market_data import MetadataConflictError, register_instrument
 from market_analysis.persistence.runs import metadata
+from market_analysis.persistence.validation_annotations import (
+    AnnotationError,
+    ValidationAnnotation,
+    create_event_annotation,
+    create_instance_annotation,
+    create_missed_pattern_annotation,
+    export_annotation,
+    list_visible_annotations,
+    load_annotation,
+    revise_annotation,
+)
 
 
 class DiagnosticsResponse(BaseModel):
@@ -128,6 +140,38 @@ class ReplayEventFilterRequest(BaseModel):
     trigger_id: str | None = None
     from_state: str | None = None
     to_state: str | None = None
+
+
+class AnnotationCreateRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_kind: Literal["event", "instance", "missed_pattern"]
+    label: str
+    note: str | None = None
+    event_id: str | None = None
+    instance_id: str | None = None
+    interval_start: datetime | None = None
+    interval_end: datetime | None = None
+    pattern_id: str | None = None
+    pattern_version: str | None = None
+
+
+class AnnotationEditRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    expected_revision: int = Field(ge=1)
+    label: str
+    note: str | None = None
+
+
+def _annotation_payload(annotation: ValidationAnnotation) -> dict[str, object]:
+    return export_annotation(annotation)
+
+
+def _annotation_error(exc: AnnotationError) -> HTTPException:
+    detail = str(exc)
+    status = 409 if "revision conflict" in detail else 422
+    return HTTPException(status_code=status, detail=detail)
 
 
 def _import_response(job: ImportJob) -> ImportResponse:
@@ -255,6 +299,20 @@ def component_definitions() -> dict[str, object]:
     return {"components": component_definition_schema()}
 
 
+@app.get("/pattern-definitions")
+def pattern_definitions_for_review() -> dict[str, object]:
+    return {
+        "patterns": [
+            {
+                "pattern_id": definition.pattern_id,
+                "pattern_version": definition.pattern_version,
+                "name": definition.name,
+            }
+            for definition in PATTERN_DEFINITIONS.values()
+        ]
+    }
+
+
 @app.post("/config/preview")
 def preview_detection_config(config: DetectionAnalysisConfig) -> dict[str, object]:
     """Resolve and hash a proposed config; never change a running snapshot."""
@@ -376,7 +434,8 @@ def pause_browser_replay(run_id: str) -> dict[str, object]:
 
 @app.post("/replay/{run_id}/next-event")
 def next_browser_replay_event(
-    run_id: str, request: ReplayEventFilterRequest | None = None,
+    run_id: str,
+    request: ReplayEventFilterRequest | None = None,
 ) -> dict[str, object]:
     try:
         event_filter = DetectorEventFilter(**request.model_dump()) if request else None
@@ -403,7 +462,10 @@ def seek_browser_replay(run_id: str, request: ReplaySeekRequest) -> dict[str, ob
 
 @app.get("/replay/{run_id}/bars")
 def browser_replay_bars(
-    run_id: str, start: datetime, end: datetime, limit: int = 100,
+    run_id: str,
+    start: datetime,
+    end: datetime,
+    limit: int = 100,
 ) -> dict[str, object]:
     try:
         return browser_replay.visible_bars(run_id, start, end, limit)
@@ -413,12 +475,173 @@ def browser_replay_bars(
 
 @app.get("/replay/{run_id}/view")
 def browser_replay_view(
-    run_id: str, start: datetime, end: datetime, limit: int = 100,
+    run_id: str,
+    start: datetime,
+    end: datetime,
+    limit: int = 100,
 ) -> dict[str, object]:
     try:
         return browser_replay.visible_view(run_id, start, end, limit)
     except BrowserReplayError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/replay/{run_id}/annotations")
+def replay_annotations(run_id: str) -> dict[str, object]:
+    try:
+        scope = browser_replay.review_scope(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            records = list_visible_annotations(
+                connection,
+                event_ids=scope.event_ids,
+                instance_ids=scope.instance_ids,
+                dataset_revision_id=scope.dataset_revision_id,
+                instrument_id=scope.instrument_id,
+                timeframe=scope.timeframe,
+                selected_start=scope.selected_start,
+                visible_end=scope.visible_end,
+            )
+            return {"annotations": [_annotation_payload(item) for item in records]}
+    finally:
+        engine.dispose()
+
+
+@app.post("/replay/{run_id}/annotations", status_code=201)
+def create_replay_annotation(
+    run_id: str,
+    request: AnnotationCreateRequest,
+) -> dict[str, object]:
+    try:
+        scope = browser_replay.review_scope(run_id)
+    except BrowserReplayError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    engine = create_engine(_database_url())
+    try:
+        with engine.begin() as connection:
+            try:
+                if request.target_kind == "event":
+                    if (
+                        request.event_id is None
+                        or request.event_id not in scope.event_ids
+                        or any(
+                            value is not None
+                            for value in (
+                                request.instance_id,
+                                request.interval_start,
+                                request.interval_end,
+                                request.pattern_id,
+                                request.pattern_version,
+                            )
+                        )
+                    ):
+                        raise AnnotationError("event target is not an emitted visible event")
+                    created = create_event_annotation(
+                        connection,
+                        event_id=request.event_id,
+                        label=request.label,
+                        note=request.note,
+                    )
+                elif request.target_kind == "instance":
+                    if (
+                        request.instance_id is None
+                        or request.instance_id not in scope.instance_ids
+                        or any(
+                            value is not None
+                            for value in (
+                                request.event_id,
+                                request.interval_start,
+                                request.interval_end,
+                                request.pattern_id,
+                                request.pattern_version,
+                            )
+                        )
+                    ):
+                        raise AnnotationError("instance target is not an emitted visible instance")
+                    created = create_instance_annotation(
+                        connection,
+                        instance_id=request.instance_id,
+                        label=request.label,
+                        note=request.note,
+                    )
+                else:
+                    start, end = request.interval_start, request.interval_end
+                    if (
+                        start is None
+                        or end is None
+                        or start.tzinfo is None
+                        or end.tzinfo is None
+                        or request.event_id is not None
+                        or request.instance_id is not None
+                        or not scope.selected_start <= start < end <= scope.visible_end
+                    ):
+                        raise AnnotationError("missed-pattern interval is not yet visible")
+                    if (request.pattern_id, request.pattern_version) not in PATTERN_DEFINITIONS:
+                        raise AnnotationError("expected pattern/version is not registered")
+                    assert request.pattern_id is not None and request.pattern_version is not None
+                    created = create_missed_pattern_annotation(
+                        connection,
+                        dataset_revision_id=scope.dataset_revision_id,
+                        instrument_id=scope.instrument_id,
+                        timeframe=scope.timeframe,
+                        interval_start=start,
+                        interval_end=end,
+                        pattern_id=request.pattern_id,
+                        pattern_version=request.pattern_version,
+                        label=request.label,
+                        note=request.note,
+                    )
+                return _annotation_payload(created)
+            except AnnotationError as exc:
+                raise _annotation_error(exc) from exc
+    finally:
+        engine.dispose()
+
+
+@app.get("/annotations/{annotation_id}")
+def read_annotation(annotation_id: str) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            try:
+                record = load_annotation(connection, annotation_id)
+            except AnnotationError as exc:
+                raise _annotation_error(exc) from exc
+            if record is None:
+                raise HTTPException(status_code=404, detail="annotation not found")
+            return _annotation_payload(record)
+    finally:
+        engine.dispose()
+
+
+@app.patch("/annotations/{annotation_id}")
+def edit_annotation(annotation_id: str, request: AnnotationEditRequest) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.begin() as connection:
+            try:
+                changed = revise_annotation(
+                    connection,
+                    annotation_id,
+                    expected_revision=request.expected_revision,
+                    label=request.label,
+                    note=request.note,
+                )
+            except AnnotationError as exc:
+                if str(exc) == "annotation does not exist":
+                    raise HTTPException(status_code=404, detail=str(exc)) from exc
+                raise _annotation_error(exc) from exc
+            return _annotation_payload(changed)
+    finally:
+        engine.dispose()
+
+
+@app.get("/annotations/{annotation_id}/export")
+def export_annotation_metadata(annotation_id: str) -> dict[str, object]:
+    return read_annotation(annotation_id)
 
 
 @app.post("/imports", response_model=ImportResponse, status_code=202)

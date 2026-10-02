@@ -12,7 +12,9 @@ The review API creates event or instance annotations by persisted UUID, edits
 them with expected revision, reads their full audit history, and returns a
 separate export projection. It also creates missed-pattern annotations against
 the pinned dataset revision, instrument, timeframe, and half-open chart interval.
-Only supported labels are accepted. No endpoint deletes research records.
+Only supported labels are accepted. No endpoint deletes research records. The
+local MVP has no authenticated identity source, so browser requests cannot
+assert a reviewer ID; that field remains nullable for future trusted identity.
 
 The walkthrough inspector shows any annotations for the selected visible
 event, permits a local single-user tag/note edit, and marks reviewed events in

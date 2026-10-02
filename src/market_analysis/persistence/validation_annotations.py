@@ -19,6 +19,8 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    and_,
+    or_,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -486,3 +488,49 @@ def export_annotation(annotation: ValidationAnnotation) -> dict[str, object]:
             for item in annotation.history
         ],
     }
+
+
+def list_visible_annotations(
+    connection: Connection,
+    *,
+    event_ids: frozenset[str],
+    instance_ids: frozenset[str],
+    dataset_revision_id: str,
+    instrument_id: str,
+    timeframe: Timeframe,
+    selected_start: datetime,
+    visible_end: datetime,
+) -> tuple[ValidationAnnotation, ...]:
+    """Read reviews only for emitted targets or already visible missed intervals."""
+    end = _utc(visible_end, "visible_end")
+    start = _utc(selected_start, "selected_start")
+    ids = (
+        connection.execute(
+            select(validation_annotations.c.annotation_id)
+            .where(
+                or_(
+                    and_(
+                        validation_annotations.c.target_kind == "event",
+                        validation_annotations.c.event_id.in_(event_ids),
+                    ),
+                    and_(
+                        validation_annotations.c.target_kind == "instance",
+                        validation_annotations.c.instance_id.in_(instance_ids),
+                    ),
+                    and_(
+                        validation_annotations.c.target_kind == "missed_pattern",
+                        validation_annotations.c.dataset_revision_id == dataset_revision_id,
+                        validation_annotations.c.instrument_id == instrument_id,
+                        validation_annotations.c.timeframe == timeframe.value,
+                        validation_annotations.c.interval_start >= start,
+                        validation_annotations.c.interval_end <= end,
+                    ),
+                )
+            )
+            .order_by(validation_annotations.c.created_at, validation_annotations.c.annotation_id)
+        )
+        .scalars()
+        .all()
+    )
+    records = tuple(load_annotation(connection, annotation_id) for annotation_id in ids)
+    return tuple(record for record in records if record is not None)

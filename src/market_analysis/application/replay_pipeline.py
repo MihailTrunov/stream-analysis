@@ -97,6 +97,7 @@ ParameterSpecs = Mapping[tuple[str, str], tuple[ParameterSpec, ...]]
 PatternDefinitions = Mapping[tuple[str, str], PatternDefinition]
 CalendarResolver = Callable[[str, str], TradingCalendar]
 BindingsFactory = Callable[[], Sequence[DetectorBinding]]
+ReplayEventSink = Callable[[Connection, Bar, DetectorRuntimeResult, str], None]
 """Resolve (calendar_id, pinned calendar_version) through the SCRUM-71 path."""
 
 _RUNTIME_FAILURE = re.compile(
@@ -150,8 +151,12 @@ class DetectorEventFilter:
 
     def __post_init__(self) -> None:
         for name in (
-            "pattern_id", "pattern_version", "instance_id", "trigger_id",
-            "from_state", "to_state",
+            "pattern_id",
+            "pattern_version",
+            "instance_id",
+            "trigger_id",
+            "from_state",
+            "to_state",
         ):
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
@@ -159,8 +164,12 @@ class DetectorEventFilter:
 
     def matches(self, event: DetectorEvent) -> bool:
         for name in (
-            "pattern_id", "pattern_version", "instance_id", "trigger_id",
-            "from_state", "to_state",
+            "pattern_id",
+            "pattern_version",
+            "instance_id",
+            "trigger_id",
+            "from_state",
+            "to_state",
         ):
             selected = getattr(self, name)
             if selected is not None and getattr(event, name) != selected:
@@ -217,6 +226,7 @@ class ReplayPipeline:
         "_context",
         "_cursor",
         "_failure_context",
+        "_event_sink",
         "_pattern_definitions",
         "_processor",
         "_results",
@@ -236,6 +246,7 @@ class ReplayPipeline:
         *,
         component_parameters: ParameterSpecs | None,
         pattern_definitions: PatternDefinitions | None,
+        event_sink: ReplayEventSink | None = None,
     ) -> None:
         if context.lifecycle.cursor_index != -1:
             raise ReplayPipelineError(
@@ -259,6 +270,7 @@ class ReplayPipeline:
         self._cursor = ReplayCursor(self._clock, self._processor)
         self._component_parameters = component_parameters
         self._pattern_definitions = pattern_definitions
+        self._event_sink = event_sink
         self._failure_context: str | None = None
         self._results: list[ReplayStep] = []
         self._warmup_bars = 0
@@ -276,6 +288,7 @@ class ReplayPipeline:
         component_parameters: ParameterSpecs | None = None,
         pattern_definitions: PatternDefinitions | None = None,
         calendar_resolver: CalendarResolver | None = None,
+        event_sink: ReplayEventSink | None = None,
     ) -> ReplayPipeline:
         """Verify a persisted run and wire it to the shared analytical runtime.
 
@@ -308,16 +321,19 @@ class ReplayPipeline:
             raise ReplayPipelineError("provide exactly one replay bar source")
         if dataset_store is not None:
             sequence = dataset_store.load_sequence(
-                connection, context.snapshot.dataset_revision_id,
+                connection,
+                context.snapshot.dataset_revision_id,
                 context.detection_config.instrument_id,
                 context.detection_config.timeframe,
             )
         else:
             assert bars is not None
             sequence = load_bar_sequence(
-                connection, context.snapshot.dataset_revision_id,
+                connection,
+                context.snapshot.dataset_revision_id,
                 context.detection_config.instrument_id,
-                context.detection_config.timeframe, bars,
+                context.detection_config.timeframe,
+                bars,
             )
         calendar = cls._resolve_calendar(context, calendar_resolver)
         runtime = DetectorRuntime(
@@ -338,6 +354,7 @@ class ReplayPipeline:
             sequence,
             component_parameters=component_parameters,
             pattern_definitions=pattern_definitions,
+            event_sink=event_sink,
         )
 
     @staticmethod
@@ -363,9 +380,7 @@ class ReplayPipeline:
     ) -> TradingCalendar:
         if resolver is None:
             raise ReplayPipelineError("replay execution requires a pinned calendar resolver")
-        calendar = resolver(
-            context.detection_config.calendar_id, context.snapshot.calendar_version
-        )
+        calendar = resolver(context.detection_config.calendar_id, context.snapshot.calendar_version)
         if (
             calendar.calendar_id != context.detection_config.calendar_id
             or calendar.version != context.snapshot.calendar_version
@@ -483,6 +498,12 @@ class ReplayPipeline:
             self._validate_continuity(context)
             with connection.begin_nested():
                 view = self._cursor.step_one()
+                committed = self._processor.last_result
+                assert committed is not None
+                if self._event_sink is not None:
+                    self._event_sink(
+                        connection, view.current_bar, committed, self._runtime.binding_fingerprint
+                    )
                 advance_replay_cursor(connection, self._run_id, view.index)
         except Exception as exc:
             # The failed step's savepoint has rolled back before recording
@@ -592,9 +613,7 @@ class ReplayPipeline:
             if matched is None:
                 continue
             try:
-                record = transition_replay_run(
-                    connection, self._run_id, ReplayStatus.PAUSED, at=at
-                )
+                record = transition_replay_run(connection, self._run_id, ReplayStatus.PAUSED, at=at)
             except Exception as exc:
                 self._record_failure(connection, context, exc)
                 raise
@@ -672,12 +691,17 @@ class ReplayPipeline:
             raise ReplayPipelineError("replay analytical state changed outside the pipeline")
 
     def _record_failure(
-        self, connection: Connection, context: ReplayRunContext, exc: Exception,
+        self,
+        connection: Connection,
+        context: ReplayRunContext,
+        exc: Exception,
     ) -> None:
         self._latch(exc)
         try:
             transition_replay_run(
-                connection, self._run_id, ReplayStatus.FAILED,
+                connection,
+                self._run_id,
+                ReplayStatus.FAILED,
                 at=max(datetime.now(UTC), context.lifecycle.created_at),
                 failure_reason=self._failure_context,
             )

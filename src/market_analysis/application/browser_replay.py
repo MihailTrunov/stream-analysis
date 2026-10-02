@@ -22,6 +22,7 @@ from market_analysis.application.replay_catalog import (
     required_warmup_bars,
     resolve_replay_calendar,
 )
+from market_analysis.application.replay_event_store import ReplayEventStore
 from market_analysis.application.replay_pipeline import DetectorEventFilter, ReplayPipeline
 from market_analysis.application.replay_run import create_replay_run
 from market_analysis.config import DetectionAnalysisConfig, resolve_detection_config
@@ -67,22 +68,24 @@ def replay_sources(connection: Connection) -> list[dict[str, object]]:
         if lineage is None or lineage.validation_status.value == "fail":
             continue
         is_demo = row["provider"] == "seeded-demo"
-        result.append({
-            "dataset_revision_id": row["dataset_revision_id"],
-            "source_dataset_id": lineage.source_dataset_id,
-            "instrument_id": row["instrument_id"],
-            "timeframe": Timeframe.M1.value,
-            "range_start": lineage.requested_start,
-            "range_end": lineage.requested_end,
-            "bar_count": lineage.bar_count,
-            "canonical_checksum": lineage.canonical_checksum,
-            "calendar_version": row["calendar_version"],
-            "non_research_grade": is_demo,
-            "suggested_start": DEMO_SELECTED_START if is_demo else lineage.requested_start,
-            "suggested_end": DEMO_END if is_demo else lineage.requested_end,
-            "config_id": DEMO_CONFIG_ID,
-            "config_version": DEMO_CONFIG_VERSION,
-        })
+        result.append(
+            {
+                "dataset_revision_id": row["dataset_revision_id"],
+                "source_dataset_id": lineage.source_dataset_id,
+                "instrument_id": row["instrument_id"],
+                "timeframe": Timeframe.M1.value,
+                "range_start": lineage.requested_start,
+                "range_end": lineage.requested_end,
+                "bar_count": lineage.bar_count,
+                "canonical_checksum": lineage.canonical_checksum,
+                "calendar_version": row["calendar_version"],
+                "non_research_grade": is_demo,
+                "suggested_start": DEMO_SELECTED_START if is_demo else lineage.requested_start,
+                "suggested_end": DEMO_END if is_demo else lineage.requested_end,
+                "config_id": DEMO_CONFIG_ID,
+                "config_version": DEMO_CONFIG_VERSION,
+            }
+        )
     return result
 
 
@@ -115,9 +118,7 @@ def _preflight(
         raise BrowserReplayError("selected interval has no completed canonical bars")
     warmup = required_warmup_bars(resolved)
     if first < warmup:
-        raise BrowserReplayError(
-            f"insufficient warm-up: {first} preceding bars; {warmup} required"
-        )
+        raise BrowserReplayError(f"insufficient warm-up: {first} preceding bars; {warmup} required")
     if start < sequence.lineage.requested_start or end > sequence.lineage.requested_end:
         raise BrowserReplayError("selected interval lies outside the immutable dataset")
     previous: Bar | None = None
@@ -139,6 +140,7 @@ def _preflight(
 @dataclass(slots=True)
 class _Session:
     pipeline: ReplayPipeline
+    event_store: ReplayEventStore
     revision_id: str
     config: DetectionAnalysisConfig
     selected_start: datetime
@@ -146,6 +148,19 @@ class _Session:
     warmup_required: int
     source_id: str
     checksum: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayReviewScope:
+    run_id: str
+    dataset_revision_id: str
+    instrument_id: str
+    timeframe: Timeframe
+    selected_start: datetime
+    selected_end: datetime
+    visible_end: datetime
+    event_ids: frozenset[str]
+    instance_ids: frozenset[str]
 
 
 class BrowserReplayManager:
@@ -191,12 +206,16 @@ class BrowserReplayManager:
             "cursor_time": last.view.timestamp if last is not None else None,
             "has_next": session.pipeline.has_next,
             "events": [event.to_canonical_dict() for event in last.result.events]
-            if last is not None and last.is_visible else [],
+            if last is not None and last.is_visible
+            else [],
         }
 
     def launch(
-        self, revision_id: str, config: DetectionAnalysisConfig,
-        start: datetime, end: datetime,
+        self,
+        revision_id: str,
+        config: DetectionAnalysisConfig,
+        start: datetime,
+        end: datetime,
     ) -> dict[str, object]:
         with self._lock:
             if self._session is not None:
@@ -209,20 +228,34 @@ class BrowserReplayManager:
                     )
                     run_id = uuid4()
                     create_replay_run(
-                        connection, run_id=run_id, dataset_revision_id=revision_id,
-                        detection_config=resolved, selected_start=start, selected_end=end,
+                        connection,
+                        run_id=run_id,
+                        dataset_revision_id=revision_id,
+                        detection_config=resolved,
+                        selected_start=start,
+                        selected_end=end,
                         created_at=datetime.now(UTC),
                         build_id=os.getenv("STREAM_ANALYSIS_BUILD_ID", "development"),
                         pattern_definitions=PATTERN_DEFINITIONS,
                     )
+                    event_store = ReplayEventStore(PATTERN_DEFINITIONS)
                     pipeline = ReplayPipeline.from_run(
-                        connection, run_id, bars=sequence.bars,
+                        connection,
+                        run_id,
+                        bars=sequence.bars,
                         bindings_factory=lambda: detector_bindings(resolved),
                         pattern_definitions=PATTERN_DEFINITIONS,
                         calendar_resolver=calendar_resolver(resolved.instrument_id),
+                        event_sink=event_store,
                     )
                     session = _Session(
-                        pipeline, revision_id, resolved, start, end, warmup,
+                        pipeline,
+                        event_store,
+                        revision_id,
+                        resolved,
+                        start,
+                        end,
+                        warmup,
                         sequence.lineage.source_dataset_id,
                         sequence.lineage.canonical_checksum,
                     )
@@ -264,7 +297,9 @@ class BrowserReplayManager:
                     record = load_replay_run(connection, UUID(run_id))
                     assert record is not None
                     if record.status in (
-                        ReplayStatus.CREATED, ReplayStatus.RUNNING, ReplayStatus.PAUSED
+                        ReplayStatus.CREATED,
+                        ReplayStatus.RUNNING,
+                        ReplayStatus.PAUSED,
                     ):
                         transition_replay_run(
                             connection, UUID(run_id), ReplayStatus.ABORTED, at=datetime.now(UTC)
@@ -308,7 +343,9 @@ class BrowserReplayManager:
                         if session.pipeline.has_next:
                             if not keep_running:
                                 transition_replay_run(
-                                    connection, UUID(run_id), ReplayStatus.PAUSED,
+                                    connection,
+                                    UUID(run_id),
+                                    ReplayStatus.PAUSED,
                                     at=datetime.now(UTC),
                                 )
                         else:
@@ -354,7 +391,9 @@ class BrowserReplayManager:
                     assert record is not None
                     if record.status is ReplayStatus.RUNNING:
                         transition_replay_run(
-                            connection, UUID(run_id), ReplayStatus.PAUSED,
+                            connection,
+                            UUID(run_id),
+                            ReplayStatus.PAUSED,
                             at=datetime.now(UTC),
                         )
                     elif record.status not in (ReplayStatus.CREATED, ReplayStatus.PAUSED):
@@ -364,7 +403,9 @@ class BrowserReplayManager:
                 engine.dispose()
 
     def next_event(
-        self, run_id: str, event_filter: DetectorEventFilter | None = None,
+        self,
+        run_id: str,
+        event_filter: DetectorEventFilter | None = None,
     ) -> dict[str, object]:
         """Run the shared pipeline sequentially; no future event index is consulted."""
         with self._lock:
@@ -390,7 +431,8 @@ class BrowserReplayManager:
                             "stopped_on_event": outcome.stopped_on_event,
                             "matched_event": (
                                 outcome.matched_event.to_canonical_dict()
-                                if outcome.matched_event else None
+                                if outcome.matched_event
+                                else None
                             ),
                         }
                     except Exception as exc:
@@ -403,7 +445,10 @@ class BrowserReplayManager:
                 engine.dispose()
 
     def replace(
-        self, run_id: str, *, target: datetime | None = None,
+        self,
+        run_id: str,
+        *,
+        target: datetime | None = None,
     ) -> dict[str, object]:
         """Reset or seek with a fresh persisted identity and fresh analytical state."""
         with self._lock:
@@ -418,39 +463,53 @@ class BrowserReplayManager:
             try:
                 with engine.begin() as connection:
                     resolved, sequence, warmup = _preflight(
-                        connection, old.revision_id, old.config,
-                        old.selected_start, old.selected_end,
+                        connection,
+                        old.revision_id,
+                        old.config,
+                        old.selected_start,
+                        old.selected_end,
                     )
                     if normalized_target is not None:
                         target_index = bisect_left(
-                            sequence.bars, normalized_target,
+                            sequence.bars,
+                            normalized_target,
                             key=lambda bar: bar.timestamp,
                         )
                         if (
                             target_index >= len(sequence.bars)
                             or sequence.bars[target_index].timestamp != normalized_target
                         ):
-                            raise BrowserReplayError(
-                                "seek target is not a completed selected bar"
-                            )
+                            raise BrowserReplayError("seek target is not a completed selected bar")
                     new_id = uuid4()
                     create_replay_run(
-                        connection, run_id=new_id, dataset_revision_id=old.revision_id,
+                        connection,
+                        run_id=new_id,
+                        dataset_revision_id=old.revision_id,
                         detection_config=resolved,
-                        selected_start=old.selected_start, selected_end=old.selected_end,
+                        selected_start=old.selected_start,
+                        selected_end=old.selected_end,
                         created_at=datetime.now(UTC),
                         build_id=os.getenv("STREAM_ANALYSIS_BUILD_ID", "development"),
                         pattern_definitions=PATTERN_DEFINITIONS,
                     )
+                    event_store = ReplayEventStore(PATTERN_DEFINITIONS)
                     pipeline = ReplayPipeline.from_run(
-                        connection, new_id, bars=sequence.bars,
+                        connection,
+                        new_id,
+                        bars=sequence.bars,
                         bindings_factory=lambda: detector_bindings(resolved),
                         pattern_definitions=PATTERN_DEFINITIONS,
                         calendar_resolver=calendar_resolver(resolved.instrument_id),
+                        event_sink=event_store,
                     )
                     new = _Session(
-                        pipeline, old.revision_id, resolved, old.selected_start,
-                        old.selected_end, warmup,
+                        pipeline,
+                        event_store,
+                        old.revision_id,
+                        resolved,
+                        old.selected_start,
+                        old.selected_end,
+                        warmup,
                         sequence.lineage.source_dataset_id,
                         sequence.lineage.canonical_checksum,
                     )
@@ -462,7 +521,9 @@ class BrowserReplayManager:
                                 break
                         if pipeline.has_next:
                             transition_replay_run(
-                                connection, new_id, ReplayStatus.PAUSED,
+                                connection,
+                                new_id,
+                                ReplayStatus.PAUSED,
                                 at=datetime.now(UTC),
                             )
                         else:
@@ -470,10 +531,14 @@ class BrowserReplayManager:
                     old_record = load_replay_run(connection, UUID(run_id))
                     assert old_record is not None
                     if old_record.status in (
-                        ReplayStatus.CREATED, ReplayStatus.RUNNING, ReplayStatus.PAUSED
+                        ReplayStatus.CREATED,
+                        ReplayStatus.RUNNING,
+                        ReplayStatus.PAUSED,
                     ):
                         transition_replay_run(
-                            connection, UUID(run_id), ReplayStatus.ABORTED,
+                            connection,
+                            UUID(run_id),
+                            ReplayStatus.ABORTED,
                             at=datetime.now(UTC),
                         )
                     state = self._state(connection, new)
@@ -483,13 +548,14 @@ class BrowserReplayManager:
                 engine.dispose()
 
     def visible_bars(
-        self, run_id: str, start: datetime, end: datetime, limit: int,
+        self,
+        run_id: str,
+        start: datetime,
+        end: datetime,
+        limit: int,
     ) -> dict[str, object]:
         """Return a bounded, cursor-clamped price viewport, never source-future bars."""
-        if (
-            start.tzinfo is None or end.tzinfo is None or end <= start
-            or not 1 <= limit <= 500
-        ):
+        if start.tzinfo is None or end.tzinfo is None or end <= start or not 1 <= limit <= 500:
             raise BrowserReplayError("viewport needs ordered UTC bounds and limit 1..500")
         with self._lock:
             session = self._current(run_id)
@@ -504,78 +570,119 @@ class BrowserReplayManager:
                 "run_id": run_id,
                 "cursor_index": session.pipeline.cursor_index,
                 "cursor_time": (
-                    session.pipeline.steps[-1].view.timestamp
-                    if session.pipeline.steps else None
+                    session.pipeline.steps[-1].view.timestamp if session.pipeline.steps else None
                 ),
-                "bars": [{
-                    "timestamp": bar.timestamp,
-                    "open": str(bar.open),
-                    "high": str(bar.high),
-                    "low": str(bar.low),
-                    "close": str(bar.close),
-                } for bar in visible],
+                "bars": [
+                    {
+                        "timestamp": bar.timestamp,
+                        "open": str(bar.open),
+                        "high": str(bar.high),
+                        "low": str(bar.low),
+                        "close": str(bar.close),
+                    }
+                    for bar in visible
+                ],
                 "limit": limit,
             }
 
     def visible_view(
-        self, run_id: str, start: datetime, end: datetime, limit: int,
+        self,
+        run_id: str,
+        start: datetime,
+        end: datetime,
+        limit: int,
     ) -> dict[str, object]:
         """One coherent, causal chart and event snapshot from committed steps."""
-        if (start.tzinfo is None or end.tzinfo is None or end <= start
-                or not 1 <= limit <= 500):
+        if start.tzinfo is None or end.tzinfo is None or end <= start or not 1 <= limit <= 500:
             raise BrowserReplayError("viewport needs ordered UTC bounds and limit 1..500")
         with self._lock:
             session = self._current(run_id)
             if start < session.selected_start or end > session.selected_end:
                 raise BrowserReplayError("viewport must lie inside the selected interval")
             steps = tuple(step for step in session.pipeline.steps if step.is_visible)
-            viewport = tuple(
-                step for step in steps if start <= step.view.timestamp < end
-            )[-limit:]
+            viewport = tuple(step for step in steps if start <= step.view.timestamp < end)[-limit:]
             observations = []
             for step in viewport:
                 frame = json.loads(step.result.frame.debug_json())
-                observations.append({
-                    "timestamp": frame["bar"]["timestamp"],
-                    "availability": frame["availability"],
-                    "components": frame["components"],
-                    "market_events": frame["market_events_this_bar"],
-                })
+                observations.append(
+                    {
+                        "timestamp": frame["bar"]["timestamp"],
+                        "availability": frame["availability"],
+                        "components": frame["components"],
+                        "market_events": frame["market_events_this_bar"],
+                    }
+                )
             events: list[dict[str, object]] = []
             for step in steps:
                 for event in step.result.events:
-                    definition = PATTERN_DEFINITIONS.get(
-                        (event.pattern_id, event.pattern_version)
-                    )
+                    event_id, stored_instance_id = session.event_store.identity(event)
+                    definition = PATTERN_DEFINITIONS.get((event.pattern_id, event.pattern_version))
                     # Preserve the runtime's within-bar emission order, even
                     # when two instances emit at the same detection timestamp.
-                    events.append({
-                        **event.to_canonical_dict(),
-                        "pattern_name": definition.name if definition else None,
-                        "definition_fingerprint": (
-                            definition.semantic_fingerprint() if definition else None
-                        ),
-                        "build_id": session.pipeline.snapshot.build_id,
-                        "code_revision": session.pipeline.snapshot.code_revision,
-                        "code_dirty": session.pipeline.snapshot.code_dirty,
-                        "code_capture_status": session.pipeline.snapshot.code_capture_status,
-                        "emission_order": len(events),
-                    })
+                    events.append(
+                        {
+                            **event.to_canonical_dict(),
+                            "event_id": event_id,
+                            "runtime_instance_id": event.instance_id,
+                            "instance_id": stored_instance_id,
+                            "pattern_name": definition.name if definition else None,
+                            "definition_fingerprint": (
+                                definition.semantic_fingerprint() if definition else None
+                            ),
+                            "build_id": session.pipeline.snapshot.build_id,
+                            "code_revision": session.pipeline.snapshot.code_revision,
+                            "code_dirty": session.pipeline.snapshot.code_dirty,
+                            "code_capture_status": session.pipeline.snapshot.code_capture_status,
+                            "emission_order": len(events),
+                        }
+                    )
             return {
                 "run_id": run_id,
                 "cursor_index": session.pipeline.cursor_index,
                 "cursor_time": steps[-1].view.timestamp if steps else None,
-                "bars": [{
-                    "timestamp": step.view.timestamp,
-                    "open": str(step.view.current_bar.open),
-                    "high": str(step.view.current_bar.high),
-                    "low": str(step.view.current_bar.low),
-                    "close": str(step.view.current_bar.close),
-                } for step in viewport],
+                "bars": [
+                    {
+                        "timestamp": step.view.timestamp,
+                        "open": str(step.view.current_bar.open),
+                        "high": str(step.view.current_bar.high),
+                        "low": str(step.view.current_bar.low),
+                        "close": str(step.view.current_bar.close),
+                    }
+                    for step in viewport
+                ],
                 "observations": observations,
                 "events": events,
                 "limit": limit,
             }
+
+    def review_scope(self, run_id: str) -> ReplayReviewScope:
+        """Return only review targets already emitted by the active walkthrough."""
+        with self._lock:
+            session = self._current(run_id)
+            events = tuple(
+                event
+                for step in session.pipeline.steps
+                if step.is_visible
+                for event in step.result.events
+            )
+            identities = tuple(session.event_store.identity(event) for event in events)
+            visible = tuple(step for step in session.pipeline.steps if step.is_visible)
+            visible_end = (
+                visible[-1].view.timestamp + timedelta(minutes=1)
+                if visible
+                else session.selected_start
+            )
+            return ReplayReviewScope(
+                run_id,
+                session.revision_id,
+                session.config.instrument_id,
+                session.config.timeframe,
+                session.selected_start,
+                session.selected_end,
+                visible_end,
+                frozenset(item[0] for item in identities),
+                frozenset(item[1] for item in identities),
+            )
 
 
 browser_replay = BrowserReplayManager()
