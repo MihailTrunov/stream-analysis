@@ -4,6 +4,7 @@ import { EventInspector } from './EventInspector';
 import type { ReplayDetectorEvent } from './replay';
 
 const event: ReplayDetectorEvent = {
+  event_id: 'event-7', runtime_instance_id: 'runtime-instance-2',
   run_id: 'run-123', dataset_revision_id: 'revision-456', instrument_id: 'US30', timeframe: '1m',
   detection_config_hash: 'config-hash', pattern_id: 'REVERSAL_V1', pattern_version: '1',
   pattern_name: 'Trend reversal', definition_fingerprint: 'definition-hash',
@@ -32,7 +33,7 @@ describe('event explanation inspector', () => {
   it('shows exact recorded threshold, feature units, timing and lineage', () => {
     const html = renderToStaticMarkup(<EventInspector event={event} />);
     for (const text of [
-      'Trend reversal', 'REVERSAL_V1', 'definition-hash', 'instance-2', 'run-123',
+      'Trend reversal', 'REVERSAL_V1', 'definition-hash', 'instance-2', 'event-7', 'run-123',
       'revision-456', 'config-hash', 'build-789', 'git-revision',
       '2026-01-05T12:10:00Z', '2026-01-05T12:13:00Z',
       '89.1250', '90.0000', '38.75', 'source_duration_bars', 'source-1',

@@ -81,6 +81,7 @@ export function EventInspector({ event }: { event: ReplayDetectorEvent }) {
       <dt>Detector version</dt><dd><code>{event.pattern_version}</code></dd>
       <dt>Definition fingerprint</dt><dd><code>{event.definition_fingerprint ?? 'Unavailable'}</code></dd>
       <dt>PatternInstance ID</dt><dd><code>{event.instance_id}</code></dd>
+      <dt>DetectorEvent ID</dt><dd><code>{event.event_id}</code></dd>
       <dt>Event sequence</dt><dd>{event.sequence}</dd>
       <dt>Run ID</dt><dd><code>{event.run_id}</code></dd>
       <dt>Dataset revision</dt><dd><code>{event.dataset_revision_id}</code></dd>

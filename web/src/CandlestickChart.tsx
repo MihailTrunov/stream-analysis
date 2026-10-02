@@ -7,6 +7,8 @@ interface Props {
   events?: ReplayDetectorEvent[];
   selectedEventOrder?: number | null;
   onSelectEvent?: (order: number) => void;
+  onSelectBar?: (timestamp: string) => void;
+  reviewInterval?: { start: string; end: string } | null;
   cursorTime: string | null;
   overlays: OverlayVisibility;
 }
@@ -16,7 +18,8 @@ function object(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown> : null;
 }
 
-export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null, onSelectEvent, cursorTime, overlays }: Props) {
+export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
+  onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, overlays }: Props) {
   if (!bars.length) return <p aria-live="polite">No visible candles yet. Step once to process warm-up and reveal the first selected bar.</p>;
   const prices = bars.flatMap((bar) => [Number(bar.high), Number(bar.low)]);
   const low = Math.min(...prices);
@@ -104,8 +107,19 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         const color = rising ? '#087f5b' : '#bc3c48';
         const top = Math.min(y(bar.open), y(bar.close));
         const bodyHeight = Math.max(2, Math.abs(y(bar.open) - y(bar.close)));
-        return <g key={bar.timestamp} data-testid="candle" data-time={bar.timestamp}>
+        const reviewSelected = reviewInterval !== null
+          && bar.timestamp >= reviewInterval.start && bar.timestamp < reviewInterval.end;
+        return <g key={bar.timestamp} data-testid="candle" data-time={bar.timestamp}
+          data-review-selected={reviewSelected} role={onSelectBar ? 'button' : undefined}
+          tabIndex={onSelectBar ? 0 : undefined}
+          aria-label={onSelectBar ? `Select candle ${bar.timestamp} for missed-pattern interval` : undefined}
+          onClick={() => onSelectBar?.(bar.timestamp)}
+          onKeyDown={(key) => { if (onSelectBar && (key.key === 'Enter' || key.key === ' ')) {
+            key.preventDefault(); onSelectBar(bar.timestamp);
+          } }}>
           <title>{`${bar.timestamp} O ${bar.open} H ${bar.high} L ${bar.low} C ${bar.close}`}</title>
+          {reviewSelected && <rect x={x(index) - candleWidth} y={pad} width={candleWidth * 2}
+            height={height - 2 * pad} fill="#d0a43d" opacity="0.25" />}
           <line x1={x(index)} x2={x(index)} y1={y(bar.high)} y2={y(bar.low)} stroke={color} strokeWidth="2" />
           <rect x={x(index) - candleWidth / 2} y={top} width={candleWidth} height={bodyHeight} fill={color} />
         </g>;

@@ -32,6 +32,7 @@ const confirmed: ReplayObservation = {
   }],
 };
 const transition: ReplayDetectorEvent = {
+  event_id: 'event-0', runtime_instance_id: 'runtime-occurrence-1',
   run_id: 'run', dataset_revision_id: 'dataset', instrument_id: 'US30', timeframe: '1m',
   detection_config_hash: 'hash', pattern_id: 'PATTERN', pattern_version: '1',
   pattern_name: 'Fixture pattern', definition_fingerprint: 'fingerprint',

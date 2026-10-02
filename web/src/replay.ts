@@ -91,6 +91,7 @@ export interface ReplayObservation {
   }>;
 }
 export interface ReplayDetectorEvent {
+  event_id: string;
   run_id: string;
   dataset_revision_id: string;
   instrument_id: string;
@@ -105,6 +106,7 @@ export interface ReplayDetectorEvent {
   code_dirty: boolean | null;
   code_capture_status: string;
   instance_id: string;
+  runtime_instance_id: string;
   sequence: number;
   from_state: string;
   to_state: string;
@@ -113,6 +115,34 @@ export interface ReplayDetectorEvent {
   detection_time: string;
   rationale: Record<string, unknown>;
   emission_order: number;
+}
+export interface ValidationAnnotationRevision {
+  revision: number;
+  label: string;
+  note: string | null;
+  reviewer_id: string | null;
+  changed_at: string;
+}
+export interface ValidationAnnotation {
+  annotation_id: string;
+  target_kind: 'event' | 'instance' | 'missed_pattern';
+  event_id: string | null;
+  instance_id: string | null;
+  run_id: string | null;
+  dataset_revision_id: string;
+  instrument_id: string;
+  timeframe: string;
+  pattern_id: string;
+  pattern_version: string;
+  interval_start: string | null;
+  interval_end: string | null;
+  created_at: string;
+  history: ValidationAnnotationRevision[];
+}
+export interface ReviewPattern {
+  pattern_id: string;
+  pattern_version: string;
+  name: string;
 }
 export interface ReplayViewResponse extends ReplayBarsResponse {
   observations: ReplayObservation[];

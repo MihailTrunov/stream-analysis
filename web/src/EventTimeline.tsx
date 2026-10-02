@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ReplayDetectorEvent } from './replay';
+import type { ReplayDetectorEvent, ValidationAnnotation } from './replay';
 
 export function filterTimelineEvents(
   events: readonly ReplayDetectorEvent[], pattern: string, state: string,
@@ -19,9 +19,10 @@ interface Props {
   events: ReplayDetectorEvent[];
   selectedEventOrder: number | null;
   onSelectEvent: (event: ReplayDetectorEvent) => void;
+  annotations?: ValidationAnnotation[];
 }
 
-export function EventTimeline({ events, selectedEventOrder, onSelectEvent }: Props) {
+export function EventTimeline({ events, selectedEventOrder, onSelectEvent, annotations = [] }: Props) {
   const [pattern, setPattern] = useState('');
   const [state, setState] = useState('');
   const patterns = [...new Set(events.map((event) => `${event.pattern_id}@${event.pattern_version}`))].sort();
@@ -47,6 +48,9 @@ export function EventTimeline({ events, selectedEventOrder, onSelectEvent }: Pro
           onClick={() => onSelectEvent(event)}>
           <time>{event.detection_time}</time> · {event.pattern_id}@{event.pattern_version} · {event.from_state} → {event.to_state}
           <small> {event.trigger_id} · {summary(event)}</small>
+          {annotations.some((item) => item.event_id === event.event_id
+            || (item.target_kind === 'instance' && item.instance_id === event.instance_id))
+            && <small> · Reviewed</small>}
         </button>
       </li>)}
     </ol> : <p>No emitted events match the filters.</p>}

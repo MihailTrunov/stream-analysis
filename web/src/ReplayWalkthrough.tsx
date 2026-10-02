@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventTimeline } from './EventTimeline';
 import { EventInspector } from './EventInspector';
+import { EventReview, MissedPatternReview } from './ReviewAnnotations';
 import {
   apiJson,
   type ConfigSelection,
@@ -13,6 +14,8 @@ import {
   type ReplayViewResponse,
   type ReplaySource,
   type ReplayState,
+  type ReviewPattern,
+  type ValidationAnnotation,
 } from './replay';
 
 function localInput(iso: string): string {
@@ -35,7 +38,11 @@ export function ReplayWalkthrough() {
   const [chartBars, setChartBars] = useState<ReplayBar[]>([]);
   const [observations, setObservations] = useState<ReplayObservation[]>([]);
   const [detectorEvents, setDetectorEvents] = useState<ReplayDetectorEvent[]>([]);
+  const [annotations, setAnnotations] = useState<ValidationAnnotation[]>([]);
+  const [reviewPatterns, setReviewPatterns] = useState<ReviewPattern[]>([]);
   const [selectedEventOrder, setSelectedEventOrder] = useState<number | null>(null);
+  const [reviewAnchor, setReviewAnchor] = useState<string | null>(null);
+  const [reviewInterval, setReviewInterval] = useState<{ start: string; end: string } | null>(null);
   const [focusTime, setFocusTime] = useState<string | null>(null);
   const [overlays, setOverlays] = useState<OverlayVisibility>({ ema: true, trend: true, swing: true, range: true, session: true });
   const [speed, setSpeed] = useState(1);
@@ -52,9 +59,11 @@ export function ReplayWalkthrough() {
     void Promise.all([
       apiJson<{ sources: ReplaySource[] }>('/replay/sources'),
       apiJson<{ active: ReplayState | null }>('/replay/active'),
+      apiJson<{ patterns: ReviewPattern[] }>('/pattern-definitions'),
     ])
-      .then(([catalog, active]) => {
+      .then(([catalog, active, definitions]) => {
         setSources(catalog.sources);
+        setReviewPatterns(definitions.patterns);
         const first = catalog.sources.find((item) => item.instrument_id === 'US30') ?? catalog.sources[0];
         if (first) setSelectedId(first.dataset_revision_id);
         if (active.active) {
@@ -91,6 +100,35 @@ export function ReplayWalkthrough() {
       });
     return () => controller.abort();
   }, [state?.run_id, state?.cursor_index, viewportEnd]);
+
+  useEffect(() => {
+    if (!state) { setAnnotations([]); return; }
+    const controller = new AbortController();
+    void apiJson<{ annotations: ValidationAnnotation[] }>(`/replay/${state.run_id}/annotations`, {
+      signal: controller.signal,
+    }).then((result) => {
+      if (!controller.signal.aborted) setAnnotations(result.annotations);
+    }).catch((reason: unknown) => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => controller.abort();
+  }, [state?.run_id, state?.cursor_index]);
+
+  function annotationSaved(record: ValidationAnnotation) {
+    setAnnotations((current) => [...current.filter((item) => item.annotation_id !== record.annotation_id), record]);
+  }
+
+  function selectReviewBar(timestamp: string) {
+    if (reviewAnchor === null) {
+      setReviewAnchor(timestamp);
+      setReviewInterval({ start: timestamp, end: new Date(Date.parse(timestamp) + 60_000).toISOString() });
+      return;
+    }
+    const first = Math.min(Date.parse(reviewAnchor), Date.parse(timestamp));
+    const last = Math.max(Date.parse(reviewAnchor), Date.parse(timestamp));
+    setReviewInterval({ start: new Date(first).toISOString(), end: new Date(last + 60_000).toISOString() });
+    setReviewAnchor(null);
+  }
 
   useEffect(() => {
     if (!state || state.status !== 'running' || !state.has_next || busy) return;
@@ -149,6 +187,8 @@ export function ReplayWalkthrough() {
       });
       setState(launched);
       setSelectedEventOrder(null);
+      setAnnotations([]);
+      setReviewAnchor(null); setReviewInterval(null);
       setFocusTime(null);
       setSeekTime(localInput(launched.selected_start));
     } catch (reason) {
@@ -185,7 +225,8 @@ export function ReplayWalkthrough() {
         method: 'POST',
       });
       if (action === 'reset') {
-        setChartBars([]); setObservations([]); setDetectorEvents([]); setSelectedEventOrder(null); setFocusTime(null);
+        setChartBars([]); setObservations([]); setDetectorEvents([]); setAnnotations([]); setSelectedEventOrder(null); setFocusTime(null);
+        setReviewAnchor(null); setReviewInterval(null);
         setSeekTime(localInput(next.selected_start));
       }
       setState(next);
@@ -201,7 +242,8 @@ export function ReplayWalkthrough() {
       const next = await apiJson<ReplayState>(`/replay/${state.run_id}/seek`, {
         method: 'POST', body: JSON.stringify({ target: utcInput(seekTime) }),
       });
-      setChartBars([]); setObservations([]); setDetectorEvents([]); setSelectedEventOrder(null); setFocusTime(null);
+      setChartBars([]); setObservations([]); setDetectorEvents([]); setAnnotations([]); setSelectedEventOrder(null); setFocusTime(null);
+      setReviewAnchor(null); setReviewInterval(null);
       setState(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -252,16 +294,24 @@ export function ReplayWalkthrough() {
       </div>
       {focusTime && <p aria-live="polite">Chart focused on event detected at <time>{focusTime}</time>. Replay cursor remains at {state.cursor_time}.
         <button type="button" onClick={() => setFocusTime(null)}>Return to live cursor</button></p>}
+      <p>Select one visible candle, or two to span an interval, for a missed-pattern review.
+        {reviewAnchor && ' First candle selected; choose another to extend the interval.'}</p>
       <div id="replay-chart"><CandlestickChart bars={chartBars} observations={observations} events={detectorEvents}
         selectedEventOrder={selectedEventOrder} onSelectEvent={setSelectedEventOrder}
+        onSelectBar={selectReviewBar} reviewInterval={reviewInterval}
         cursorTime={state.cursor_time} overlays={overlays} /></div>
-      {selectedEvent && <EventInspector event={selectedEvent} />}
+      {selectedEvent && <><EventInspector event={selectedEvent} />
+        <EventReview runId={state.run_id} event={selectedEvent} annotations={annotations} onSaved={annotationSaved} /></>}
       <EventTimeline key={state.run_id} events={detectorEvents} selectedEventOrder={selectedEventOrder}
+        annotations={annotations}
         onSelectEvent={(event) => {
           setSelectedEventOrder(event.emission_order);
           setFocusTime(event.detection_time);
           document.getElementById('replay-chart')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }} />
+      <MissedPatternReview runId={state.run_id} cursorTime={state.cursor_time} selectedInterval={reviewInterval}
+        patterns={reviewPatterns}
+        annotations={annotations} onSaved={annotationSaved} />
       {observations.at(-1) && <p aria-live="polite">Current market state: {Object.entries(observations.at(-1)!.availability).map(([name, status]) => `${name} ${status}`).join(' · ')}</p>}
       <p aria-live="polite">{state.visible_bars} visible bars · {state.has_next ? 'more bars available' : 'end of selected interval'}</p>
       {state.events.length > 0 && <p aria-live="polite">Current detector event: {state.events.map((event) => `${event.pattern_id} ${event.trigger_id} → ${event.to_state}`).join('; ')}</p>}

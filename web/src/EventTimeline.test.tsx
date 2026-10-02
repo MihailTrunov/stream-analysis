@@ -4,6 +4,7 @@ import { EventTimeline, filterTimelineEvents } from './EventTimeline';
 import type { ReplayDetectorEvent } from './replay';
 
 const first: ReplayDetectorEvent = {
+  event_id: 'event-0', runtime_instance_id: 'runtime-a-1',
   run_id: 'run', dataset_revision_id: 'dataset', instrument_id: 'US30', timeframe: '1m',
   detection_config_hash: 'hash', pattern_id: 'A', pattern_version: '1',
   pattern_name: 'Fixture A', definition_fingerprint: 'fingerprint', build_id: 'build',
@@ -12,9 +13,9 @@ const first: ReplayDetectorEvent = {
   event_time: '2026-01-05T12:11:00Z', detection_time: '2026-01-05T12:12:00Z',
   rationale: { score: 80 }, emission_order: 0,
 };
-const second: ReplayDetectorEvent = { ...first, pattern_id: 'B', instance_id: 'b-1',
+const second: ReplayDetectorEvent = { ...first, event_id: 'event-1', pattern_id: 'B', instance_id: 'b-1',
   to_state: 'INVALIDATED', trigger_id: 'failed', emission_order: 1 };
-const third: ReplayDetectorEvent = { ...first, instance_id: 'a-2', sequence: 1,
+const third: ReplayDetectorEvent = { ...first, event_id: 'event-2', instance_id: 'a-2', sequence: 1,
   detection_time: '2026-01-05T12:13:00Z', to_state: 'ACTIVE', emission_order: 2 };
 
 describe('detector event timeline', () => {

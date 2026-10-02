@@ -1,0 +1,54 @@
+import { expect, test } from '@playwright/test';
+
+test('manual event review is audited and stays with the original run', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Launch walkthrough' })).toBeEnabled({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Launch walkthrough' }).click();
+  await page.getByRole('button', { name: 'Next detector event' }).click();
+  const timeline = page.getByRole('region', { name: 'Detector event timeline' });
+  await timeline.getByTestId('timeline-event').click();
+  const review = page.getByRole('region', { name: 'Manual validation' });
+  await review.getByLabel('Review label').selectOption('correct');
+  await review.getByLabel('Review note').fill('matches intended compression');
+  await review.getByRole('button', { name: 'Add review' }).click();
+  await expect(review).toContainText('revision 1');
+  await expect(timeline.getByTestId('timeline-event')).toContainText('Reviewed');
+  await review.getByRole('button', { name: 'Edit review' }).click();
+  await review.getByLabel('Review label').selectOption('partially_correct');
+  await review.getByRole('button', { name: 'Save review revision' }).click();
+  await expect(review).toContainText('revision 2');
+  await expect(review).toContainText('partially correct');
+  await review.getByText('Audit history (2 revisions)').click();
+  await expect(review).toContainText('matches intended compression');
+  await expect(review.getByRole('link', { name: 'Export review JSON' })).toHaveAttribute('href', /\/api\/annotations\/.*\/export/);
+  await page.getByRole('button', { name: 'Reset replay' }).click();
+  await page.getByRole('button', { name: 'Next detector event' }).click();
+  await timeline.getByTestId('timeline-event').click();
+  await expect(review).toContainText('No review recorded');
+  await expect(timeline.getByTestId('timeline-event')).not.toContainText('Reviewed');
+  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
+});
+
+test('missed-pattern review uses a visible chart interval without inventing an event', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Launch walkthrough' })).toBeEnabled({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Launch walkthrough' }).click();
+  await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  const missed = page.getByRole('region', { name: 'Missed pattern review' });
+  await page.getByRole('button', { name: 'Select candle 2026-01-05T12:11:00Z for missed-pattern interval' }).click();
+  await expect(page.getByTestId('candle')).toHaveAttribute('data-review-selected', 'true');
+  await expect(missed.getByLabel('Missed interval start UTC')).toHaveValue('2026-01-05T12:11');
+  await missed.getByLabel('Expected pattern').selectOption('RANGE_COMPRESSION_V1@1');
+  await missed.getByLabel('Missed-pattern note').fill('expected compression candidate');
+  await missed.getByRole('button', { name: 'Add missed pattern' }).click();
+  await expect(missed).toContainText('expected compression candidate');
+  await expect(missed.getByRole('link', { name: 'Export review JSON' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Detector event timeline' }).getByTestId('timeline-event')).toHaveCount(0);
+  await missed.getByRole('button', { name: 'Edit missed-pattern review' }).click();
+  await missed.getByLabel('Missed-pattern status').selectOption('needs_review');
+  await missed.getByRole('button', { name: 'Save missed-pattern revision' }).click();
+  await expect(missed).toContainText('needs review');
+  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
+});
