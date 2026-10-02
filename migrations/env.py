@@ -10,6 +10,7 @@ from market_analysis.persistence import (
     market_data,  # noqa: F401
     pattern_instances,  # noqa: F401
     replay_runs,  # noqa: F401
+    validation_annotations,  # noqa: F401
 )
 from market_analysis.persistence.runs import metadata
 

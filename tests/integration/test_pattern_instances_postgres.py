@@ -61,7 +61,7 @@ def test_postgres_pattern_instances_roundtrip_and_constraints(
     )
     run_id = uuid4()
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260930_09"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261002_10"
         create_run_snapshot(
             connection,
             run_id=run_id,
