@@ -210,6 +210,15 @@ def test_detector_view_emits_exact_lifecycle_event_only_at_detection(client: Tes
     assert event["emission_order"] == 0
     assert event["instance_id"]
     assert event["sequence"] >= 0
+    assert event["pattern_name"] == "Range Compression v1"
+    assert len(event["definition_fingerprint"]) == 64
+    assert event["detection_config_hash"] == client.get(f"/replay/{run_id}").json()[
+        "detection_config_hash"
+    ]
+    assert event["dataset_revision_id"] == "offline-replay-us30-v1"
+    assert event["run_id"] == run_id
+    assert event["build_id"]
+    assert event["code_capture_status"]
     assert event["from_state"] != event["to_state"]
     assert event["trigger_id"] == "persistence_confirmed"
     assert event["detection_time"] == "2026-01-05T12:12:00Z"

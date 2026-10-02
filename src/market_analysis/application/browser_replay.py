@@ -544,10 +544,21 @@ class BrowserReplayManager:
             events: list[dict[str, object]] = []
             for step in steps:
                 for event in step.result.events:
+                    definition = PATTERN_DEFINITIONS.get(
+                        (event.pattern_id, event.pattern_version)
+                    )
                     # Preserve the runtime's within-bar emission order, even
                     # when two instances emit at the same detection timestamp.
                     events.append({
                         **event.to_canonical_dict(),
+                        "pattern_name": definition.name if definition else None,
+                        "definition_fingerprint": (
+                            definition.semantic_fingerprint() if definition else None
+                        ),
+                        "build_id": session.pipeline.snapshot.build_id,
+                        "code_revision": session.pipeline.snapshot.code_revision,
+                        "code_dirty": session.pipeline.snapshot.code_dirty,
+                        "code_capture_status": session.pipeline.snapshot.code_capture_status,
                         "emission_order": len(events),
                     })
             return {

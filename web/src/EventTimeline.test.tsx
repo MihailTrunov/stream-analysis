@@ -4,7 +4,10 @@ import { EventTimeline, filterTimelineEvents } from './EventTimeline';
 import type { ReplayDetectorEvent } from './replay';
 
 const first: ReplayDetectorEvent = {
-  run_id: 'run', pattern_id: 'A', pattern_version: '1', instance_id: 'a-1',
+  run_id: 'run', dataset_revision_id: 'dataset', instrument_id: 'US30', timeframe: '1m',
+  detection_config_hash: 'hash', pattern_id: 'A', pattern_version: '1',
+  pattern_name: 'Fixture A', definition_fingerprint: 'fingerprint', build_id: 'build',
+  code_revision: 'revision', code_dirty: false, code_capture_status: 'captured', instance_id: 'a-1',
   sequence: 0, from_state: 'NEW', to_state: 'CANDIDATE', trigger_id: 'start',
   event_time: '2026-01-05T12:11:00Z', detection_time: '2026-01-05T12:12:00Z',
   rationale: { score: 80 }, emission_order: 0,

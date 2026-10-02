@@ -32,7 +32,11 @@ const confirmed: ReplayObservation = {
   }],
 };
 const transition: ReplayDetectorEvent = {
-  run_id: 'run', pattern_id: 'PATTERN', pattern_version: '1', instance_id: 'occurrence-1',
+  run_id: 'run', dataset_revision_id: 'dataset', instrument_id: 'US30', timeframe: '1m',
+  detection_config_hash: 'hash', pattern_id: 'PATTERN', pattern_version: '1',
+  pattern_name: 'Fixture pattern', definition_fingerprint: 'fingerprint',
+  build_id: 'build', code_revision: 'revision', code_dirty: false, code_capture_status: 'captured',
+  instance_id: 'occurrence-1',
   sequence: 0, from_state: 'CANDIDATE', to_state: 'CONFIRMED', trigger_id: 'confirmed',
   event_time: first, detection_time: second, rationale: { source: 'fixture' }, emission_order: 0,
 };

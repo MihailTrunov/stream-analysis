@@ -17,6 +17,13 @@ test('detector annotation appears only when emitted and inspects its exact event
   await expect(inspector).toContainText(instanceId ?? 'missing instance');
   await expect(inspector).toContainText(sequence ?? 'missing sequence');
   await expect(inspector).toContainText('persistence_confirmed');
+  await expect(inspector).toContainText('Range Compression v1');
+  await expect(inspector).toContainText('Detection config hash');
+  await expect(inspector).toContainText('Dataset revision');
+  await expect(inspector).toContainText('Event time (underlying behaviour)');
+  await expect(inspector).toContainText('Detection time (first observable)');
+  await expect(inspector).toContainText('Threshold');
+  await expect(inspector).toContainText('Recorded features');
   await page.getByRole('button', { name: 'Reset replay' }).click();
   await expect(page.getByTestId('pattern-annotation')).toHaveCount(0);
   await expect(inspector).toHaveCount(0);

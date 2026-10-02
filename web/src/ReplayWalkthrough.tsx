@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventTimeline } from './EventTimeline';
+import { EventInspector } from './EventInspector';
 import {
   apiJson,
   type ConfigSelection,
@@ -254,14 +255,7 @@ export function ReplayWalkthrough() {
       <div id="replay-chart"><CandlestickChart bars={chartBars} observations={observations} events={detectorEvents}
         selectedEventOrder={selectedEventOrder} onSelectEvent={setSelectedEventOrder}
         cursorTime={state.cursor_time} overlays={overlays} /></div>
-      {selectedEvent && <aside aria-label="Selected pattern event"><h3>Selected pattern event</h3>
-        <p>{selectedEvent.pattern_id}@{selectedEvent.pattern_version} · {selectedEvent.from_state} → {selectedEvent.to_state} · {selectedEvent.trigger_id}</p>
-        <dl><dt>Instance</dt><dd><code>{selectedEvent.instance_id}</code></dd>
-          <dt>Sequence</dt><dd>{selectedEvent.sequence}</dd>
-          <dt>Event time</dt><dd><time>{selectedEvent.event_time}</time></dd>
-          <dt>Detected</dt><dd><time>{selectedEvent.detection_time}</time></dd>
-          <dt>Rationale</dt><dd><code>{JSON.stringify(selectedEvent.rationale)}</code></dd></dl>
-      </aside>}
+      {selectedEvent && <EventInspector event={selectedEvent} />}
       <EventTimeline key={state.run_id} events={detectorEvents} selectedEventOrder={selectedEventOrder}
         onSelectEvent={(event) => {
           setSelectedEventOrder(event.emission_order);

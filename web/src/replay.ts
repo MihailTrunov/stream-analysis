@@ -92,8 +92,18 @@ export interface ReplayObservation {
 }
 export interface ReplayDetectorEvent {
   run_id: string;
+  dataset_revision_id: string;
+  instrument_id: string;
+  timeframe: string;
+  detection_config_hash: string;
   pattern_id: string;
   pattern_version: string;
+  pattern_name: string | null;
+  definition_fingerprint: string | null;
+  build_id: string;
+  code_revision: string | null;
+  code_dirty: boolean | null;
+  code_capture_status: string;
   instance_id: string;
   sequence: number;
   from_state: string;
