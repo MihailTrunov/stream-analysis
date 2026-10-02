@@ -26,7 +26,12 @@ from market_analysis.application.replay_event_store import ReplayEventStore
 from market_analysis.application.replay_pipeline import DetectorEventFilter, ReplayPipeline
 from market_analysis.application.replay_run import create_replay_run
 from market_analysis.config import DetectionAnalysisConfig, resolve_detection_config
-from market_analysis.demo.replay_seed import DEMO_END, DEMO_SELECTED_START
+from market_analysis.demo.replay_seed import (
+    DEMO_END,
+    DEMO_SELECTED_START,
+    DEMO_V2_END,
+    DEMO_V2_SELECTED_START,
+)
 from market_analysis.domain import Bar, BarSequence, Timeframe
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.market_data import (
@@ -68,6 +73,7 @@ def replay_sources(connection: Connection) -> list[dict[str, object]]:
         if lineage is None or lineage.validation_status.value == "fail":
             continue
         is_demo = row["provider"] == "seeded-demo"
+        is_multi_hour_demo = is_demo and row["dataset_revision_id"].endswith("-v2")
         result.append(
             {
                 "dataset_revision_id": row["dataset_revision_id"],
@@ -80,8 +86,14 @@ def replay_sources(connection: Connection) -> list[dict[str, object]]:
                 "canonical_checksum": lineage.canonical_checksum,
                 "calendar_version": row["calendar_version"],
                 "non_research_grade": is_demo,
-                "suggested_start": DEMO_SELECTED_START if is_demo else lineage.requested_start,
-                "suggested_end": DEMO_END if is_demo else lineage.requested_end,
+                "suggested_start": (
+                    DEMO_V2_SELECTED_START if is_multi_hour_demo else
+                    DEMO_SELECTED_START if is_demo else lineage.requested_start
+                ),
+                "suggested_end": (
+                    DEMO_V2_END if is_multi_hour_demo else
+                    DEMO_END if is_demo else lineage.requested_end
+                ),
                 "config_id": DEMO_CONFIG_ID,
                 "config_version": DEMO_CONFIG_VERSION,
             }

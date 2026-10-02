@@ -13,7 +13,14 @@ from sqlalchemy import create_engine, select
 
 from market_analysis.api.app import app
 from market_analysis.application import browser_replay as replay_module
-from market_analysis.demo.replay_seed import DEMO_END, DEMO_SELECTED_START, seed_replay_datasets
+from market_analysis.demo.replay_seed import (
+    DEMO_END,
+    DEMO_SELECTED_START,
+    DEMO_V2_END,
+    DEMO_V2_SELECTED_START,
+    multi_hour_demo_bars,
+    seed_replay_datasets,
+)
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.market_data import dataset_revisions
 from market_analysis.persistence.pattern_instances import pattern_instance_transitions
@@ -46,6 +53,73 @@ def _launch(instrument: str = "US30") -> dict[str, object]:
         "timeframe": "1m",
         "selected_start": DEMO_SELECTED_START.isoformat(),
         "selected_end": DEMO_END.isoformat(),
+    }
+
+
+@pytest.mark.parametrize("instrument", ["US30", "DAX"])
+def test_multi_hour_demo_is_continuous_and_selected_by_source_catalog(
+    client: TestClient, instrument: str,
+):
+    bars = multi_hour_demo_bars(instrument)
+    assert len(bars) == 300
+    assert bars[0].timestamp + timedelta(minutes=300) == DEMO_V2_END
+    for previous, current in zip(bars, bars[1:], strict=False):
+        assert current.timestamp - previous.timestamp == timedelta(minutes=1)
+        assert current.open == previous.close
+    assert all(bar.low <= min(bar.open, bar.close) <= max(bar.open, bar.close) <= bar.high
+               for bar in bars)
+    source = next(item for item in client.get("/replay/sources").json()["sources"]
+                  if item["dataset_revision_id"] == f"offline-replay-{instrument.lower()}-v2")
+    assert source["bar_count"] == 300
+    assert source["non_research_grade"] is True
+    assert source["suggested_start"] == DEMO_V2_SELECTED_START.isoformat().replace("+00:00", "Z")
+    assert source["suggested_end"] == DEMO_V2_END.isoformat().replace("+00:00", "Z")
+
+
+def test_multi_hour_demo_exposes_compression_lifecycle(client: TestClient):
+    request = _launch()
+    request["dataset_revision_id"] = "offline-replay-us30-v2"
+    request["selected_start"] = DEMO_V2_SELECTED_START.isoformat()
+    request["selected_end"] = DEMO_V2_END.isoformat()
+    response = client.post("/replay", json=request)
+    assert response.status_code == 201, response.text
+    run_id = response.json()["run_id"]
+    states: list[str] = []
+    for _ in range(30):
+        state = client.post(f"/replay/{run_id}/next-event").json()
+        states.extend(event["to_state"] for event in state["events"])
+        if not state["has_next"]:
+            break
+    assert "CANDIDATE" in states
+    assert "ACTIVE" in states
+    assert "COMPLETED" in states
+    view = client.get(f"/replay/{run_id}/view", params={
+        "start": DEMO_V2_SELECTED_START.isoformat(), "end": DEMO_V2_END.isoformat(),
+        "limit": 500,
+    }).json()
+    assert len(view["bars"]) <= 240
+    assert all(event["detection_time"] <= state["cursor_time"] for event in view["events"])
+
+
+def test_multi_hour_seed_is_idempotent(client: TestClient):
+    original = {
+        item["dataset_revision_id"]: item["canonical_checksum"]
+        for item in client.get("/replay/sources").json()["sources"]
+    }
+    engine = create_engine(os.environ["STREAM_ANALYSIS_DATABASE_URL"])
+    with engine.begin() as connection:
+        seed_replay_datasets(
+            connection, DatasetStore(Path(os.environ["STREAM_ANALYSIS_DATA_ROOT"]))
+        )
+    engine.dispose()
+    repeated = {
+        item["dataset_revision_id"]: item["canonical_checksum"]
+        for item in client.get("/replay/sources").json()["sources"]
+    }
+    assert repeated == original
+    assert set(original) == {
+        "offline-replay-us30-v1", "offline-replay-us30-v2",
+        "offline-replay-dax-v1", "offline-replay-dax-v2",
     }
 
 

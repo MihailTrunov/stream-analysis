@@ -64,7 +64,8 @@ export function ReplayWalkthrough() {
       .then(([catalog, active, definitions]) => {
         setSources(catalog.sources);
         setReviewPatterns(definitions.patterns);
-        const first = catalog.sources.find((item) => item.instrument_id === 'US30') ?? catalog.sources[0];
+        const first = catalog.sources.find((item) => item.dataset_revision_id === 'offline-replay-us30-v2')
+          ?? catalog.sources.find((item) => item.instrument_id === 'US30') ?? catalog.sources[0];
         if (first) setSelectedId(first.dataset_revision_id);
         if (active.active) {
           setState(active.active);
@@ -91,7 +92,7 @@ export function ReplayWalkthrough() {
     const params = new URLSearchParams({
       start: state.selected_start,
       end: viewportEnd ?? state.selected_end,
-      limit: '100',
+      limit: '500',
     });
     void apiJson<ReplayViewResponse>(`/replay/${state.run_id}/view?${params}`, { signal: controller.signal })
       .then((result) => { if (!controller.signal.aborted) { setChartBars(result.bars); setObservations(result.observations); setDetectorEvents(result.events); } })
@@ -258,7 +259,8 @@ export function ReplayWalkthrough() {
       <label>Dataset revision <select aria-label="Dataset revision" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={busy}>
         {sources.map((source) => <option key={source.dataset_revision_id} value={source.dataset_revision_id}>{source.instrument_id} · {source.dataset_revision_id}</option>)}
       </select></label>
-      {selected && <p>Source {selected.source_dataset_id} · {selected.timeframe} · {selected.bar_count ?? 'published'} bars · calendar {selected.calendar_version}</p>}
+      {selected && <p>Source {selected.source_dataset_id} · {selected.timeframe} · {selected.bar_count ?? 'published'} bars · calendar {selected.calendar_version}
+        {selected.non_research_grade && <> · <strong>Synthetic demo only — not research-grade</strong></>}</p>}
       <div className="form-row">
         <label>Start (UTC) <input aria-label="Start UTC" type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label>
         <label>End (UTC, exclusive) <input aria-label="End UTC" type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
