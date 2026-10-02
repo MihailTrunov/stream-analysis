@@ -196,6 +196,27 @@ def test_market_state_view_is_causal_and_identical_after_seek(client: TestClient
         assert old["market_events"] == new["market_events"]
 
 
+def test_detector_view_emits_exact_lifecycle_event_only_at_detection(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    params = {"start": DEMO_SELECTED_START.isoformat(), "end": DEMO_END.isoformat()}
+    path = f"/replay/{run_id}/view"
+    assert client.get(path, params=params).json()["events"] == []
+    client.post(f"/replay/{run_id}/step")
+    assert client.get(path, params=params).json()["events"] == []
+    client.post(f"/replay/{run_id}/step")
+    events = client.get(path, params=params).json()["events"]
+    assert len(events) == 1
+    event = events[0]
+    assert event["emission_order"] == 0
+    assert event["instance_id"]
+    assert event["sequence"] >= 0
+    assert event["from_state"] != event["to_state"]
+    assert event["trigger_id"] == "persistence_confirmed"
+    assert event["detection_time"] == "2026-01-05T12:12:00Z"
+    assert event["event_time"] <= event["detection_time"]
+    assert isinstance(event["rationale"], dict)
+
+
 def test_chart_rejects_future_or_unbounded_viewports(client: TestClient):
     launched = client.post("/replay", json=_launch()).json()
     run_id = launched["run_id"]

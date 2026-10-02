@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
-import type { ReplayBar, ReplayObservation } from './replay';
+import type { ReplayBar, ReplayDetectorEvent, ReplayObservation } from './replay';
 
 const first = '2026-01-05T12:11:00Z';
 const second = '2026-01-05T12:12:00Z';
@@ -31,6 +31,11 @@ const confirmed: ReplayObservation = {
     evidence: { swing_type: 'SWING_HIGH', event_price: '110' },
   }],
 };
+const transition: ReplayDetectorEvent = {
+  run_id: 'run', pattern_id: 'PATTERN', pattern_version: '1', instance_id: 'occurrence-1',
+  sequence: 0, from_state: 'CANDIDATE', to_state: 'CONFIRMED', trigger_id: 'confirmed',
+  event_time: first, detection_time: second, rationale: { source: 'fixture' }, emission_order: 0,
+};
 
 describe('canonical market-state overlays', () => {
   it('does not show a backdated swing before its detection bar', () => {
@@ -54,5 +59,20 @@ describe('canonical market-state overlays', () => {
     expect(html).not.toContain('data-testid="swing-marker"');
     expect(html).not.toContain('data-testid="ema-overlay"');
     expect(html.match(/data-testid="candle"/g)).toHaveLength(2);
+  });
+
+  it('renders each emitted lifecycle transition once at detection time, including same-bar invalidation', () => {
+    const invalidated: ReplayDetectorEvent = { ...transition, sequence: 1,
+      from_state: 'CONFIRMED', to_state: 'INVALIDATED', trigger_id: 'invalidated', emission_order: 1 };
+    const before = renderToStaticMarkup(<CandlestickChart bars={bars.slice(0, 1)} observations={[initial]}
+      events={[transition, invalidated]} cursorTime={first} overlays={visibility} />);
+    expect(before).not.toContain('data-testid="pattern-annotation"');
+    const after = renderToStaticMarkup(<CandlestickChart bars={bars} observations={[initial, confirmed]}
+      events={[transition, invalidated]} selectedEventOrder={1} cursorTime={second} overlays={visibility} />);
+    expect(after.match(/data-testid="pattern-annotation"/g)).toHaveLength(2);
+    expect(after).toContain('data-instance="occurrence-1" data-sequence="0"');
+    expect(after).toContain('data-instance="occurrence-1" data-sequence="1"');
+    expect(after).toContain('data-emission-order="1"');
+    expect(after).toContain('data-selected="true"');
   });
 });

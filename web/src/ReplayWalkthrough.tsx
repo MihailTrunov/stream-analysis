@@ -6,6 +6,7 @@ import {
   type DetectionConfig,
   type ReplayConfig,
   type ReplayBar,
+  type ReplayDetectorEvent,
   type ReplayObservation,
   type ReplayViewResponse,
   type ReplaySource,
@@ -31,12 +32,15 @@ export function ReplayWalkthrough() {
   const [state, setState] = useState<ReplayState | null>(null);
   const [chartBars, setChartBars] = useState<ReplayBar[]>([]);
   const [observations, setObservations] = useState<ReplayObservation[]>([]);
+  const [detectorEvents, setDetectorEvents] = useState<ReplayDetectorEvent[]>([]);
+  const [selectedEventOrder, setSelectedEventOrder] = useState<number | null>(null);
   const [overlays, setOverlays] = useState<OverlayVisibility>({ ema: true, trend: true, swing: true, range: true, session: true });
   const [speed, setSpeed] = useState(1);
   const [seekTime, setSeekTime] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = sources.find((source) => source.dataset_revision_id === selectedId);
+  const selectedEvent = detectorEvents.find((event) => event.emission_order === selectedEventOrder);
 
   useEffect(() => {
     void Promise.all([
@@ -67,7 +71,7 @@ export function ReplayWalkthrough() {
   }, [selectedId, selected?.instrument_id, state]);
 
   useEffect(() => {
-    if (!state) { setChartBars([]); setObservations([]); return; }
+    if (!state) { setChartBars([]); setObservations([]); setDetectorEvents([]); setSelectedEventOrder(null); return; }
     const controller = new AbortController();
     const params = new URLSearchParams({
       start: state.selected_start,
@@ -75,7 +79,7 @@ export function ReplayWalkthrough() {
       limit: '100',
     });
     void apiJson<ReplayViewResponse>(`/replay/${state.run_id}/view?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) { setChartBars(result.bars); setObservations(result.observations); } })
+      .then((result) => { if (!controller.signal.aborted) { setChartBars(result.bars); setObservations(result.observations); setDetectorEvents(result.events); } })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
       });
@@ -138,6 +142,7 @@ export function ReplayWalkthrough() {
         }),
       });
       setState(launched);
+      setSelectedEventOrder(null);
       setSeekTime(localInput(launched.selected_start));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -173,7 +178,7 @@ export function ReplayWalkthrough() {
         method: 'POST',
       });
       if (action === 'reset') {
-        setChartBars([]); setObservations([]);
+        setChartBars([]); setObservations([]); setDetectorEvents([]); setSelectedEventOrder(null);
         setSeekTime(localInput(next.selected_start));
       }
       setState(next);
@@ -189,7 +194,7 @@ export function ReplayWalkthrough() {
       const next = await apiJson<ReplayState>(`/replay/${state.run_id}/seek`, {
         method: 'POST', body: JSON.stringify({ target: utcInput(seekTime) }),
       });
-      setChartBars([]); setObservations([]);
+      setChartBars([]); setObservations([]); setDetectorEvents([]); setSelectedEventOrder(null);
       setState(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -238,7 +243,17 @@ export function ReplayWalkthrough() {
           {key === 'ema' ? 'EMA' : key === 'trend' ? 'Trend legs' : key === 'swing' ? 'Swings and structure' : key === 'range' ? 'Range/compression' : 'Sessions'}
         </label>)}
       </div>
-      <CandlestickChart bars={chartBars} observations={observations} cursorTime={state.cursor_time} overlays={overlays} />
+      <CandlestickChart bars={chartBars} observations={observations} events={detectorEvents}
+        selectedEventOrder={selectedEventOrder} onSelectEvent={setSelectedEventOrder}
+        cursorTime={state.cursor_time} overlays={overlays} />
+      {selectedEvent && <aside aria-label="Selected pattern event"><h3>Selected pattern event</h3>
+        <p>{selectedEvent.pattern_id}@{selectedEvent.pattern_version} · {selectedEvent.from_state} → {selectedEvent.to_state} · {selectedEvent.trigger_id}</p>
+        <dl><dt>Instance</dt><dd><code>{selectedEvent.instance_id}</code></dd>
+          <dt>Sequence</dt><dd>{selectedEvent.sequence}</dd>
+          <dt>Event time</dt><dd><time>{selectedEvent.event_time}</time></dd>
+          <dt>Detected</dt><dd><time>{selectedEvent.detection_time}</time></dd>
+          <dt>Rationale</dt><dd><code>{JSON.stringify(selectedEvent.rationale)}</code></dd></dl>
+      </aside>}
       {observations.at(-1) && <p aria-live="polite">Current market state: {Object.entries(observations.at(-1)!.availability).map(([name, status]) => `${name} ${status}`).join(' · ')}</p>}
       <p aria-live="polite">{state.visible_bars} visible bars · {state.has_next ? 'more bars available' : 'end of selected interval'}</p>
       {state.events.length > 0 && <p aria-live="polite">Current detector event: {state.events.map((event) => `${event.pattern_id} ${event.trigger_id} → ${event.to_state}`).join('; ')}</p>}

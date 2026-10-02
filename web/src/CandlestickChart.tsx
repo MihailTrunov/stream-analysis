@@ -1,14 +1,22 @@
-import type { ReplayBar, ReplayObservation } from './replay';
+import type { ReplayBar, ReplayDetectorEvent, ReplayObservation } from './replay';
 
 export interface OverlayVisibility { ema: boolean; trend: boolean; swing: boolean; range: boolean; session: boolean }
-interface Props { bars: ReplayBar[]; observations: ReplayObservation[]; cursorTime: string | null; overlays: OverlayVisibility }
+interface Props {
+  bars: ReplayBar[];
+  observations: ReplayObservation[];
+  events?: ReplayDetectorEvent[];
+  selectedEventOrder?: number | null;
+  onSelectEvent?: (order: number) => void;
+  cursorTime: string | null;
+  overlays: OverlayVisibility;
+}
 
 function object(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
 }
 
-export function CandlestickChart({ bars, observations, cursorTime, overlays }: Props) {
+export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null, onSelectEvent, cursorTime, overlays }: Props) {
   if (!bars.length) return <p aria-live="polite">No visible candles yet. Step once to process warm-up and reveal the first selected bar.</p>;
   const prices = bars.flatMap((bar) => [Number(bar.high), Number(bar.low)]);
   const low = Math.min(...prices);
@@ -27,6 +35,15 @@ export function CandlestickChart({ bars, observations, cursorTime, overlays }: P
   const sessions: Array<{ index: number; name: string; local: string }> = [];
   const swings: Array<{ key: string; index: number; price: string; kind: string; detection: string }> = [];
   const structures: Array<{ key: string; index: number; label: string; detection: string }> = [];
+  const annotationDepth = new Map<string, number>();
+  const annotations = events.flatMap((event) => {
+    if (event.detection_time > (cursorTime ?? '')) return [];
+    const index = barIndex.get(event.detection_time);
+    if (index === undefined) return [];
+    const depth = annotationDepth.get(event.detection_time) ?? 0;
+    annotationDepth.set(event.detection_time, depth + 1);
+    return [{ event, index, depth }];
+  });
   let priorSession = '';
   for (const frame of observations) {
     const index = barIndex.get(frame.timestamp);
@@ -105,6 +122,19 @@ export function CandlestickChart({ bars, observations, cursorTime, overlays }: P
       {overlays.swing && structures.map((marker) =>
         <text key={marker.key} data-testid="structure-marker" data-detection-time={marker.detection}
           x={x(marker.index)} y={pad - 5} textAnchor="middle" fill="#64539a" fontSize="10">{marker.label}</text>)}
+      {annotations.map(({ event, index, depth }) =>
+        <g key={event.emission_order} role="button" tabIndex={0}
+          aria-label={`${event.pattern_id} ${event.to_state} at ${event.detection_time}`}
+          data-testid="pattern-annotation" data-emission-order={event.emission_order}
+          data-instance={event.instance_id} data-sequence={event.sequence}
+          data-detection-time={event.detection_time} data-selected={selectedEventOrder === event.emission_order}
+          onClick={() => onSelectEvent?.(event.emission_order)}
+          onKeyDown={(key) => { if (key.key === 'Enter' || key.key === ' ') { key.preventDefault(); onSelectEvent?.(event.emission_order); } }}>
+          <title>{`${event.pattern_id}@${event.pattern_version} ${event.from_state} → ${event.to_state} (${event.trigger_id})`}</title>
+          <circle cx={x(index)} cy={pad + 12 + depth * 17} r="7"
+            fill={event.to_state === 'INVALIDATED' ? '#bc3c48' : '#7056ad'}
+            stroke={selectedEventOrder === event.emission_order ? '#182430' : 'white'} strokeWidth="2" />
+        </g>)}
     </svg>
     <p>Current visible bar: <time>{bars.at(-1)?.timestamp}</time> · {bars.length} candles in viewport</p>
   </div>;
