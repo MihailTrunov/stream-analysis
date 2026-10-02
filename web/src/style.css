@@ -17,3 +17,9 @@ code { overflow-wrap: anywhere; }
 .chart-viewport { overflow-x: auto; max-width: 100%; }
 .chart-viewport svg { width: 100%; min-width: 500px; height: auto; background: #fbfcfd; border: 1px solid #d5dde3; }
 .replay-controls { align-items: center; }
+.event-timeline { margin-top: 1.5rem; }
+.event-timeline ol { max-height: 19rem; overflow-y: auto; padding-left: 1.75rem; }
+.event-timeline li { margin: .35rem 0; }
+.event-timeline li button { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.event-timeline li button[aria-current="true"] { outline: 2px solid #7056ad; }
+.event-timeline small { display: block; color: #52606d; }

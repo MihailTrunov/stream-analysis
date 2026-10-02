@@ -217,6 +217,32 @@ def test_detector_view_emits_exact_lifecycle_event_only_at_detection(client: Tes
     assert isinstance(event["rationale"], dict)
 
 
+def test_timeline_order_survives_chart_focus_and_fresh_seek(client: TestClient):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    for _ in range(3):
+        client.post(f"/replay/{run_id}/step")
+    params = {"start": DEMO_SELECTED_START.isoformat(), "end": DEMO_END.isoformat()}
+    full = client.get(f"/replay/{run_id}/view", params=params).json()
+    focused = client.get(f"/replay/{run_id}/view", params={
+        **params, "end": (DEMO_SELECTED_START + timedelta(minutes=1)).isoformat(),
+    }).json()
+    assert focused["bars"] == full["bars"][:1]
+    assert focused["cursor_index"] == full["cursor_index"]
+    assert focused["events"] == full["events"]
+    assert [item["emission_order"] for item in full["events"]] == list(range(len(full["events"])))
+    sought = client.post(f"/replay/{run_id}/seek", json={
+        "target": (DEMO_END - timedelta(minutes=1)).isoformat(),
+    }).json()
+    repeated = client.get(f"/replay/{sought['run_id']}/view", params=params).json()
+    assert [
+        (item["pattern_id"], item["instance_id"], item["sequence"], item["detection_time"])
+        for item in repeated["events"]
+    ] == [
+        (item["pattern_id"], item["instance_id"], item["sequence"], item["detection_time"])
+        for item in full["events"]
+    ]
+
+
 def test_chart_rejects_future_or_unbounded_viewports(client: TestClient):
     launched = client.post("/replay", json=_launch()).json()
     run_id = launched["run_id"]
