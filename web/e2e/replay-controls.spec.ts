@@ -7,6 +7,7 @@ test.afterEach(async ({ page }) => {
 
 test('play, pause, speed and terminal controls follow replay lifecycle', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Launch walkthrough' })).toBeEnabled();
   await page.getByRole('button', { name: 'Launch walkthrough' }).click();
   await page.getByRole('combobox', { name: 'Playback speed' }).selectOption('0.5');
   await page.getByRole('button', { name: 'Play', exact: true }).click();
@@ -24,6 +25,7 @@ test('play, pause, speed and terminal controls follow replay lifecycle', async (
 
 test('next event, seek and reset create causal fresh run views', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Launch walkthrough' })).toBeEnabled();
   await page.getByRole('button', { name: 'Launch walkthrough' }).click();
   const region = page.getByRole('region', { name: 'Detector walkthrough' });
   const firstRun = await region.locator('dd code').first().textContent();
