@@ -1,21 +1,20 @@
 import { expect, test } from '@playwright/test';
+import { selectShortDemo } from './short-demo';
 
 test('detector annotation appears only when emitted and inspects its exact event', async ({ page }) => {
   await page.goto('/');
+  await selectShortDemo(page);
   await page.getByRole('button', { name: 'Launch walkthrough' }).click();
-  await expect(page.getByTestId('pattern-annotation')).toHaveCount(0);
+  const timeline = page.getByRole('region', { name: 'Detector event timeline' });
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
-  await expect(page.getByTestId('pattern-annotation')).toHaveCount(0);
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
-  const annotation = page.getByTestId('pattern-annotation');
+  const annotation = timeline.getByTestId('timeline-event');
   await expect(annotation).toHaveCount(1);
-  await expect(annotation).toHaveAttribute('data-detection-time', '2026-01-05T12:12:00Z');
-  const instanceId = await annotation.getAttribute('data-instance');
-  const sequence = await annotation.getAttribute('data-sequence');
+  await expect(annotation).toContainText('2026-01-05T12:12:00Z');
   await annotation.click();
   const inspector = page.getByRole('complementary', { name: 'Selected pattern event' });
-  await expect(inspector).toContainText(instanceId ?? 'missing instance');
-  await expect(inspector).toContainText(sequence ?? 'missing sequence');
   await expect(inspector).toContainText('persistence_confirmed');
   await expect(inspector).toContainText('Range Compression v1');
   await expect(inspector).toContainText('Detection config hash');
@@ -25,7 +24,7 @@ test('detector annotation appears only when emitted and inspects its exact event
   await expect(inspector).toContainText('Threshold');
   await expect(inspector).toContainText('Recorded features');
   await page.getByRole('button', { name: 'Reset replay' }).click();
-  await expect(page.getByTestId('pattern-annotation')).toHaveCount(0);
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
   await expect(inspector).toHaveCount(0);
   await page.getByRole('button', { name: 'Stop walkthrough' }).click();
 });

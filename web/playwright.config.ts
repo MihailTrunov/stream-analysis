@@ -4,21 +4,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const smokeRoot = mkdtempSync(join(tmpdir(), 'stream-analysis-smoke-'));
+const apiPort = Number(process.env.STREAM_ANALYSIS_SMOKE_API_PORT ?? '8000');
+const webPort = Number(process.env.STREAM_ANALYSIS_SMOKE_WEB_PORT ?? '5173');
 
 export default defineConfig({
   testDir: './e2e',
   workers: 1, // The MVP API deliberately permits one active walkthrough.
   retries: process.env.CI ? 1 : 0,
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: `http://127.0.0.1:${webPort}`,
     browserName: 'chromium',
     channel: 'chrome',
   },
   webServer: [
     {
-      command: '.venv/bin/python -m uvicorn market_analysis.api.app:app --host 127.0.0.1 --port 8000',
+      command: `.venv/bin/python -m uvicorn market_analysis.api.app:app --host 127.0.0.1 --port ${apiPort}`,
       cwd: '..',
-      url: 'http://127.0.0.1:8000/health',
+      url: `http://127.0.0.1:${apiPort}/health`,
       reuseExistingServer: false,
       env: {
         STREAM_ANALYSIS_DATABASE_URL: `sqlite+pysqlite:///${join(smokeRoot, 'smoke.sqlite')}`,
@@ -27,9 +29,9 @@ export default defineConfig({
       },
     },
     {
-      command: 'pnpm dev',
+      command: `pnpm exec vite --host 127.0.0.1 --port ${webPort}`,
       cwd: '.',
-      url: 'http://127.0.0.1:5173',
+      url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: !process.env.CI,
     },
   ],

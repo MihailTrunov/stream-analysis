@@ -308,7 +308,7 @@ export function ReplayWalkthrough() {
       <div id="replay-chart"><CandlestickChart bars={chartBars} observations={observations} events={detectorEvents}
         selectedEventOrder={selectedEventOrder} onSelectEvent={setSelectedEventOrder}
         onSelectBar={selectReviewBar} reviewInterval={reviewInterval}
-        cursorTime={state.cursor_time} overlays={overlays} /></div>
+        cursorTime={state.cursor_time} focusTime={focusTime} overlays={overlays} /></div>
       {selectedEvent && <><EventInspector event={selectedEvent} />
         <EventReview runId={state.run_id} event={selectedEvent} annotations={annotations} onSaved={annotationSaved} /></>}
       <EventTimeline key={state.run_id} events={detectorEvents} selectedEventOrder={selectedEventOrder}

@@ -1,6 +1,14 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CandlestickSeries, CrosshairMode, HistogramSeries, LineSeries,
+  TickMarkType, createChart, createSeriesMarkers,
+  type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi,
+  type Time,
+} from 'lightweight-charts';
+import { buildChartModel, type ChartLayers } from './chartModel';
 import type { ReplayBar, ReplayDetectorEvent, ReplayObservation } from './replay';
 
-export interface OverlayVisibility { ema: boolean; trend: boolean; swing: boolean; range: boolean; session: boolean }
+export type OverlayVisibility = ChartLayers;
 interface Props {
   bars: ReplayBar[];
   observations: ReplayObservation[];
@@ -10,146 +18,186 @@ interface Props {
   onSelectBar?: (timestamp: string) => void;
   reviewInterval?: { start: string; end: string } | null;
   cursorTime: string | null;
+  focusTime?: string | null;
   overlays: OverlayVisibility;
 }
 
-function object(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown> : null;
-}
-
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
-  onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, overlays }: Props) {
-  if (!bars.length) return <p aria-live="polite">No visible candles yet. Step once to process warm-up and reveal the first selected bar.</p>;
-  const prices = bars.flatMap((bar) => [Number(bar.high), Number(bar.low)]);
-  const low = Math.min(...prices);
-  const high = Math.max(...prices);
-  const span = high - low || 1;
-  const width = 840;
-  const height = 300;
-  const pad = 24;
-  const candleWidth = Math.max(2, Math.min(10, (width - 2 * pad) / bars.length * 0.65));
-  const x = (index: number) => pad + (index + .5) * (width - 2 * pad) / bars.length;
-  const y = (price: string) => height - pad - ((Number(price) - low) / span) * (height - 2 * pad);
-  const barIndex = new Map(bars.map((bar, index) => [bar.timestamp, index]));
-  const ema = new Map<string, Array<{ index: number; value: string; period: string }>>();
-  const legs: Array<{ index: number; direction: string; id: string }> = [];
-  const ranges: Array<{ index: number; regime: string; score: string }> = [];
-  const sessions: Array<{ index: number; name: string; local: string }> = [];
-  const swings: Array<{ key: string; index: number; price: string; kind: string; detection: string }> = [];
-  const structures: Array<{ key: string; index: number; label: string; detection: string }> = [];
-  const annotationDepth = new Map<string, number>();
-  const annotations = events.flatMap((event) => {
-    if (event.detection_time > (cursorTime ?? '')) return [];
-    const index = barIndex.get(event.detection_time);
-    if (index === undefined) return [];
-    const depth = annotationDepth.get(event.detection_time) ?? 0;
-    annotationDepth.set(event.detection_time, depth + 1);
-    return [{ event, index, depth }];
-  });
-  let priorSession = '';
-  for (const frame of observations) {
-    const index = barIndex.get(frame.timestamp);
-    if (index === undefined) continue;
-    for (const [instance, values] of Object.entries(frame.components)) {
-      if (values.component_id === 'ema' && values.value_ready === true && values.ema != null) {
-        const series = ema.get(instance) ?? [];
-        series.push({ index, value: String(values.ema), period: String(values.period) });
-        ema.set(instance, series);
-      }
-      if (values.component_id === 'trend_leg') {
-        const leg = object(values.active_leg);
-        if (leg) legs.push({ index, direction: String(leg.direction), id: String(leg.leg_index) });
-      }
-      if (values.component_id === 'range_state' && values.compression_score != null) {
-        ranges.push({ index, regime: String(values.compression_regime), score: String(values.compression_score) });
-      }
+  onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays }: Props) {
+  const container = useRef<HTMLDivElement>(null);
+  const chart = useRef<IChartApi | null>(null);
+  const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const ema = useRef(new Map<string, ISeriesApi<'Line'>>());
+  const range = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const priorCount = useRef(0);
+  const priorFocus = useRef<string | null>(null);
+  const [chartError, setChartError] = useState<string | null>(null);
+  const callbacks = useRef({ onSelectEvent, onSelectBar });
+  const timestamps = useRef(new Map<number, string>());
+  callbacks.current = { onSelectEvent, onSelectBar };
+
+  const result = useMemo(() => {
+    try {
+      return { model: buildChartModel(
+        bars, observations, events, cursorTime, overlays, selectedEventOrder, reviewInterval,
+      ), error: null };
+    } catch (reason) {
+      return { model: null, error: reason instanceof Error ? reason.message : String(reason) };
     }
-    const session = frame.components.session;
-    if (session) {
-      const identity = `${session.trading_date}:${session.session_name}`;
-      if (identity !== priorSession) {
-        sessions.push({ index, name: String(session.session_name), local: String(session.local_timestamp) });
-        priorSession = identity;
-      }
+  }, [bars, observations, events, cursorTime, overlays, selectedEventOrder, reviewInterval]);
+
+  useEffect(() => {
+    if (!container.current) return;
+    try {
+      const instance = createChart(container.current, {
+        autoSize: true,
+        height: 520,
+        layout: {
+          background: { color: '#fbfcfd' },
+          textColor: '#344457',
+          fontFamily: 'system-ui, sans-serif',
+        },
+        grid: {
+          vertLines: { color: '#edf0f4' },
+          horzLines: { color: '#e7ebef' },
+        },
+        rightPriceScale: { visible: true, borderColor: '#a5b2bf' },
+        timeScale: {
+          visible: true, timeVisible: true, secondsVisible: false,
+          borderColor: '#a5b2bf', barSpacing: 8, rightOffset: 4,
+          tickMarkFormatter: (value: Time, kind: TickMarkType) => {
+            const utc = new Date(Number(value) * 1000).toISOString();
+            return kind <= TickMarkType.DayOfMonth ? utc.slice(0, 10) : utc.slice(11, 16);
+          },
+        },
+        crosshair: { mode: CrosshairMode.Normal },
+        localization: {
+          timeFormatter: (value: Time) => new Date(Number(value) * 1000)
+            .toISOString().slice(0, 16).replace('T', ' ') + ' UTC',
+        },
+      });
+      const series = instance.addSeries(CandlestickSeries, {
+        upColor: '#087f5b', downColor: '#bc3c48',
+        wickUpColor: '#087f5b', wickDownColor: '#bc3c48',
+        borderVisible: false, priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
+      });
+      const markerPlugin = createSeriesMarkers(series, []);
+      instance.subscribeClick((point) => {
+        const markerId = point.hoveredInfo?.objectId;
+        if (typeof markerId === 'string' && markerId.startsWith('event:')) {
+          callbacks.current.onSelectEvent?.(Number(markerId.slice(6)));
+          return;
+        }
+        if (typeof point.time === 'number') {
+          const timestamp = timestamps.current.get(point.time);
+          if (timestamp) callbacks.current.onSelectBar?.(timestamp);
+        }
+      });
+      chart.current = instance;
+      candles.current = series;
+      markers.current = markerPlugin;
+      return () => {
+        markerPlugin.detach();
+        instance.remove();
+        chart.current = null;
+        candles.current = null;
+        markers.current = null;
+        ema.current.clear();
+        range.current = null;
+        priorCount.current = 0;
+      };
+    } catch (reason) {
+      setChartError(reason instanceof Error ? reason.message : String(reason));
+      return;
     }
-    for (const event of frame.market_events) {
-      if (event.detection_time !== frame.timestamp || event.detection_time > (cursorTime ?? '')) continue;
-      const eventIndex = barIndex.get(event.event_time) ?? index;
-      if (event.event_type === 'SWING_POINT_CONFIRMED') {
-        swings.push({ key: `${index}:${event.ordinal}`, index: eventIndex,
-          price: String(event.evidence.event_price), kind: String(event.evidence.swing_type), detection: event.detection_time });
-      }
-      if (event.event_type === 'SWING_STRUCTURE_CLASSIFIED') {
-        structures.push({ key: `${index}:${event.ordinal}`, index: eventIndex,
-          label: String(event.evidence.label), detection: event.detection_time });
-      }
+  }, []);
+
+  useEffect(() => {
+    const instance = chart.current;
+    const series = candles.current;
+    const model = result.model;
+    if (!instance || !series || !model) {
+      series?.setData([]);
+      return;
     }
-  }
+    try {
+      timestamps.current = model.timestamps;
+      series.setData(model.candles);
+      markers.current?.setMarkers(model.markers);
+      for (const [id, value] of model.ema) {
+        let line = ema.current.get(id);
+        if (!line) {
+          line = instance.addSeries(LineSeries, {
+            color: '#3269b5', lineWidth: 2, title: `EMA ${value.period}`,
+            priceLineVisible: false, lastValueVisible: true,
+          });
+          ema.current.set(id, line);
+        }
+        line.setData(value.points);
+      }
+      for (const [id, line] of ema.current) {
+        if (!model.ema.has(id)) {
+          instance.removeSeries(line);
+          ema.current.delete(id);
+        }
+      }
+      if (model.range.length) {
+        if (!range.current) {
+          range.current = instance.addSeries(HistogramSeries, {
+            title: 'Compression score', color: '#7056ad',
+            priceFormat: { type: 'price', precision: 0, minMove: 1 },
+            priceLineVisible: false,
+          }, 1);
+          instance.panes()[1]?.setHeight(110);
+        }
+        range.current.setData(model.range);
+      } else if (range.current) {
+        instance.removeSeries(range.current);
+        range.current = null;
+      }
+      if (model.candles.length && (priorCount.current === 0
+        || model.candles.length < priorCount.current)) {
+        instance.timeScale().fitContent();
+      }
+      priorCount.current = model.candles.length;
+      setChartError(null);
+    } catch (reason) {
+      setChartError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [result]);
+
+  useEffect(() => {
+    const instance = chart.current;
+    const model = result.model;
+    if (!instance || !model?.candles.length || focusTime === priorFocus.current) return;
+    if (focusTime) {
+      const index = model.candles.findIndex((bar) => model.timestamps.get(bar.time) === focusTime);
+      if (index < 0) return;
+      instance.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, index - 25),
+        to: Math.min(model.candles.length - 1, index + 25),
+      });
+    } else {
+      instance.timeScale().scrollToRealTime();
+    }
+    priorFocus.current = focusTime;
+  }, [focusTime, result]);
+
   return <div className="chart-viewport">
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Candlestick chart with ${bars.length} visible bars through ${cursorTime ?? 'no cursor'}`}>
-      <line x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} stroke="#8b9aa9" />
-      {overlays.trend && legs.map(({ index, direction, id }) =>
-        <rect key={`leg:${index}`} data-testid="trend-leg-overlay" data-leg={id} data-direction={direction}
-          x={x(index) - (width - 2 * pad) / bars.length / 2} y={pad} width={(width - 2 * pad) / bars.length}
-          height={height - 2 * pad} fill={direction === 'UP' ? '#31a88b' : '#d97872'} opacity="0.10" />)}
-      {overlays.session && sessions.map(({ index, name, local }) =>
-        <g key={`session:${index}`} data-testid="session-marker" data-session={name}>
-          <title>{`${name} · ${local}`}</title>
-          <line x1={x(index)} x2={x(index)} y1={pad} y2={height - pad} stroke="#8093a5" strokeDasharray="3 4" />
-        </g>)}
-      {overlays.range && ranges.map(({ index, regime, score }) =>
-        <rect key={`range:${index}`} data-testid="range-band" data-regime={regime} data-score={score}
-          x={x(index) - candleWidth / 2} y={height - pad + 3} width={candleWidth} height="5"
-          fill={regime === 'COMPRESSED' ? '#7867bd' : '#9ca9b5'} />)}
-      {bars.map((bar, index) => {
-        const rising = Number(bar.close) >= Number(bar.open);
-        const color = rising ? '#087f5b' : '#bc3c48';
-        const top = Math.min(y(bar.open), y(bar.close));
-        const bodyHeight = Math.max(2, Math.abs(y(bar.open) - y(bar.close)));
-        const reviewSelected = reviewInterval !== null
-          && bar.timestamp >= reviewInterval.start && bar.timestamp < reviewInterval.end;
-        return <g key={bar.timestamp} data-testid="candle" data-time={bar.timestamp}
-          data-review-selected={reviewSelected} role={onSelectBar ? 'button' : undefined}
-          tabIndex={onSelectBar ? 0 : undefined}
-          aria-label={onSelectBar ? `Select candle ${bar.timestamp} for missed-pattern interval` : undefined}
-          onClick={() => onSelectBar?.(bar.timestamp)}
-          onKeyDown={(key) => { if (onSelectBar && (key.key === 'Enter' || key.key === ' ')) {
-            key.preventDefault(); onSelectBar(bar.timestamp);
-          } }}>
-          <title>{`${bar.timestamp} O ${bar.open} H ${bar.high} L ${bar.low} C ${bar.close}`}</title>
-          {reviewSelected && <rect x={x(index) - candleWidth} y={pad} width={candleWidth * 2}
-            height={height - 2 * pad} fill="#d0a43d" opacity="0.25" />}
-          <line x1={x(index)} x2={x(index)} y1={y(bar.high)} y2={y(bar.low)} stroke={color} strokeWidth="2" />
-          <rect x={x(index) - candleWidth / 2} y={top} width={candleWidth} height={bodyHeight} fill={color} />
-        </g>;
-      })}
-      {overlays.ema && [...ema.entries()].map(([instance, series]) =>
-        <polyline key={instance} data-testid="ema-overlay" data-instance={instance} data-period={series[0].period}
-          points={series.map((point) => `${x(point.index)},${y(point.value)}`).join(' ')}
-          fill="none" stroke="#3269b5" strokeWidth="1.5" />)}
-      {overlays.swing && swings.map((marker) =>
-        <g key={marker.key} data-testid="swing-marker" data-kind={marker.kind} data-detection-time={marker.detection}>
-          <title>{`${marker.kind} confirmed ${marker.detection}`}</title>
-          <circle cx={x(marker.index)} cy={y(marker.price)} r="5" fill="#9f6a10" />
-        </g>)}
-      {overlays.swing && structures.map((marker) =>
-        <text key={marker.key} data-testid="structure-marker" data-detection-time={marker.detection}
-          x={x(marker.index)} y={pad - 5} textAnchor="middle" fill="#64539a" fontSize="10">{marker.label}</text>)}
-      {annotations.map(({ event, index, depth }) =>
-        <g key={event.emission_order} role="button" tabIndex={0}
-          aria-label={`${event.pattern_id} ${event.to_state} at ${event.detection_time}`}
-          data-testid="pattern-annotation" data-emission-order={event.emission_order}
-          data-instance={event.instance_id} data-sequence={event.sequence}
-          data-detection-time={event.detection_time} data-selected={selectedEventOrder === event.emission_order}
-          onClick={() => onSelectEvent?.(event.emission_order)}
-          onKeyDown={(key) => { if (key.key === 'Enter' || key.key === ' ') { key.preventDefault(); onSelectEvent?.(event.emission_order); } }}>
-          <title>{`${event.pattern_id}@${event.pattern_version} ${event.from_state} → ${event.to_state} (${event.trigger_id})`}</title>
-          <circle cx={x(index)} cy={pad + 12 + depth * 17} r="7"
-            fill={event.to_state === 'INVALIDATED' ? '#bc3c48' : '#7056ad'}
-            stroke={selectedEventOrder === event.emission_order ? '#182430' : 'white'} strokeWidth="2" />
-        </g>)}
-    </svg>
-    <p>Current visible bar: <time>{bars.at(-1)?.timestamp}</time> · {bars.length} candles in viewport</p>
+    {(result.error || chartError) && <p role="alert">Chart unavailable: {result.error || chartError}. Replay controls and the event timeline remain available.</p>}
+    <div ref={container} className="trading-chart" role="img"
+      aria-label={`Interactive UTC candlestick chart with price and time scales; ${result.model?.candles.length ?? 0} visible bars through ${cursorTime ?? 'no cursor'}`} />
+    <p className="chart-caption">
+      {bars.length
+        ? <>Current visible bar: <time>{bars.at(-1)?.timestamp}</time> · {result.model?.candles.length ?? 0} candles loaded. Scroll to zoom; drag to pan; click a candle to select it for a missed-pattern review.</>
+        : 'No visible candles yet. Step once to process warm-up and reveal the first selected bar.'}
+      {' '}Charting by <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>.
+    </p>
+    {bars.length > 0 && onSelectBar && <button type="button"
+      onClick={() => onSelectBar(bars.at(-1)!.timestamp)}>
+      Select current candle for missed-pattern review
+    </button>}
+    {reviewInterval && <p aria-live="polite">Selected review interval: {reviewInterval.start} to {reviewInterval.end}</p>}
   </div>;
 }
