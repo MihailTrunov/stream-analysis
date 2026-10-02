@@ -91,6 +91,42 @@ def multi_hour_demo_bars(instrument_id: str) -> tuple[Bar, ...]:
     return tuple(bars)
 
 
+def balanced_multi_hour_demo_bars(instrument_id: str) -> tuple[Bar, ...]:
+    """Five hours with directional moves and one deliberate compression episode."""
+    if instrument_id not in ("US30", "DAX"):
+        raise ValueError("offline demo supports US30 and DAX only")
+    price = 420_000 if instrument_id == "US30" else 160_000
+    scale = 2 if instrument_id == "US30" else 1
+    small_noise = (-1, 0, 1, 0, 1, -1, 0)
+    bars: list[Bar] = []
+    for index in range(300):
+        opening = price
+        noise = small_noise[index % len(small_noise)] * scale
+        if index < 65:
+            change, wick = 7 * scale + noise, (1 + index % 2) * scale
+        elif index < 115:
+            change, wick = -5 * scale + noise, (1 + index % 2) * scale
+        elif index < 135:
+            change, wick = (12 if index % 2 == 0 else -12) * scale, 4 * scale
+        elif index < 195:
+            amplitude = max(1, 10 - (index - 135) // 6) * scale
+            change, wick = (amplitude if index % 2 == 0 else -amplitude), 4 * scale
+        elif index < 245:
+            change, wick = 8 * scale + noise, (1 + index % 2) * scale
+        else:
+            change, wick = -4 * scale + noise, (1 + index % 2) * scale
+        price += change
+        high = max(opening, price) + wick
+        low = min(opening, price) - wick
+        bars.append(Bar(
+            instrument_id, Timeframe.M1, DEMO_V2_START + timedelta(minutes=index),
+            Decimal(opening) / 10, Decimal(high) / 10,
+            Decimal(low) / 10, Decimal(price) / 10,
+            source_id="seeded-replay-demo-v3",
+        ))
+    return tuple(bars)
+
+
 def seed_replay_datasets(connection: Connection, store: DatasetStore) -> None:
     """Publish both deterministic local samples without network or credentials."""
     for symbol in ("US30_USD", "DE30_EUR"):
@@ -100,6 +136,7 @@ def seed_replay_datasets(connection: Connection, store: DatasetStore) -> None:
         for version, bars, start, end in (
             ("v1", demo_replay_bars(instrument_id), DEMO_START, DEMO_END),
             ("v2", multi_hour_demo_bars(instrument_id), DEMO_V2_START, DEMO_V2_END),
+            ("v3", balanced_multi_hour_demo_bars(instrument_id), DEMO_V2_START, DEMO_V2_END),
         ):
             revision_id = f"offline-replay-{instrument_id.lower()}-{version}"
             source_id = f"seeded-replay-{instrument_id.lower()}-{version}"

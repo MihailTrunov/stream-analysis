@@ -64,9 +64,9 @@ export function ReplayWalkthrough() {
       .then(([catalog, active, definitions]) => {
         setSources(catalog.sources);
         setReviewPatterns(definitions.patterns);
-        const first = catalog.sources.find((item) => item.dataset_revision_id === 'offline-replay-us30-v2')
+        const first = catalog.sources.find((item) => item.dataset_revision_id === 'offline-replay-us30-v3')
           ?? catalog.sources.find((item) => item.instrument_id === 'US30') ?? catalog.sources[0];
-        if (first) setSelectedId(first.dataset_revision_id);
+        if (first) setSelectedId((current) => current || first.dataset_revision_id);
         if (active.active) {
           setState(active.active);
           setSeekTime(localInput(active.active.selected_start));
@@ -256,7 +256,14 @@ export function ReplayWalkthrough() {
     <p>Local, single-user replay over a pinned immutable dataset. The offline samples are non-research-grade.</p>
     {error && <p role="alert">{error}</p>}
     {!state ? <>
-      <label>Dataset revision <select aria-label="Dataset revision" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={busy}>
+      <label>Dataset revision <select aria-label="Dataset revision" value={selectedId} onChange={(event) => {
+        setSelectedId(event.target.value);
+        setConfig(null);
+        setEditedConfig(null);
+        setPreviewHash(null);
+        setStart('');
+        setEnd('');
+      }} disabled={busy}>
         {sources.map((source) => <option key={source.dataset_revision_id} value={source.dataset_revision_id}>{source.instrument_id} · {source.dataset_revision_id}</option>)}
       </select></label>
       {selected && <p>Source {selected.source_dataset_id} · {selected.timeframe} · {selected.bar_count ?? 'published'} bars · calendar {selected.calendar_version}

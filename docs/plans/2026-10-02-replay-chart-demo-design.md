@@ -23,9 +23,10 @@ without pointer interaction with the canvas.
 
 ## Seed
 
-Publish a new immutable v2 revision for US30 and DAX. Keep the historical v1
-14-bar revision for old runs and regression fixtures, but select v2 by default
-in the browser. Generate deterministic minute OHLC across at least four
+Publish immutable multi-hour revisions for US30 and DAX. Keep the historical v1
+14-bar revision for old runs and regression fixtures. The first v2 seed proved
+too noisy during visual review, so retain it for audit and select the calmer v3
+revision by default. Generate deterministic minute OHLC across at least four
 contiguous open-session hours plus warm-up. Shape several regimes—directional
 move, pullback, tight oscillation and release—without treating synthetic
 values as provider history. The generator uses fixed arithmetic, stable

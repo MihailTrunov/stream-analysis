@@ -73,7 +73,9 @@ def replay_sources(connection: Connection) -> list[dict[str, object]]:
         if lineage is None or lineage.validation_status.value == "fail":
             continue
         is_demo = row["provider"] == "seeded-demo"
-        is_multi_hour_demo = is_demo and row["dataset_revision_id"].endswith("-v2")
+        is_multi_hour_demo = is_demo and row["dataset_revision_id"].endswith(
+            ("-v2", "-v3")
+        )
         result.append(
             {
                 "dataset_revision_id": row["dataset_revision_id"],

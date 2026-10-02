@@ -18,7 +18,7 @@ from market_analysis.demo.replay_seed import (
     DEMO_SELECTED_START,
     DEMO_V2_END,
     DEMO_V2_SELECTED_START,
-    multi_hour_demo_bars,
+    balanced_multi_hour_demo_bars,
     seed_replay_datasets,
 )
 from market_analysis.persistence.dataset_store import DatasetStore
@@ -60,7 +60,7 @@ def _launch(instrument: str = "US30") -> dict[str, object]:
 def test_multi_hour_demo_is_continuous_and_selected_by_source_catalog(
     client: TestClient, instrument: str,
 ):
-    bars = multi_hour_demo_bars(instrument)
+    bars = balanced_multi_hour_demo_bars(instrument)
     assert len(bars) == 300
     assert bars[0].timestamp + timedelta(minutes=300) == DEMO_V2_END
     for previous, current in zip(bars, bars[1:], strict=False):
@@ -69,7 +69,7 @@ def test_multi_hour_demo_is_continuous_and_selected_by_source_catalog(
     assert all(bar.low <= min(bar.open, bar.close) <= max(bar.open, bar.close) <= bar.high
                for bar in bars)
     source = next(item for item in client.get("/replay/sources").json()["sources"]
-                  if item["dataset_revision_id"] == f"offline-replay-{instrument.lower()}-v2")
+                  if item["dataset_revision_id"] == f"offline-replay-{instrument.lower()}-v3")
     assert source["bar_count"] == 300
     assert source["non_research_grade"] is True
     assert source["suggested_start"] == DEMO_V2_SELECTED_START.isoformat().replace("+00:00", "Z")
@@ -78,7 +78,7 @@ def test_multi_hour_demo_is_continuous_and_selected_by_source_catalog(
 
 def test_multi_hour_demo_exposes_compression_lifecycle(client: TestClient):
     request = _launch()
-    request["dataset_revision_id"] = "offline-replay-us30-v2"
+    request["dataset_revision_id"] = "offline-replay-us30-v3"
     request["selected_start"] = DEMO_V2_SELECTED_START.isoformat()
     request["selected_end"] = DEMO_V2_END.isoformat()
     response = client.post("/replay", json=request)
@@ -98,6 +98,7 @@ def test_multi_hour_demo_exposes_compression_lifecycle(client: TestClient):
         "limit": 500,
     }).json()
     assert len(view["bars"]) <= 240
+    assert len(view["events"]) <= 12
     assert all(event["detection_time"] <= state["cursor_time"] for event in view["events"])
 
 
@@ -118,8 +119,8 @@ def test_multi_hour_seed_is_idempotent(client: TestClient):
     }
     assert repeated == original
     assert set(original) == {
-        "offline-replay-us30-v1", "offline-replay-us30-v2",
-        "offline-replay-dax-v1", "offline-replay-dax-v2",
+        "offline-replay-us30-v1", "offline-replay-us30-v2", "offline-replay-us30-v3",
+        "offline-replay-dax-v1", "offline-replay-dax-v2", "offline-replay-dax-v3",
     }
 
 
