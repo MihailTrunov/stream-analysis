@@ -42,5 +42,5 @@ test('next event, seek and reset create causal fresh run views', async ({ page }
   await expect(page.getByTestId('candle')).toHaveCount(2);
   const soughtRun = await region.locator('dd code').first().textContent();
   expect(soughtRun).not.toBe(resetRun);
-  await expect(page.getByText(/persistence_confirmed/).first()).toBeVisible();
+  await expect(page.getByText(/Current detector event:.*persistence_confirmed/)).toBeVisible();
 });
