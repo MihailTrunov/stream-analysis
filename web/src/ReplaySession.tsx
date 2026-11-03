@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateReplayState } from './validation';
+import { useHistoryWindow } from './useHistoryWindow';
 import { PanelTabs } from './PanelTabs';
 import { useDetectorSettings } from './useDetectorSettings';
 import { useReplayController } from './useReplayController';
@@ -37,7 +38,6 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const selected = sources.find((source) => source.dataset_revision_id === selectedId);
   const [start, setStart] = useState(tab.start ?? (selected ? dateTimeInput(selected.suggested_start, tab.timezone) : ''));
   const [end, setEnd] = useState(tab.end ?? (selected ? dateTimeInput(selected.suggested_end, tab.timezone) : ''));
-  const [history, setHistory] = useState<ReplayBar[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const [focusTime, setFocusTime] = useState<string | null>(null);
   const [focusVersion, setFocusVersion] = useState(0);
@@ -47,7 +47,6 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const [panel, setPanel] = useState<'patterns' | 'settings'>('patterns');
   const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(tab.runId && !initialRun
     ? 'The previous replay is no longer active. Its saved chart settings are restored; start a new replay to continue.' : null);
   const { config, editedConfig, appliedConfig, previewHash, setEditedConfig, setAppliedConfig, setPreviewHash } =
@@ -70,6 +69,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const chartBars = replay.snapshot?.run_id === state?.run_id ? replay.snapshot?.bars ?? emptyBars : emptyBars;
   const observations = replay.snapshot?.run_id === state?.run_id ? replay.snapshot?.observations ?? emptyObservations : emptyObservations;
   const events = replay.snapshot?.run_id === state?.run_id ? replay.snapshot?.events ?? emptyEvents : emptyEvents;
+  const { history, setHistory, loadingHistory } = useHistoryWindow(active, selected,
+    state?.selected_start ?? selected?.range_end, setError);
   const working = busy || replay.busy;
   const otherReplay = activeRun && activeRun.run_id !== state?.run_id;
   const selectedEvent = events.find((event) => event.emission_order === selectedOrder);
@@ -88,21 +89,6 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     onTabChange(tab.id, { sourceId: selectedId, instrument: selected.instrument_id, start, end,
       ...(editedConfig ? { config: editedConfig, appliedConfig: appliedConfig ?? undefined } : {}) });
   }, [selectedId, start, end, editedConfig, appliedConfig, onTabChange, tab.id, selected]);
-
-  useEffect(() => {
-    if (!active || !selected) return;
-    const controller = new AbortController();
-    const previewEnd = state?.selected_start ?? selected.range_end;
-    if (previewEnd <= selected.range_start) { setHistory([]); return; }
-    setLoadingHistory(true);
-    const params = new URLSearchParams({ instrument_id: selected.instrument_id,
-      start: selected.range_start, end: previewEnd, limit: '500' });
-    void apiJson<{ bars: ReplayBar[] }>(`/replay/sources/${encodeURIComponent(selectedId)}/bars?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setHistory(result.bars); })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) { setHistory([]); setError(errorMessage(reason)); } })
-      .finally(() => { if (!controller.signal.aborted) setLoadingHistory(false); });
-    return () => controller.abort();
-  }, [active, selectedId, selected, state?.run_id, state?.selected_start]);
 
   function clearRunView(resetViewport = true) {
     replay.clearSnapshot();
@@ -278,7 +264,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           </select>
         </div>
         {state && <><p className="replay-status" aria-live="polite">Replay {state.status} · {state.instrument_id} · {state.timeframe} · cursor {state.cursor_index}</p>
-          <div className="secondary-actions"><button type="button" onClick={() => void control('next-event')} disabled={working || !state.has_next || state.status === 'running'}>Next detector event</button>
+          <div className="secondary-actions"><button type="button" onClick={() => void control('next-event')} disabled={working || !replay.ready || !state.has_next || state.status === 'running'}>Next detector event</button>
             <button type="button" onClick={() => void control('reset')} disabled={working}>Reset replay</button></div></>}
         {focusTime && <div className="focus-notice">Viewing {displayTime(focusTime, tab.timezone)}
           <button type="button" onClick={() => setFocusTime(null)}>Return to replay cursor</button></div>}

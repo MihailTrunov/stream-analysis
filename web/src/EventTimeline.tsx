@@ -26,6 +26,8 @@ export function EventTimeline({ events, selectedEventOrder, onSelectEvent, annot
   const [state, setState] = useState('');
   const patterns = [...new Set(events.map((event) => `${event.pattern_id}@${event.pattern_version}`))].sort();
   const states = [...new Set(events.map((event) => event.to_state))].sort();
+  const reviewedEvents = new Set(annotations.map((item) => item.event_id));
+  const reviewedInstances = new Set(annotations.filter((item) => item.target_kind === 'instance').map((item) => item.instance_id));
   const visible = filterTimelineEvents(events, pattern, state);
   return <section aria-label="Detector event timeline" className="event-timeline">
     <h3>Detector event timeline</h3>
@@ -47,8 +49,7 @@ export function EventTimeline({ events, selectedEventOrder, onSelectEvent, annot
           onClick={() => onSelectEvent(event)}>
           <time dateTime={event.detection_time}>{displayTime(event.detection_time, timezone)}</time> · {event.pattern_name ?? event.pattern_id} · {event.from_state} → {event.to_state}
           <small>{event.trigger_id}</small>
-          {annotations.some((item) => item.event_id === event.event_id
-            || (item.target_kind === 'instance' && item.instance_id === event.instance_id))
+          {(reviewedEvents.has(event.event_id) || reviewedInstances.has(event.instance_id))
             && <small> · Reviewed</small>}
         </button>
         {onInspect && <button type="button" className="event-info" aria-label="Pattern details" aria-haspopup="dialog"
