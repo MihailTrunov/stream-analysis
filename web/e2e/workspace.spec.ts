@@ -93,3 +93,20 @@ test('ambiguous UK picker times can be explicitly resolved by choosing UTC', asy
   await expect(page.getByLabel('Chart date and time')).toHaveValue('2026-10-25T01:30');
   await expect(page.getByRole('alert')).toContainText('Check the date/time');
 });
+
+ test('Move to accepts loaded candles without changing the replay cursor', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Move to', exact: true }).click();
+  await expect(page.locator('.focus-notice')).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  await expect(page.getByText('1 replay bars revealed', { exact: false })).toBeVisible();
+  const before = await (await page.request.get('/api/replay/active')).json();
+  await page.getByRole('button', { name: 'Move to', exact: true }).click();
+  await expect(page.locator('.focus-notice')).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  const after = await (await page.request.get('/api/replay/active')).json();
+  expect(after.active.cursor_index).toBe(before.active.cursor_index);
+ });

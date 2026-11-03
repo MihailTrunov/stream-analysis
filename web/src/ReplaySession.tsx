@@ -207,10 +207,11 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
 
   function moveTo() {
     try {
-      const target = inputInstant(start, tab.timezone);
-      if (!visible.some((bar) => bar.timestamp === target)) throw new Error(state
+      const instant = inputInstant(start, tab.timezone);
+      const target = visible.find((bar) => Date.parse(bar.timestamp) === Date.parse(instant))?.timestamp;
+      if (!target) throw new Error(state
         ? 'Choose a candle already revealed by this replay.' : 'This time is outside the loaded local history.');
-      setFocusTime(target); setFocusVersion((version) => version + 1);
+      setError(null); setFocusTime(target); setFocusVersion((version) => version + 1);
     } catch (reason) { setError(errorMessage(reason)); }
   }
 
