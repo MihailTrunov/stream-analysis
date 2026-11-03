@@ -2,6 +2,41 @@
 
 # MVP Scope & Boundaries — Research and Replay MVP
 
+## Next-delivery scope amendment — 2026-11-03
+
+The original research/replay MVP boundary below remains the historical baseline.
+The approved [Chart Workspace](./chart-workspace.md) adds a chart-dominant tabbed
+interface, local provider-streamed monitoring, shared incremental historical
+access, durable retention of live completed candles, and concurrent analytical
+timeframes built from canonical one-minute history. Local live monitoring and
+these specified analytical timeframes are no longer blanket post-MVP exclusions
+for the next delivery. Richer structural support/resistance, composite
+cross-timeframe confirmation rules, hosted operation, production alerts and
+strategy execution have not been added.
+
+Workspace acceptance additionally requires:
+
+- Pre-replay chart visibility, readable axes, zoom, UK display time, right-panel
+  controls and instrument/chart-timeframe selectors over the chart.
+- Restoration of tabs, lazy live reconnection, continued inactive live detection
+  without rendering, and inactive historical replay paused until explicit Play.
+- Shared history loaded while scrolling, completed candles saved on close and
+  already durable records packaged hourly without loss or run-input mutation.
+- Independent per-timeframe detector configuration, Live/Manual/Always on modes,
+  manual historical calculation, and candle-close processing during replay.
+- Developing/Active/Completed occurrence groups, as-of viewport state, filters,
+  cross-timeframe badges, chart focus and separately invoked evidence details.
+- A single date/time picker for Move to versus paused Start replay from, fixed
+  replay endpoints and displayed-candle Step with all underlying updates retained.
+- Runs creation from copied tab settings or presets, durable queue status and
+  separate completed-result tabs with outcomes and original read-only settings.
+
+Existing correctness, versioning, annotation audit and serial evaluation queue
+requirements continue to apply. New aggregation/warm-up/outcome contracts must
+be resolved before multi-timeframe analytical acceptance. A daily chart does
+not silently relax the existing intraday same-trading-day outcome policy.
+See the [delivery plan](../plans/2026-11-03-chart-workspace-delivery.md) for gates.
+
 ## MVP Objective
 
 - Prove the core research loop: define → replay → inspect → modify → batch-test → compare.

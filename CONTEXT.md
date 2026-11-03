@@ -4,7 +4,48 @@ A research environment for defining observable market behaviour, replaying histo
 
 This record distinguishes confirmed MVP commitments from deferred capabilities and decisions still requiring specification. The canonical specifications and affected Jira Stories were reconciled with the decisions recorded by 2026-09-24. The provisional choices added afterward were propagated on 2026-09-26. On 2026-09-27, the four canonical Google Docs were migrated into `docs/core/`; those repository Markdown files are now the authoritative editable specifications. Affected Jira updates remain deferred until those implementation areas begin. Remaining Open decisions are specified when their affected implementation work starts.
 
+Next-delivery update — 2026-11-03: the approved [Chart Workspace](docs/core/chart-workspace.md)
+and [Jira delivery map](docs/plans/2026-11-03-chart-workspace-delivery.md) extend
+the original MVP with tabbed local live/history sessions, shared retained history
+and concurrent analytical timeframes. They take precedence over older conflicting
+single-walkthrough, M1-only analysis and deferred-local-live assumptions. Product
+scope is agreed; implementation and visual acceptance remain pending. The new
+workspace reconciliation has been propagated to Jira, unlike unrelated historical
+follow-ups still deferred below.
+
 ## Language
+
+**Live monitoring**: Interactive viewing of current provider-streamed market data with selected detectors processing newly available market data.
+
+Live monitoring may display a forming candle, but detector evaluation occurs only on completed candle close; forming-candle updates do not produce provisional detector signals.
+
+Completed live source candles are retained as shared historical data and saved durably on close, independently of visualization. Downloaded history is persisted in validated batches as it arrives. Durable records are initially packaged into larger historical segments hourly; recent records remain available before packaging. Tabs using the same feed share ingestion and persistence, and forming-candle updates do not require tick-by-tick archival.
+
+**Historical exploration**: Interactive chart browsing of stored historical market data, from which a researcher can select a period for replay.
+
+The chart workspace supports continuous navigation into earlier instrument history, loading locally available bars or fetching missing provider history as needed. A replay starts with preceding candles visible as context and sufficient analytical warm-up; its selected research interval and causal cursor boundary remain distinct from that visible context.
+
+**Analysis session**: A chart workspace represented by a tab, with its own instrument and analysis mode; multiple sessions may be open together, and launch restores the previously open tabs and active selection. An analysis session is distinct from a reproducible replay or evaluation run.
+
+**Analytical timeframe**: A candle interval explicitly selected for detector processing within an analysis session, with its own enabled detectors and parameters; a session may analyse multiple timeframes concurrently.
+
+**Chart timeframe**: The candle interval displayed in an analysis session, selected independently of its analytical timeframes; changing it does not enable or disable detector processing.
+
+Higher-timeframe candles are constructed from shared canonical one-minute history for charts, live monitoring, historical replay and autonomous evaluation, rather than independently sourced provider candles per timeframe. Alignment and session-boundary rules remain to be specified.
+
+The approved workspace combines detector signals across a session's analytical timeframes, labelling off-chart-timeframe records. Delivery is sequenced in the Jira map; exact higher-timeframe bar semantics are prerequisite SCRUM-127 work.
+
+Restored live sessions reconnect when focused; only the initially focused tab reconnects at launch. Once connected, live sessions continue receiving market data and evaluating completed candles while inactive. Only the focused session renders its visualization; returning to an inactive session brings its display up to date without interrupting detection history.
+
+Historical replay pauses when its analysis tab loses focus and preserves its replay cursor. Returning to the tab leaves it paused until the researcher explicitly presses Play.
+
+**Historical replay**: Interactive progression through historical bars with selected detectors advancing causally alongside the replay cursor; older references to "live walkthrough" refer to this activity.
+
+Each enabled detector within a session's analytical timeframe has an operation mode: **Live** automatically processes completed live candles and permits manual historical calculation; **Manual** calculates history on request without automatic live processing; **Always on** processes completed live candles and automatically calculates historical windows as they are browsed. Manual historical calculation remains available in every mode. Historical replay runs all selected enabled detectors as candles advance, regardless of operation mode, evaluating each analytical timeframe only on its completed candles.
+
+**Completed evaluation review**: Chart exploration of a finished autonomous evaluation's recorded detector events and outcome observations, including subsequent outcome-window bars.
+
+Pattern occurrences in the chart workspace are grouped as **Developing** (pre-confirmation candidates and intermediate states), **Active** (confirmed ongoing states), and **Completed** (ended detector lifecycles). Reversal and continuation enter Completed at confirmation; compression enters Active at confirmation and Completed on release. Completed is a presentation category that retains the actual terminal outcome, including confirmation, invalidation or expiry; it does not redefine detector states.
 
 **EMA-cross segment**: A raw directional interval between opposing completed-bar EMA crossings, distinct from a TrendLeg.
 
@@ -121,7 +162,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 
 - The MVP browser target is the latest Chrome on macOS; Safari and other browsers are outside the supported scope.
 - MVP deployment is single-user and local to the researcher's Mac.
-- At runtime, network access is required only for OANDA history import. Replays and evaluations use locally stored, immutable dataset revisions and remain usable offline after import.
+- Historical fetch and local live monitoring require provider access. Replay and evaluation use locally retained immutable inputs and remain usable offline once those inputs are available.
 - MVP has one supported local startup command using Docker Compose. It launches PostgreSQL, the API, the autonomous-evaluation worker, the import worker, and the browser UI as a coherent stack.
 - A fresh MVP install includes a small seeded demo dataset and preset so the local stack, walkthrough, and diagnostics can be verified offline before OANDA credentials are configured. Demo data is clearly non-research-grade.
 - MVP targets Python 3.13; pin the container and tooling to that version.
@@ -141,17 +182,17 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 
 ### Walkthrough, chart, and analytical pipeline
 
-- A live walkthrough is an interactive, bar-by-bar UI session. Only one live walkthrough may run in that UI at once; starting another is unavailable until the current walkthrough stops. This limitation does not make an autonomous evaluation block ordinary UI interaction.
+- Each analysis tab has independent session/configuration identity. Several connected live tabs may process concurrently, but only the focused tab renders. Historical replay pauses on focus loss. Autonomous evaluation remains separately responsive and serial; tab concurrency does not authorize parallel evaluation jobs.
 - Autonomous evaluation must not block a concurrent bar-by-bar walkthrough over the smaller, several-hour interval the researcher is inspecting in the UI. Design the API/service boundary so interactive walkthrough work remains available while the background evaluation queue runs.
 - The autonomous evaluator runs in bounded chunks at lower CPU priority, while interactive walkthrough state is served separately. This protects local UI/API responsiveness without changing deterministic evaluation results.
 - For MVP, each detector is an explicitly registered, versioned code implementation. Configuration may enable and parameterize registered detectors, but cannot load detector logic or formulas from the browser.
 - Autonomous evaluation reads long datasets incrementally in bounded chunks, retaining only active analytical state and the rolling look-ahead needed for outcome horizons. It does not load the full dataset or every intermediate state into memory.
 - Each evaluation processes bars in one deterministic order and gives every registered detector the same immutable per-bar MarketState. Execution is serial per bar; event ordering and replay/evaluation parity take precedence.
 - Live walkthrough and autonomous evaluation invoke the same deterministic analytical pipeline. They differ only in driver, pace, and persistence; they never use separate EMA, structural-state, or detector implementations.
-- A live walkthrough is an ephemeral browser session, not a persisted background job. Persist selected range/cursor in browser-local state for refresh recovery, then recompute from immutable dataset and configuration rather than maintaining a second durable walkthrough lifecycle.
+- Interactive replay is distinct from a durable autonomous job. Restore workspace tabs/view/configuration identity, recovering analytical state only from pinned immutable inputs and equivalent code/configuration. Full backend-restart replay recovery remains to be specified; do not assume browser-local cursor storage alone preserves analytical state.
 - The MVP browser observes evaluation status and progress by polling the API. Do not add WebSockets or server-sent events for the single-user local evaluation workflow.
 - The browser requests bars, overlays, and events by visible time range/window from the API. Do not load a full year of one-minute history into the chart; replay/navigation scale with the viewport rather than total dataset size.
-- When a chart viewport would contain more than an implementation-measured bar cap, the API returns deterministic display-only higher-timeframe OHLC aggregates. Drilling into a region returns canonical one-minute bars; analytical state, detector decisions, and event evidence always remain one-minute.
+- Bound viewport requests/rendering by measured supported-browser limits. Canonical source resolution remains M1; selected analytical timeframes consume their own versioned completed aggregates. Chart-only resampling is separate and cannot silently change analytical inputs or evidence.
 - Enforce architecture with automated import-boundary tests: domain, structure, and detector logic remain independent of FastAPI, SQLAlchemy, OANDA, and browser concerns; application code orchestrates use cases; API, persistence, and provider adapters depend inward. This is a CI guardrail, not a runtime service.
 
 ### Autonomous evaluation, queue, and concurrency
@@ -159,7 +200,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 - MVP supports a UI-managed queue of autonomous evaluations. Researchers may schedule multiple runs from the browser; queued runs execute in sequence, with exactly one evaluation running at a time. Completed-result review remains available while the queue runs.
 - Closing the browser does not stop a background evaluation. An interrupted or cancelled evaluation preserves partial output as incomplete and offers a new run from the beginning with the same pinned inputs.
 - Autonomous evaluations run in a dedicated local worker service. The API creates and monitors each job; the worker performs long-running work independently of the browser, so evaluation does not block ordinary UI interaction.
-- An active autonomous evaluation pins its dataset revision and configuration snapshot. The evaluated pattern/configuration cannot be changed into a new version until that evaluation is stopped; the UI exposes this restriction and shows the active job and queue.
+- An active autonomous evaluation pins its data, code and resolved configuration. Independent tab or preset configuration revisions must not alter that job's snapshot; its inputs cannot be edited in place. New detector formulas require separately versioned code and do not hot-swap into a running job.
 - The UI supports reordering or removing queued evaluations that have not started. These operations never change frozen dataset revisions or configuration snapshots; running jobs remain immutable.
 - Scheduled autonomous evaluations auto-run one after another by default. A user-initiated stop completes the current bounded chunk, marks that evaluation `CANCELLED` (not `FAILED`), preserves its partial output as incomplete, and disables queue auto-run until the user explicitly re-enables it. The user may manually start any scheduled evaluation; queue ordering and any skipped evaluations are their responsibility.
 - The evaluation queue is persisted in PostgreSQL, not browser-local state. Queue order and frozen job snapshots remain visible after refresh or stack restart, although auto-run remains disabled after an unexpected restart.
@@ -223,7 +264,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 
 ## Deferred / post-MVP
 
-- Remotely operated ingestion, computation, or live analysis feeds that work while the local Mac is off; cloud hosting, always-on operations, authentication, tenancy, and remote/LAN access. A future live feed must use the canonical bar-normalization, validation, and provenance interface before detectors consume its data.
+- Remotely operated ingestion, computation, or live analysis feeds that work while the local Mac is off; cloud hosting, always-on operations, authentication, tenancy, and remote/LAN access. Local live monitoring is in the next workspace delivery and uses canonical normalization, validation and provenance before detection.
 - Automatic evaluation checkpoint recovery and automatic gap reset/recovery. Interrupted evaluations retain incomplete output; a new run starts from pinned inputs.
 - Automatic matching of missed-pattern annotations to detections and recall scoring.
 - Centralized secret provisioning for OANDA credentials; automatic cloud backups; and hosted telemetry or monitoring.
@@ -238,7 +279,7 @@ These are committed MVP requirements. The deferred capabilities and unresolved i
 
 These details are deliberately resolved when their affected implementation work starts; they do not block unrelated MVP work. Provisional detector fields and warm-up rules above may be refined through versioned schemas and fixtures without changing prior runs.
 
-- During chart implementation, choose the viewport bar cap from measured Chrome/Mac performance and specify aggregation bucket size/alignment and partial-bucket handling. Aggregates remain display-only; one-minute canonical bars drive analysis.
+- SCRUM-127 specifies analytical aggregation alignment, partial/gapped buckets, initialization anchors, ordering, calendar coverage and higher-timeframe outcome units. SCRUM-129/130 implement analytical streams from M1 source history; independent display aggregation and viewport caps must still be measured on Chrome/Mac.
 - During benchmark implementation, pin the detector versions/configurations, default outcomes, dataset revision, and development Mac hardware specifications for the agreed one-year/five-minute target.
 
 ## Example dialogue

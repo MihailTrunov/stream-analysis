@@ -2,6 +2,54 @@
 
 # Core Domain Model — Intraday Market Analysis Platform
 
+## Chart-workspace domain amendment — 2026-11-03
+
+This section and the [Chart Workspace specification](./chart-workspace.md)
+supersede earlier one-minute-only and single-walkthrough assumptions for the
+next delivery. Existing immutable event, context, outcome and run concepts retain
+their meanings; workspace presentation does not redefine detector truth.
+
+- **Analysis session:** a tab's instrument, analysis mode, chart view and
+  analytical configurations; distinct from a reproducible analytical run.
+- **Chart timeframe:** the displayed candle interval, independent of analysis.
+- **Analytical timeframe:** a selected interval with its own detector/component
+  configuration and causal processing state. A session may contain several.
+- **Live monitoring:** current provider data through canonical normalization and
+  the shared runtime; forming candles may be displayed but do not trigger detection.
+- **Historical exploration:** free history browsing with manual or automatic
+  detector calculation, distinct from progressive historical replay.
+- **Historical replay:** sequential source-minute progression with each selected
+  analytical timeframe evaluated on its completed candle. Legacy "live walkthrough"
+  means historical replay, not a streamed market feed.
+- **Completed evaluation review:** inspection of persisted events and outcomes
+  under the run's original configuration, with explicit later-outcome visibility.
+
+A session's detector operation mode controls automatic live/history triggers:
+Live = live close plus manual history; Manual = manual history; Always on = live
+close plus automatic historical-window calculation. Replay processes every
+selected enabled detector on analytical candle advance regardless of this mode.
+Operation policy and visibility filters must not be confused with detector rules;
+where scheduling policy is stored or hashed must preserve analytical identity
+for equivalent resolved detector inputs.
+
+Higher-timeframe candles derive from retained canonical source minutes. A run
+pins source revisions, resolved per-timeframe analytical configuration,
+aggregation/calendar versions and deterministic ordering. Detection-time context
+and outcome lineage must identify the source analytical timeframe. Configuration
+parameter revisions do not imply new detector versions; formula changes do.
+
+The panel groups occurrences as Developing (pre-confirmation), Active (ongoing
+confirmed state) and Completed (terminal). Reversal/continuation end on confirmation;
+compression remains active until release. Completed also includes invalidated and
+expired occurrences with their true terminal labels. Categories are projections
+as observable at the viewed period's right edge, capped by the replay cursor;
+future transitions cannot rewrite that earlier projection. Presentation ordering
+by latest detection-time transition does not replace canonical event ordering.
+
+Exact candle alignment, deterministic initialization anchors, cross-timeframe
+ordering and higher-timeframe outcome horizon units remain contract prerequisites.
+Do not infer them from UI timezone, chart zoom, or a timeframe label.
+
 ## Purpose
 
 - Define the core concepts, relationships, lifecycle states, and terminology used across historical replay, batch research, and live analysis.

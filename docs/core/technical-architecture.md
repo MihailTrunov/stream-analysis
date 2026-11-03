@@ -12,6 +12,65 @@ Authority: this document is the canonical technical-architecture reference for t
 
 Source alignment: the architecture preserves the established principles of one analytical runtime across replay/batch/live, strict no-look-ahead semantics, deterministic replay, explicit event_time versus detection_time, versioned detector/configuration lineage, and separation of detection from outcome evaluation and strategy simulation.
 
+## Workspace architecture amendment — 2026-11-03
+
+The approved [Chart Workspace](./chart-workspace.md) extends the original MVP
+with local live monitoring, multiple analysis sessions and independently selected
+analytical timeframes. This section takes precedence over older single-session,
+display-only-aggregation and later-live wording for that delivery. PostgreSQL
+metadata and immutable Parquet history remain the storage baseline; the earlier
+mutable bars-table sketch below was already superseded by the 2026-09-24
+reconciliation and SCRUM-124.
+
+- Keep provider ingress, analysis processing and DOM/chart rendering separate.
+  Share each feed's acquisition/persistence across tabs; retain independent
+  analytical state/configuration where sessions differ. A hidden tab's rendering
+  suspension cannot stop its already-connected live processing.
+- Restore workspace layout and tab identity, connecting only the focused live
+  tab initially. Do not turn all restored tabs into immediate provider requests.
+  Historical replay pauses on focus loss and requires Play on return.
+- Provide viewport/range history reads over a shared coverage catalogue. Missing
+  source ranges use background acquisition, validated durable batches and
+  immutable publication. Coalesce equivalent work and bound requests/memory;
+  retain actionable loading, failure and missing-history states.
+- Live completed source minutes are made durable on close. Historical downloads
+  persist validated batches as received. Package durable records hourly as the
+  initial policy; expose recent durable records before packaging. Atomic
+  publication/recovery must avoid acknowledged-data loss and pinned-input mutation.
+  Adapt existing durable ingestion machinery rather than introducing a separate
+  untracked per-tab store. Exact staging/read-through mechanics need a design.
+- Source minutes remain canonical. Versioned aggregation creates 5m/15m/30m/1h/
+  4h/1D analytical bars, not only chart display aggregates. Each analytical stream
+  drives the same market-state/detector runtime on its completed bars; display
+  grouping is independently selectable. Persist aggregation/timeframe/calendar
+  lineage. One shared source-minute cursor bounds replay availability across streams.
+- Run manual/automatic historical-window detection server-side with sufficient
+  deterministic initialization. UI never computes analytical evidence. Reuse
+  compatible results only when source/configuration/aggregation/initialization
+  identity matches; stale viewport work cannot overwrite newer requested results.
+  Request scheduling and resource limits are implementation design choices.
+- Project occurrence state as of the viewport edge from observable transitions;
+  do not apply a later terminal state to an earlier historical view. Keep the
+  panel's recent-first presentation order distinct from analytical event order.
+- New configuration Apply creates attributable analytical inputs and reinitializes
+  affected live analysis. Stop replay before configuration changes. Preserve prior
+  records under their original lineage; tab edits never mutate queued/running jobs.
+- Retain local single-user Compose, inward dependency boundaries, serial durable
+  autonomous jobs, clean-build evaluation preflight, audit and backup requirements.
+  Job-status polling remains suitable; live delivery transport is selected when
+  implementing the actual feed and must not be assumed from the old polling rule.
+- UK display conversion is presentation only. Candle alignment, calendar coverage,
+  DST inputs, daily boundaries, partial/gapped buckets, source-live finalization,
+  initialization anchors and cross-timeframe ordering require explicit contracts.
+  The current M1-only TrendLeg qualification and verified-calendar coverage limits
+  are real implementation constraints, not permission to remove validation.
+- Extend semantic replay/exploration/captured-live/evaluation parity, causal guards,
+  durable recovery tests and supported Chrome/Mac interaction/performance evidence.
+  Do not use live-provider access in routine deterministic CI fixtures.
+
+The [delivery plan](../plans/2026-11-03-chart-workspace-delivery.md) defines the
+implementation order and existing Jira contracts retained or amended.
+
 ## Architecture Goals
 
 Make deterministic analytical behavior the primary architectural constraint.
@@ -534,7 +593,7 @@ The following decisions are authoritative for MVP implementation and supersede e
 
 - Evaluation recovery: a manual stop records CANCELLED and preserves incomplete output; stale-heartbeat recovery records FAILED. Automatic checkpoint resume is post-MVP.
 
-- UI/data access: chart APIs are visible-range/viewport based; deterministic display-only OHLC aggregation may be used for overly wide views, while all analysis remains on canonical one-minute bars.
+- UI/data access: chart APIs are visible-range/viewport based. The original MVP used analytical M1 only and display-only aggregation. The 2026-11-03 amendment adds selected analytical timeframe streams from canonical M1; chart-only resampling remains independent of analytical inputs.
 
 - Operations: MVP includes local diagnostics, bounded log rotation, manual backup/restore, a seeded non-research demo dataset/preset, and lineage-aware exports.
 
@@ -574,6 +633,6 @@ Implementation-time choices
 
 - Exact provider trading-day boundaries, IANA-zone mappings, scheduled breaks, holiday exceptions and DST fixtures are verified when calendar/import/outcome work begins.
 
-- The chart viewport bar cap plus display-aggregation bucket size/alignment/partial-bucket rules are chosen from measured supported-browser performance during chart implementation; analytical computation remains one-minute.
+- Choose chart viewport limits from measured supported-browser performance. Analytical aggregation alignment/partial-bucket rules and per-timeframe computation follow the 2026-11-03 workspace amendment and prerequisite contract; display-only aggregation remains a separate optimization.
 
 - Benchmark detector/configuration/outcome versions, dataset revision and reference-Mac hardware are pinned when the benchmark is implemented. These choices do not block unrelated architecture or MVP work.

@@ -2,6 +2,23 @@
 
 # Product Scope — Intraday Market Analysis & Research Platform
 
+## Current delivery authority — 2026-11-03
+
+The [Chart Workspace specification](./chart-workspace.md) defines the approved
+next delivery after the original research/replay baseline. Local live monitoring,
+tabbed sessions, shared on-demand history and analysis across 1m/5m/15m/30m/1h/4h/1D
+are now committed product requirements. Earlier statements below deferring all
+live feeds or all multi-timeframe analysis describe the original MVP boundary
+and are superseded for this delivery. This scope decision is not an implementation
+or acceptance claim; delivery is sequenced in the
+[workspace plan](../plans/2026-11-03-chart-workspace-delivery.md).
+
+The chart is the main workspace for live monitoring, historical exploration and
+causal replay, and completed evaluation review. Autonomous evaluations remain
+separate background work managed through Runs. Local single-user operation,
+immutable analytical evidence, serial autonomous evaluation, no production
+alert delivery and no order execution remain the product boundaries.
+
 ## Purpose
 
 - Build a deterministic digital environment for intraday market analysis, pattern research, historical replay, quantitative evaluation, and live interpretation.
@@ -124,9 +141,11 @@
 
 - Primary focus: US30 and DAX.
 
-- Initial analytical timeframe: 1-minute OHLC.
+- Canonical retained source resolution: one-minute OHLC.
 
-- Multi-timeframe context may be derived later from the same underlying data.
+- The workspace derives 1m, 5m, 15m, 30m, 1h, 4h and 1D analytical/display
+  candles from that shared source. Analytical timeframes are configured per
+  detector per tab and are independent of the displayed chart timeframe.
 
 - Data-provider integration must remain replaceable; OANDA may be used initially where appropriate, but the domain model must not depend on one provider.
 
