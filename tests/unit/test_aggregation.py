@@ -113,3 +113,14 @@ def test_trading_day_boundary_clips_intraday_bucket() -> None:
     assert end.hour == 0  # UTC bucket ends before the next 01:00 trading boundary
     start, end = bucket_bounds(datetime(2026, 1, 6, 0, 30, tzinfo=UTC), Timeframe.H4, cal)
     assert start.hour == 0 and end.hour == 1
+
+
+def test_boundary_shortened_candle_is_labelled_and_observed_at_boundary() -> None:
+    cal = calendar(boundary=time(1))
+    start = datetime(2026, 1, 6, 0, tzinfo=UTC)
+    aggregator = CandleAggregator(Timeframe.H4, cal)
+    results = [c for i in range(60) for c in aggregator.push(bar(start + timedelta(minutes=i), i))]
+    assert len(results) == 1
+    assert results[0].available_at == start + timedelta(hours=1)
+    assert results[0].source_count == 60
+    assert "boundary_shortened" in results[0].bar.quality_flags
