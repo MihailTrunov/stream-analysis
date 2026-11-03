@@ -49,6 +49,7 @@ export interface ReplayState {
   selected_end: string;
   detection_config_hash: string;
   calendar_version: string;
+  detection_config?: DetectionConfig;
   warmup_required: number;
   warmup_processed: number;
   visible_bars: number;
@@ -149,6 +150,19 @@ export interface ReplayViewResponse extends ReplayBarsResponse {
   events: ReplayDetectorEvent[];
 }
 
+const instantFields = new Set(['timestamp', 'event_time', 'detection_time', 'cursor_time',
+  'selected_start', 'selected_end', 'range_start', 'range_end', 'suggested_start', 'suggested_end']);
+
+export function normalizeApiInstants(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeApiInstants);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
+    key === 'rationale' || key === 'evidence' ? item
+      : instantFields.has(key) && typeof item === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(item)
+        && Number.isFinite(Date.parse(item))
+        ? new Date(item).toISOString().replace('.000Z', 'Z') : normalizeApiInstants(item)]));
+  return value;
+}
+
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -162,5 +176,5 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
     } catch { /* Preserve the HTTP status. */ }
     throw new Error(message);
   }
-  return response.json() as Promise<T>;
+  return normalizeApiInstants(await response.json()) as T;
 }

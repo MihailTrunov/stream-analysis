@@ -7,6 +7,7 @@ import {
 } from 'lightweight-charts';
 import { buildChartModel, type ChartLayers } from './chartModel';
 import type { ReplayBar, ReplayDetectorEvent, ReplayObservation } from './replay';
+import { dateTimeInput, displayTime, type DisplayTimezone } from './time';
 
 export type OverlayVisibility = ChartLayers;
 interface Props {
@@ -20,10 +21,18 @@ interface Props {
   cursorTime: string | null;
   focusTime?: string | null;
   overlays: OverlayVisibility;
+  timezone?: DisplayTimezone;
+  resetKey?: string;
+  initialRange?: { from: number; to: number } | null;
+  onRangeChange?: (range: { from: number; to: number }) => void;
+  focusVersion?: number;
+  onReturnLatest?: () => void;
 }
 
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
-  onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays }: Props) {
+  onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays,
+  timezone = 'Europe/London', resetKey = '', initialRange = null, onRangeChange,
+  focusVersion = 0, onReturnLatest }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -32,10 +41,15 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
   const range = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priorCount = useRef(0);
   const priorFocus = useRef<string | null>(null);
+  const priorFocusVersion = useRef(0);
   const [chartError, setChartError] = useState<string | null>(null);
-  const callbacks = useRef({ onSelectEvent, onSelectBar });
+  const callbacks = useRef({ onSelectEvent, onSelectBar, onRangeChange });
+  const initialViewport = useRef(initialRange);
+  initialViewport.current = initialRange;
+  const following = useRef(initialRange === null);
+  const [isFollowing, setIsFollowing] = useState(initialRange === null);
   const timestamps = useRef(new Map<number, string>());
-  callbacks.current = { onSelectEvent, onSelectBar };
+  callbacks.current = { onSelectEvent, onSelectBar, onRangeChange };
 
   const result = useMemo(() => {
     try {
@@ -52,7 +66,6 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     try {
       const instance = createChart(container.current, {
         autoSize: true,
-        height: 520,
         layout: {
           background: { color: '#fbfcfd' },
           textColor: '#344457',
@@ -67,14 +80,13 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
           visible: true, timeVisible: true, secondsVisible: false,
           borderColor: '#a5b2bf', barSpacing: 8, rightOffset: 4,
           tickMarkFormatter: (value: Time, kind: TickMarkType) => {
-            const utc = new Date(Number(value) * 1000).toISOString();
-            return kind <= TickMarkType.DayOfMonth ? utc.slice(0, 10) : utc.slice(11, 16);
+            const local = dateTimeInput(new Date(Number(value) * 1000).toISOString(), timezone);
+            return kind <= TickMarkType.DayOfMonth ? local.slice(0, 10) : local.slice(11, 16);
           },
         },
         crosshair: { mode: CrosshairMode.Normal },
         localization: {
-          timeFormatter: (value: Time) => new Date(Number(value) * 1000)
-            .toISOString().slice(0, 16).replace('T', ' ') + ' UTC',
+          timeFormatter: (value: Time) => displayTime(new Date(Number(value) * 1000).toISOString(), timezone),
         },
       });
       const series = instance.addSeries(CandlestickSeries, {
@@ -97,6 +109,11 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       chart.current = instance;
       candles.current = series;
       markers.current = markerPlugin;
+      priorFocus.current = focusTime;
+      priorFocusVersion.current = focusVersion;
+      instance.timeScale().subscribeVisibleLogicalRangeChange((value) => {
+        if (value) callbacks.current.onRangeChange?.({ from: Number(value.from), to: Number(value.to) });
+      });
       return () => {
         markerPlugin.detach();
         instance.remove();
@@ -106,12 +123,13 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         ema.current.clear();
         range.current = null;
         priorCount.current = 0;
+        priorFocus.current = null;
       };
     } catch (reason) {
       setChartError(reason instanceof Error ? reason.message : String(reason));
       return;
     }
-  }, []);
+  }, [timezone, resetKey]);
 
   useEffect(() => {
     const instance = chart.current;
@@ -158,20 +176,27 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       }
       if (model.candles.length && (priorCount.current === 0
         || model.candles.length < priorCount.current)) {
-        instance.timeScale().fitContent();
+        instance.timeScale().setVisibleLogicalRange(initialViewport.current ?? {
+          from: model.candles.length - 90, to: model.candles.length + 4,
+        });
+      } else if (model.candles.length > priorCount.current && following.current) {
+        instance.timeScale().scrollToRealTime();
       }
       priorCount.current = model.candles.length;
       setChartError(null);
     } catch (reason) {
       setChartError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [result]);
+  }, [result, timezone, resetKey]);
 
   useEffect(() => {
     const instance = chart.current;
     const model = result.model;
-    if (!instance || !model?.candles.length || focusTime === priorFocus.current) return;
+    if (!instance || !model?.candles.length || (focusTime === priorFocus.current
+      && focusVersion === priorFocusVersion.current)) return;
     if (focusTime) {
+      following.current = false;
+      setIsFollowing(false);
       const index = model.candles.findIndex((bar) => model.timestamps.get(bar.time) === focusTime);
       if (index < 0) return;
       instance.timeScale().setVisibleLogicalRange({
@@ -179,18 +204,37 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         to: Math.min(model.candles.length - 1, index + 25),
       });
     } else {
+      following.current = true;
+      setIsFollowing(true);
       instance.timeScale().scrollToRealTime();
     }
     priorFocus.current = focusTime;
-  }, [focusTime, result]);
+    priorFocusVersion.current = focusVersion;
+  }, [focusTime, focusVersion, result, timezone, resetKey]);
+
+  function navigate() { following.current = false; setIsFollowing(false); }
+  function zoom(factor: number) {
+    const scale = chart.current?.timeScale();
+    if (!scale) return;
+    scale.applyOptions({ barSpacing: Math.max(2, Math.min(50, scale.options().barSpacing * factor)) });
+  }
 
   return <div className="chart-viewport">
     {(result.error || chartError) && <p role="alert">Chart unavailable: {result.error || chartError}. Replay controls and the event timeline remain available.</p>}
-    <div ref={container} className="trading-chart" role="img"
-      aria-label={`Interactive UTC candlestick chart with price and time scales; ${result.model?.candles.length ?? 0} visible bars through ${cursorTime ?? 'no cursor'}`} />
+    <div ref={container} className="trading-chart" role="img" onPointerDown={navigate} onWheel={navigate}
+      aria-label={`Interactive ${timezone === 'Europe/London' ? 'UK time' : 'UTC'} candlestick chart with price and time scales; ${result.model?.candles.length ?? 0} visible bars through ${cursorTime ?? 'no cursor'}`} />
+    <div className="chart-navigation" aria-label="Chart navigation">
+      <button type="button" aria-label="Zoom in" onClick={() => zoom(1.3)}>＋</button>
+      <button type="button" aria-label="Zoom out" onClick={() => zoom(1 / 1.3)}>−</button>
+      <button type="button" onClick={() => { navigate(); chart.current?.timeScale().fitContent(); }}>Fit candles</button>
+      <button type="button" onClick={() => {
+        following.current = true; setIsFollowing(true); chart.current?.timeScale().scrollToRealTime();
+        onReturnLatest?.();
+      }} disabled={isFollowing && !focusTime}>Return to latest</button>
+    </div>
     <p className="chart-caption">
       {bars.length
-        ? <>Current visible bar: <time>{bars.at(-1)?.timestamp}</time> · {result.model?.candles.length ?? 0} candles loaded. Scroll to zoom; drag to pan; click a candle to select it for a missed-pattern review.</>
+        ? <><time>{displayTime(bars.at(-1)!.timestamp, timezone)}</time> · {result.model?.candles.length ?? 0} candles · Drag to pan · Scroll to zoom</>
         : 'No visible candles yet. Step once to process warm-up and reveal the first selected bar.'}
       {' '}Charting by <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>.
     </p>

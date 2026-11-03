@@ -15,6 +15,7 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${webPort}`,
     browserName: 'chromium',
     channel: 'chrome',
+    viewport: { width: 1440, height: 900 },
   },
   webServer: [
     {

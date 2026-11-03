@@ -56,6 +56,49 @@ def _launch(instrument: str = "US30") -> dict[str, object]:
     }
 
 
+def test_published_history_is_bounded_and_does_not_create_or_advance_replay(client: TestClient):
+    source = next(item for item in client.get("/replay/sources").json()["sources"]
+                  if item["dataset_revision_id"] == "offline-replay-us30-v3")
+    response = client.get("/replay/sources/offline-replay-us30-v3/bars", params={
+        "instrument_id": "US30", "start": source["range_start"],
+        "end": source["range_end"], "limit": 25,
+    })
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["bars"]) == 25
+    assert payload["canonical_checksum"] == source["canonical_checksum"]
+    assert client.get("/replay/active").json()["active"] is None
+    launched = client.post("/replay", json=_launch()).json()
+    before = client.get(f"/replay/{launched['run_id']}").json()
+    assert client.get("/replay/sources/offline-replay-us30-v3/bars", params={
+        "instrument_id": "US30", "start": source["range_start"],
+        "end": source["range_end"],
+    }).status_code == 200
+    assert client.get(f"/replay/{launched['run_id']}").json() == before
+    view = client.get(f"/replay/{launched['run_id']}/view", params={
+        "start": DEMO_SELECTED_START.isoformat(), "end": DEMO_END.isoformat(),
+    })
+    assert view.json()["bars"] == []
+    assert view.json()["events"] == []
+
+
+@pytest.mark.parametrize("overrides", [
+    {"limit": 0}, {"limit": 501}, {"instrument_id": "unknown"},
+    {"start": "2026-01-05T09:00:00"}, {"start": "2025-01-01T09:00:00Z"},
+    {"end": "2026-01-04T09:00:00Z"},
+])
+def test_published_history_rejects_invalid_or_unbounded_requests(
+    client: TestClient, overrides: dict[str, object],
+):
+    params: dict[str, object] = {
+        "instrument_id": "US30", "start": "2026-01-05T09:00:00Z",
+        "end": "2026-01-05T14:00:00Z", "limit": 500,
+    }
+    params.update(overrides)
+    response = client.get("/replay/sources/offline-replay-us30-v3/bars", params=params)
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize("instrument", ["US30", "DAX"])
 def test_multi_hour_demo_is_continuous_and_selected_by_source_catalog(
     client: TestClient, instrument: str,

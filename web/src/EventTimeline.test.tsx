@@ -38,6 +38,7 @@ describe('detector event timeline', () => {
     expect(html.match(/data-testid="timeline-event"/g)).toHaveLength(3);
     expect(html.indexOf('data-emission-order="0"')).toBeLessThan(html.indexOf('data-emission-order="1"'));
     expect(html).toContain('aria-current="true"');
-    expect(html).toContain('score');
+    expect(html).toContain('Fixture A');
+    expect(html).not.toContain('&quot;score&quot;');
   });
 });

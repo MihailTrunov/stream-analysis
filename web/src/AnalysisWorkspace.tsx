@@ -1,0 +1,99 @@
+import { useCallback, useEffect, useState } from 'react';
+import { ReplaySession } from './ReplaySession';
+import { apiJson, type ReplaySource, type ReplayState, type ReviewPattern } from './replay';
+import { newTab, restoreWorkspace, WORKSPACE_KEY, type AnalysisTab, type Workspace } from './workspace';
+
+interface Bootstrap { sources: ReplaySource[]; patterns: ReviewPattern[]; active: ReplayState | null }
+
+export function AnalysisWorkspace() {
+  const [workspace, setWorkspace] = useState<Workspace>(() => {
+    try { return restoreWorkspace(localStorage.getItem(WORKSPACE_KEY)); }
+    catch { return restoreWorkspace(null); }
+  });
+  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      apiJson<{ sources: ReplaySource[] }>('/replay/sources', { signal: controller.signal }),
+      apiJson<{ patterns: ReviewPattern[] }>('/pattern-definitions', { signal: controller.signal }),
+      apiJson<{ active: ReplayState | null }>('/replay/active', { signal: controller.signal }),
+    ]).then(async ([catalog, definitions, running]) => {
+      if (controller.signal.aborted) return;
+      const active = running.active?.status === 'running'
+        ? await apiJson<ReplayState>(`/replay/${running.active.run_id}/pause`, { method: 'POST', signal: controller.signal })
+        : running.active;
+      if (controller.signal.aborted) return;
+      if (active) setWorkspace((current) => {
+        if (current.tabs.some((tab) => tab.runId === active.run_id)) return current;
+        const tab = { ...newTab(active.instrument_id), sourceId: active.dataset_revision_id, runId: active.run_id };
+        return { ...current, tabs: [...current.tabs, tab], activeId: tab.id };
+      });
+      setBootstrap({ sources: catalog.sources, patterns: definitions.patterns, active });
+    }).catch((reason: unknown) => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(WORKSPACE_KEY, JSON.stringify(workspace)); setStorageError(false); }
+    catch { setStorageError(true); }
+  }, [workspace]);
+
+  const updateTab = useCallback((id: string, patch: Partial<AnalysisTab>) => {
+    setWorkspace((current) => {
+      const target = current.tabs.find((tab) => tab.id === id);
+      if (!target || Object.entries(patch).every(([key, value]) => target[key as keyof AnalysisTab] === value)) return current;
+      return { ...current, tabs: current.tabs.map((tab) => tab.id === id ? { ...tab, ...patch } : tab) };
+    });
+  }, []);
+
+  const updateRun = useCallback((id: string, state: ReplayState | null) => {
+    updateTab(id, { runId: state?.run_id ?? null });
+    setBootstrap((current) => current ? { ...current, active: state } : current);
+  }, [updateTab]);
+
+  function closeTab(id: string) {
+    setWorkspace((current) => {
+      const tabs = current.tabs.filter((tab) => tab.id !== id);
+      if (!tabs.length) return current;
+      return { ...current, tabs, activeId: current.activeId === id ? tabs.at(-1)!.id : current.activeId };
+    });
+  }
+
+  return <>
+    <div className="workspace-tabs" role="tablist" aria-label="Analysis sessions">
+      {workspace.tabs.map((tab) => <div className={`workspace-tab ${tab.id === workspace.activeId ? 'selected' : ''}`} key={tab.id}>
+        <button type="button" role="tab" id={`tab-${tab.id}`} aria-controls={`session-${tab.id}`}
+          aria-selected={tab.id === workspace.activeId} tabIndex={tab.id === workspace.activeId ? 0 : -1}
+          onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const index = workspace.tabs.findIndex((item) => item.id === tab.id);
+            const next = event.key === 'Home' ? workspace.tabs[0] : event.key === 'End' ? workspace.tabs.at(-1)!
+              : workspace.tabs[(index + (event.key === 'ArrowRight' ? 1 : workspace.tabs.length - 1)) % workspace.tabs.length];
+            setWorkspace((current) => ({ ...current, activeId: next.id }));
+            document.getElementById(`tab-${next.id}`)?.focus();
+          }} onClick={() => setWorkspace((current) => ({ ...current, activeId: tab.id }))}>
+          <span className="tab-status" aria-hidden="true" />{tab.instrument}<span className="tab-mode">{tab.runId ? 'Replay' : 'History'}</span>
+        </button>
+        <button type="button" className="close-tab" aria-label={`Close ${tab.instrument} tab`}
+          title={tab.runId && bootstrap?.active?.run_id === tab.runId ? 'Stop this replay before closing its tab' : 'Close tab'}
+          disabled={workspace.tabs.length === 1 || (Boolean(tab.runId) && bootstrap?.active?.run_id === tab.runId)}
+          onClick={() => closeTab(tab.id)}>×</button>
+      </div>)}
+      <button type="button" className="add-tab" aria-label="New analysis tab" disabled={workspace.tabs.length >= 20}
+        onClick={() => { const tab = newTab(); setWorkspace((current) => ({ ...current, tabs: [...current.tabs, tab], activeId: tab.id })); }}>＋</button>
+      <span className="workspace-local">LOCAL WORKSPACE</span>
+    </div>
+    {storageError && <p role="status" className="workspace-warning">Tab restoration is unavailable because browser storage could not be saved.</p>}
+    {error && <div className="workspace-loading" role="alert"><h2>Unable to load the workspace</h2><p>{error}</p><p>Check the local API in Diagnostics, then reload.</p></div>}
+    {!bootstrap && !error && <div className="workspace-loading" role="status">Loading local instrument history…</div>}
+    {bootstrap && workspace.tabs.map((tab) => <ReplaySession key={tab.id} tab={tab}
+      active={tab.id === workspace.activeId} sources={bootstrap.sources} patterns={bootstrap.patterns}
+      activeRun={bootstrap.active} onTabChange={updateTab} onRunChange={updateRun} />)}
+  </>;
+}

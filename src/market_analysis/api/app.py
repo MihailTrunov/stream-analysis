@@ -17,6 +17,7 @@ from market_analysis import __version__
 from market_analysis.application.browser_replay import (
     BrowserReplayError,
     browser_replay,
+    published_source_bars,
     replay_sources,
 )
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
@@ -357,6 +358,20 @@ def browser_replay_default_config(instrument_id: str) -> dict[str, object]:
         }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/replay/sources/{revision_id}/bars")
+def published_browser_source_bars(
+    revision_id: str, instrument_id: str, start: datetime, end: datetime, limit: int = 500,
+) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            return published_source_bars(connection, revision_id, instrument_id, start, end, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        engine.dispose()
 
 
 @app.post("/replay", status_code=201)

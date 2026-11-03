@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from bisect import bisect_left
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -101,6 +102,36 @@ def replay_sources(connection: Connection) -> list[dict[str, object]]:
             }
         )
     return result
+
+
+def published_source_bars(
+    connection: Connection, revision_id: str, instrument_id: str,
+    start: datetime, end: datetime, limit: int,
+) -> dict[str, object]:
+    """Bounded price-only exploration of one already-published local revision.
+
+    This neither creates nor advances an analytical run. Provider fetching and
+    multi-revision coverage belong to the separate shared-history service.
+    """
+    if (start.tzinfo is None or end.tzinfo is None or end <= start
+            or not 1 <= limit <= 500 or instrument_id not in ("US30", "DAX")):
+        raise BrowserReplayError("history needs an instrument, ordered UTC bounds and limit 1..500")
+    lineage = load_dataset_lineage(connection, revision_id, instrument_id, Timeframe.M1)
+    if lineage is None or lineage.validation_status.value == "fail":
+        raise BrowserReplayError("published dataset is unavailable")
+    if start < lineage.requested_start or end > lineage.requested_end:
+        raise BrowserReplayError("history must lie inside the published dataset")
+    bars = deque((bar for bar in _store().iter_verified_bars(
+        connection, revision_id, instrument_id, Timeframe.M1,
+    ) if start <= bar.timestamp < end), maxlen=limit)
+    return {
+        "dataset_revision_id": revision_id,
+        "canonical_checksum": lineage.canonical_checksum,
+        "bars": [{"timestamp": bar.timestamp, "open": str(bar.open),
+                  "high": str(bar.high), "low": str(bar.low), "close": str(bar.close)}
+                 for bar in bars],
+        "limit": limit,
+    }
 
 
 def _preflight(
@@ -212,6 +243,7 @@ class BrowserReplayManager:
             "selected_start": session.selected_start,
             "selected_end": session.selected_end,
             "detection_config_hash": session.pipeline.snapshot.detection_config_hash,
+            "detection_config": session.config.model_dump(mode="json"),
             "calendar_version": session.pipeline.snapshot.calendar_version,
             "warmup_required": session.warmup_required,
             "warmup_processed": session.pipeline.warmup_bars,

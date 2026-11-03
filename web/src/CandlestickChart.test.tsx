@@ -83,7 +83,7 @@ describe('TradingView chart model', () => {
   it('keeps an accessible fallback and TradingView attribution around the canvas', () => {
     const markup = renderToStaticMarkup(<CandlestickChart bars={bars} observations={[]}
       cursorTime={second} overlays={visibility} />);
-    expect(markup).toContain('Interactive UTC candlestick chart with price and time scales');
+    expect(markup).toContain('Interactive UK time candlestick chart with price and time scales');
     expect(markup).toContain('Charting by');
     expect(markup).toContain('www.tradingview.com');
   });

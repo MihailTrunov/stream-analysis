@@ -1,16 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('default four-hour offline chart has usable scales and stays cursor-bounded', async ({ page }) => {
   test.setTimeout(150_000);
   await page.goto('/');
+  await page.locator('details.source-settings > summary').click();
   await expect(page.getByRole('combobox', { name: 'Dataset revision' }))
     .toHaveValue('offline-replay-us30-v3');
   await expect(page.getByText(/Synthetic demo only — not research-grade/)).toBeVisible();
-  await page.getByRole('button', { name: 'Launch walkthrough' }).click();
-  const region = page.getByRole('region', { name: 'Detector walkthrough' });
+  await page.getByRole('button', { name: 'Start replay from' }).click();
+  await expect(page.getByText(/Replay created/)).toBeVisible();
+  const region = page.getByRole('tabpanel', { name: 'US30 Replay', exact: true });
   const runId = await region.locator('dd code').first().textContent();
   await page.getByRole('button', { name: 'Next detector event' }).click();
-  const chart = page.getByRole('img', { name: /Interactive UTC candlestick chart with price and time scales/ });
+  const chart = page.getByRole('img', { name: /Interactive UK time candlestick chart with price and time scales/ });
   await expect(chart).toBeVisible();
   const box = await chart.boundingBox();
   expect(box?.width).toBeGreaterThan(500);
@@ -30,14 +32,11 @@ test('default four-hour offline chart has usable scales and stays cursor-bounded
   } });
   const payload = await view.json() as { bars: Array<{ timestamp: string }>; events: Array<{ detection_time: string }> };
   expect(payload.bars.length).toBeGreaterThan(0);
-  expect(payload.bars.every((bar) => bar.timestamp <= snapshot.cursor_time)).toBe(true);
-  expect(payload.events.every((event) => event.detection_time <= snapshot.cursor_time)).toBe(true);
-  await page.getByRole('textbox', { name: 'Seek time UTC' }).fill('2026-01-05T13:59');
-  await page.getByRole('button', { name: 'Seek', exact: true }).click();
-  await expect(page.getByRole('img', { name: /240 visible bars/ })).toBeVisible({ timeout: 30_000 });
+  expect(payload.bars.every((bar) => Date.parse(bar.timestamp) <= Date.parse(snapshot.cursor_time))).toBe(true);
+  expect(payload.events.every((event) => Date.parse(event.detection_time) <= Date.parse(snapshot.cursor_time))).toBe(true);
   await chart.hover();
   const beforeZoom = await chart.screenshot();
-  await page.mouse.wheel(0, -400);
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
   expect((await chart.screenshot()).equals(beforeZoom)).toBe(false);
-  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
+  await page.getByRole('button', { name: 'Stop replay' }).click();
 });

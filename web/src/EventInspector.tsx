@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import type { ReplayDetectorEvent } from './replay';
+import { displayTime, type DisplayTimezone } from './time';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -66,7 +67,7 @@ function ConditionEvidence({ item, index }: { item: Record<string, unknown>; ind
   </section>;
 }
 
-export function EventInspector({ event }: { event: ReplayDetectorEvent }) {
+export function EventInspector({ event, timezone = 'UTC' }: { event: ReplayDetectorEvent; timezone?: DisplayTimezone }) {
   const rationale = asRecord(event.rationale);
   const items = rationale?.schema === 'detector-evidence-v1' && Array.isArray(rationale.items)
     ? rationale.items.map(asRecord) : null;
@@ -96,8 +97,8 @@ export function EventInspector({ event }: { event: ReplayDetectorEvent }) {
       <dt>Previous state</dt><dd>{event.from_state}</dd>
       <dt>New state</dt><dd>{event.to_state}</dd>
       <dt>Trigger</dt><dd><code>{event.trigger_id}</code></dd>
-      <dt>Event time (underlying behaviour)</dt><dd><time>{event.event_time}</time></dd>
-      <dt>Detection time (first observable)</dt><dd><time>{event.detection_time}</time></dd>
+      <dt>Event time (underlying behaviour)</dt><dd><time dateTime={event.event_time}>{displayTime(event.event_time, timezone)}</time></dd>
+      <dt>Detection time (first observable)</dt><dd><time dateTime={event.detection_time}>{displayTime(event.detection_time, timezone)}</time></dd>
     </dl>
     <h4>Structured rationale</h4>
     <dl>

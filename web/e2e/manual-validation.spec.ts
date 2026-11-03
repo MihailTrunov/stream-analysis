@@ -1,12 +1,12 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { selectShortDemo } from './short-demo';
 
 test('manual event review is audited and stays with the original run', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Launch walkthrough' })).toBeEnabled({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Start replay from' })).toBeEnabled({ timeout: 60_000 });
   await selectShortDemo(page);
-  await page.getByRole('button', { name: 'Launch walkthrough' }).click();
+  await page.getByRole('button', { name: 'Start replay from' }).click();
   await page.getByRole('button', { name: 'Next detector event' }).click();
   const timeline = page.getByRole('region', { name: 'Detector event timeline' });
   await timeline.getByTestId('timeline-event').click();
@@ -29,18 +29,19 @@ test('manual event review is audited and stays with the original run', async ({ 
   await timeline.getByTestId('timeline-event').click();
   await expect(review).toContainText('No review recorded');
   await expect(timeline.getByTestId('timeline-event')).not.toContainText('Reviewed');
-  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
+  await page.getByRole('button', { name: 'Stop replay' }).click();
 });
 
 test('missed-pattern review uses a visible chart interval without inventing an event', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Launch walkthrough' })).toBeEnabled({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Start replay from' })).toBeEnabled({ timeout: 60_000 });
   await selectShortDemo(page);
-  await page.getByRole('button', { name: 'Launch walkthrough' }).click();
+  await page.getByRole('button', { name: 'Start replay from' }).click();
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   const missed = page.getByRole('region', { name: 'Missed pattern review' });
   await page.getByRole('button', { name: 'Select current candle for missed-pattern review' }).click();
+  await page.getByText('Record a missed pattern', { exact: true }).click();
   await expect(page.getByText(/Selected review interval: 2026-01-05T12:11:00Z/)).toBeVisible();
   await expect(missed.getByLabel('Missed interval start UTC')).toHaveValue('2026-01-05T12:11');
   await missed.getByLabel('Expected pattern').selectOption('RANGE_COMPRESSION_V1@1');
@@ -53,5 +54,5 @@ test('missed-pattern review uses a visible chart interval without inventing an e
   await missed.getByLabel('Missed-pattern status').selectOption('needs_review');
   await missed.getByRole('button', { name: 'Save missed-pattern revision' }).click();
   await expect(missed).toContainText('needs review');
-  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
+  await page.getByRole('button', { name: 'Stop replay' }).click();
 });

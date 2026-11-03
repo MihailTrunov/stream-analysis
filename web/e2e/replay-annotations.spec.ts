@@ -1,10 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { selectShortDemo } from './short-demo';
 
 test('detector annotation appears only when emitted and inspects its exact event', async ({ page }) => {
   await page.goto('/');
   await selectShortDemo(page);
-  await page.getByRole('button', { name: 'Launch walkthrough' }).click();
+  await page.getByRole('button', { name: 'Start replay from' }).click();
   const timeline = page.getByRole('region', { name: 'Detector event timeline' });
   await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
@@ -12,8 +12,10 @@ test('detector annotation appears only when emitted and inspects its exact event
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   const annotation = timeline.getByTestId('timeline-event');
   await expect(annotation).toHaveCount(1);
-  await expect(annotation).toContainText('2026-01-05T12:12:00Z');
+  await expect(annotation.locator('time')).toHaveAttribute('datetime', '2026-01-05T12:12:00Z');
   await annotation.click();
+  await expect(page.getByRole('complementary', { name: 'Selected pattern event' })).toHaveCount(0);
+  await timeline.getByRole('button', { name: 'Pattern details', exact: true }).click();
   const inspector = page.getByRole('complementary', { name: 'Selected pattern event' });
   await expect(inspector).toContainText('persistence_confirmed');
   await expect(inspector).toContainText('Range Compression v1');
@@ -26,5 +28,5 @@ test('detector annotation appears only when emitted and inspects its exact event
   await page.getByRole('button', { name: 'Reset replay' }).click();
   await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
   await expect(inspector).toHaveCount(0);
-  await page.getByRole('button', { name: 'Stop walkthrough' }).click();
+  await page.getByRole('button', { name: 'Stop replay' }).click();
 });
