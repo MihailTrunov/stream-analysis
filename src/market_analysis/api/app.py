@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -14,8 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import create_engine
 
 from market_analysis import __version__
+from market_analysis.api.analysis import router as analysis_router
+from market_analysis.application.analysis_sessions import analysis_sessions
 from market_analysis.application.browser_replay import (
     BrowserReplayError,
+    ReplayReviewScope,
     browser_replay,
     published_source_bars,
     replay_sources,
@@ -31,7 +34,10 @@ from market_analysis.application.replay_catalog import (
 )
 from market_analysis.application.replay_pipeline import DetectorEventFilter
 from market_analysis.config import (
+    ComponentSelection,
+    ConfigParameter,
     DetectionAnalysisConfig,
+    PatternSelection,
     detection_config_hash,
     resolve_detection_config,
 )
@@ -269,6 +275,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Stream Analysis", version=__version__, lifespan=lifespan)
+app.include_router(analysis_router)
 
 
 @app.get("/health")
@@ -360,9 +367,56 @@ def browser_replay_default_config(instrument_id: str) -> dict[str, object]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get("/analysis-defaults")
+def analysis_defaults(instrument_id: str, timeframe: Timeframe = Timeframe.M1) -> dict[str, object]:
+    try:
+        base = demo_detection_config(instrument_id).model_copy(update={"timeframe": timeframe})
+        if timeframe is Timeframe.M1:
+            extra = tuple(
+                ComponentSelection(
+                    component_id=name,
+                    component_version="1",
+                    enabled=False,
+                    parameters=(ConfigParameter(name="atr_period", value=2),)
+                    if name == "swing_point"
+                    else (),
+                )
+                for name in (
+                    "ema",
+                    "swing_point",
+                    "swing_structure",
+                    "trend_leg",
+                    "trend_leg_qualification",
+                )
+            )
+            base = base.model_copy(
+                update={
+                    "components": base.components + extra,
+                    "patterns": base.patterns
+                    + tuple(
+                        PatternSelection(
+                            pattern_id=definition.pattern_id,
+                            pattern_version=definition.pattern_version,
+                            enabled=False,
+                        )
+                        for definition in PATTERN_DEFINITIONS.values()
+                        if definition.pattern_id != base.patterns[0].pattern_id
+                    ),
+                }
+            )
+        resolved = resolve_detection_config(base, pattern_definitions=PATTERN_DEFINITIONS)
+        return {"detection_config": resolved.model_dump(mode="json")}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/replay/sources/{revision_id}/bars")
 def published_browser_source_bars(
-    revision_id: str, instrument_id: str, start: datetime, end: datetime, limit: int = 500,
+    revision_id: str,
+    instrument_id: str,
+    start: datetime,
+    end: datetime,
+    limit: int = 500,
 ) -> dict[str, object]:
     engine = create_engine(_database_url())
     try:
@@ -501,10 +555,20 @@ def browser_replay_view(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _review_scope(run_id: str) -> ReplayReviewScope:
+    try:
+        return browser_replay.review_scope(run_id)
+    except BrowserReplayError:
+        try:
+            return analysis_sessions.review_scope(run_id)
+        except ValueError as exc:
+            raise BrowserReplayError(str(exc)) from exc
+
+
 @app.get("/replay/{run_id}/annotations")
 def replay_annotations(run_id: str) -> dict[str, object]:
     try:
-        scope = browser_replay.review_scope(run_id)
+        scope = _review_scope(run_id)
     except BrowserReplayError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     engine = create_engine(_database_url())
@@ -525,13 +589,26 @@ def replay_annotations(run_id: str) -> dict[str, object]:
         engine.dispose()
 
 
+@app.get("/analysis/{session_id}/annotations")
+def analysis_annotations(session_id: str) -> dict[str, object]:
+    try:
+        run_ids = analysis_sessions.evidence_run_ids(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    records = {}
+    for run_id in run_ids:
+        for item in cast(list[dict[str, object]], replay_annotations(run_id)["annotations"]):
+            records[item["annotation_id"]] = item
+    return {"annotations": list(records.values())}
+
+
 @app.post("/replay/{run_id}/annotations", status_code=201)
 def create_replay_annotation(
     run_id: str,
     request: AnnotationCreateRequest,
 ) -> dict[str, object]:
     try:
-        scope = browser_replay.review_scope(run_id)
+        scope = _review_scope(run_id)
     except BrowserReplayError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     engine = create_engine(_database_url())
