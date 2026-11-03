@@ -208,7 +208,14 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   function selectEvent(event: ReplayDetectorEvent) {
-    setSelectedOrder(event.emission_order); setFocusTime(event.detection_time);
+    setSelectedOrder(event.emission_order);
+    if (!visible.some((bar) => bar.timestamp === event.detection_time)) {
+      setFocusTime(null);
+      setError('This event is outside the loaded candle window. Its evidence is available through Pattern details.');
+      if (stateRef.current?.status === 'running') void control('pause');
+      return;
+    }
+    setError(null); setFocusTime(event.detection_time);
     setFocusVersion((version) => version + 1);
     if (stateRef.current?.status === 'running') void control('pause');
   }

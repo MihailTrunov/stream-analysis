@@ -166,3 +166,25 @@ test('failed chart updates block playback until an explicit retry succeeds', asy
   await page.getByRole('button', { name: 'Retry chart update' }).click();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeEnabled();
 });
+
+test('events outside the loaded candle window show an explicit limitation', async ({ page }) => {
+  await page.route('**/api/replay/*/view?*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    if (body.events.length) {
+      const time = Date.parse(body.events[0].detection_time);
+      body.bars = body.bars.filter((bar: { timestamp: string }) => Date.parse(bar.timestamp) !== time);
+      body.observations = body.observations.filter((bar: { timestamp: string }) => Date.parse(bar.timestamp) !== time);
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await page.getByRole('button', { name: 'Next detector event', exact: true }).click();
+  const event = page.getByTestId('timeline-event').first();
+  await expect(event).toBeVisible();
+  await event.click();
+  await expect(page.getByRole('alert')).toContainText('outside the loaded candle window');
+  await expect(page.locator('.focus-notice')).toHaveCount(0);
+});
