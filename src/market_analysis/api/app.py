@@ -30,6 +30,7 @@ from market_analysis.application.replay_catalog import (
     DEMO_CONFIG_VERSION,
     PATTERN_DEFINITIONS,
     demo_detection_config,
+    detector_bindings,
     required_warmup_bars,
 )
 from market_analysis.application.replay_pipeline import DetectorEventFilter
@@ -49,6 +50,7 @@ from market_analysis.config.oanda_uk_calendars import (
 )
 from market_analysis.demo.data import load_demo_bars
 from market_analysis.demo.replay_seed import seed_replay_datasets
+from market_analysis.detection import DetectorRuntime
 from market_analysis.domain import SessionCalendarError, Timeframe
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.import_jobs import (
@@ -362,6 +364,29 @@ def browser_replay_default_config(instrument_id: str) -> dict[str, object]:
                 resolved, pattern_definitions=PATTERN_DEFINITIONS
             ),
             "warmup_bars": required_warmup_bars(resolved),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/analysis-config/preview")
+def preview_analysis_config(config: DetectionAnalysisConfig) -> dict[str, object]:
+    """Validate dependency wiring as well as parameter shape before explicit Apply."""
+    try:
+        resolved = resolve_detection_config(config, pattern_definitions=PATTERN_DEFINITIONS)
+        executable = resolved.model_copy(
+            update={"patterns": tuple(item for item in resolved.patterns if item.enabled)}
+        )
+        DetectorRuntime(
+            executable,
+            detector_bindings(executable),
+            run_id="configuration-preview",
+            dataset_revision_id="configuration-preview",
+        )
+        return {
+            "detection_config_hash": detection_config_hash(
+                resolved, pattern_definitions=PATTERN_DEFINITIONS
+            )
         }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

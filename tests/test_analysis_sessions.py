@@ -207,3 +207,18 @@ def test_automatic_history_respects_per_detector_policy(client: TestClient) -> N
     payload["streams"][0]["policies"] = {"RANGE_COMPRESSION_V1": "always"}
     auto = launch(client, payload)
     assert auto["initialization"][0]["processed"] == 300
+
+
+def test_apply_preview_validates_component_wiring_without_creating_a_session(
+    client: TestClient,
+) -> None:
+    config = client.get("/analysis-defaults", params={"instrument_id": "US30"}).json()[
+        "detection_config"
+    ]
+    assert client.post("/analysis-config/preview", json=config).status_code == 200
+    for component in config["components"]:
+        if component["component_id"] == "atr":
+            component["enabled"] = False
+    invalid = client.post("/analysis-config/preview", json=config)
+    assert invalid.status_code == 422
+    assert client.get("/analysis/active").json()["sessions"] == []
