@@ -14,6 +14,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
   const [snapshot, setSnapshot] = useState<ReplayViewResponse | null>(null);
   const [annotations, setAnnotations] = useState<ValidationAnnotation[]>([]);
   const [pending, setPending] = useState(0);
+  const [commandError, setCommandError] = useState<string | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const callbacks = useRef({ onChange, onClear, onError });
@@ -34,7 +35,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
           callbacks.current.onClear(action === 'stop'); clearSnapshot();
         }
         setState(action === 'stop' ? null : next);
-      } catch (error) { callbacks.current.onError(message(error)); }
+      } catch (error) { setCommandError(message(error)); callbacks.current.onError(message(error)); }
     }).finally(() => setPending((count) => count - 1));
     return queue.current;
   }, [clearSnapshot, setState]);
@@ -60,7 +61,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
       .catch((error: unknown) => { if (!controller.signal.aborted) callbacks.current.onError(message(error)); });
     return () => controller.abort();
   }, [active, runId]);
-  const ready = !readError && snapshot?.run_id === runId && snapshot?.cursor_index === cursor;
+  const ready = !commandError && !readError && snapshot?.run_id === runId && snapshot?.cursor_index === cursor;
   useEffect(() => {
     if (!active && state?.status === 'running') void control('pause');
   }, [active, state?.status, control]);
@@ -75,5 +76,5 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     return () => clearTimeout(timer);
   }, [active, pending, ready, state?.status, state?.has_next, cursor, speed, control]);
   return { state, stateRef, setState, snapshot, annotations, setAnnotations, control,
-    clearSnapshot, busy: pending > 0, ready, readError, retrySnapshot: () => setRetry((value) => value + 1) };
+    clearSnapshot, busy: pending > 0, ready, readError: readError ?? commandError, retrySnapshot: () => { setCommandError(null); setRetry((value) => value + 1); } };
 }
