@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateReplayState } from './validation';
+import { useDetectorSettings } from './useDetectorSettings';
 import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventTimeline } from './EventTimeline';
 import { EventInspector } from './EventInspector';
 import { EventReview, MissedPatternReview } from './ReviewAnnotations';
-import { apiJson, type DetectionConfig, type ReplayBar, type ReplayConfig,
+import { apiJson, type ReplayBar,
   type ReplayDetectorEvent, type ReplayObservation, type ReplaySource,
   type ReplayState, type ReviewPattern } from './replay';
 import { dateTimeInput, displayTime, inputInstant, type DisplayTimezone } from './time';
@@ -29,19 +30,12 @@ const errorMessage = (reason: unknown) => reason instanceof Error ? reason.messa
 export function ReplaySession({ tab, active, sources, patterns, activeRun, onTabChange, onRunChange }: Props) {
   const restored = useRef(tab);
   const initialRun = activeRun?.run_id === tab.runId ? activeRun : null;
-  const [appliedConfig, setAppliedConfig] = useState(initialRun?.detection_config ?? tab.appliedConfig ?? null);
-  const appliedRef = useRef(appliedConfig);
-  appliedRef.current = appliedConfig;
-  const draftConfig = useRef<DetectionConfig | null>(initialRun?.detection_config ?? tab.config ?? null);
   const [selectedId, setSelectedId] = useState(initialRun?.dataset_revision_id
     ?? (sources.some((source) => source.dataset_revision_id === tab.sourceId) ? tab.sourceId
       : preferredSource(sources, tab.instrument)?.dataset_revision_id ?? ''));
   const selected = sources.find((source) => source.dataset_revision_id === selectedId);
-  const [start, setStart] = useState(tab.start ?? '');
-  const [end, setEnd] = useState(tab.end ?? '');
-  const [config, setConfig] = useState<ReplayConfig | null>(null);
-  const [editedConfig, setEditedConfig] = useState<DetectionConfig | null>(null);
-  const [previewHash, setPreviewHash] = useState<string | null>(null);
+  const [start, setStart] = useState(tab.start ?? (selected ? dateTimeInput(selected.suggested_start, tab.timezone) : ''));
+  const [end, setEnd] = useState(tab.end ?? (selected ? dateTimeInput(selected.suggested_end, tab.timezone) : ''));
   const [history, setHistory] = useState<ReplayBar[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const [focusTime, setFocusTime] = useState<string | null>(null);
@@ -55,6 +49,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(tab.runId && !initialRun
     ? 'The previous replay is no longer active. Its saved chart settings are restored; start a new replay to continue.' : null);
+  const { config, editedConfig, appliedConfig, previewHash, setEditedConfig, setAppliedConfig, setPreviewHash } =
+    useDetectorSettings(selected?.instrument_id, initialRun?.detection_config ?? tab.config ?? null,
+      initialRun?.detection_config ?? tab.appliedConfig ?? null, setError);
   const [details, setDetails] = useState<ReplayDetectorEvent | null>(null);
   const [pinned, setPinned] = useState(false);
   const closePreview = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,40 +75,13 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const visible = useMemo(() => state ? [...visibleHistory, ...chartBars] : history, [state, visibleHistory, chartBars, history]);
   const cursor = state ? replay.snapshot?.cursor_time ?? visibleHistory.at(-1)?.timestamp ?? null : history.at(-1)?.timestamp ?? null;
 
+  const startupRun = useRef(initialRun);
   useEffect(() => {
-    if (tab.runId && !initialRun) onTabChange(tab.id, { runId: null });
-  }, []);
+    if (restored.current.runId && !startupRun.current) onTabChange(tab.id, { runId: null });
+  }, [onTabChange, tab.id]);
 
   useEffect(() => {
     if (!selected) return;
-    const controller = new AbortController();
-    const saved = restored.current.sourceId === selectedId;
-    if (!saved || !restored.current.start) setStart(dateTimeInput(selected.suggested_start, tab.timezone));
-    if (!saved || !restored.current.end) setEnd(dateTimeInput(selected.suggested_end, tab.timezone));
-    setConfig(null); setEditedConfig(null); setPreviewHash(null);
-    void apiJson<ReplayConfig>(`/replay/config-default?instrument_id=${selected.instrument_id}`, { signal: controller.signal })
-      .then(async (value) => {
-        if (controller.signal.aborted) return;
-        setConfig(value);
-        const previous = draftConfig.current;
-        const editable = previous?.instrument_id === selected.instrument_id ? previous : value.detection_config;
-        const validation = await apiJson<{ detection_config_hash: string }>('/config/preview', {
-          method: 'POST', body: JSON.stringify(editable), signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        const applied = appliedRef.current;
-        const isDefault = !previous || previous.instrument_id !== selected.instrument_id;
-        const isApplied = isDefault || JSON.stringify(editable) === JSON.stringify(applied);
-        if (isDefault) setAppliedConfig(editable);
-        setConfig(value); setEditedConfig(editable);
-        setPreviewHash(isApplied ? validation.detection_config_hash : null);
-      }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(errorMessage(reason)); });
-    return () => controller.abort();
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (!selected) return;
-    if (editedConfig) draftConfig.current = editedConfig;
     onTabChange(tab.id, { sourceId: selectedId, instrument: selected.instrument_id, start, end,
       ...(editedConfig ? { config: editedConfig, appliedConfig: appliedConfig ?? undefined } : {}) });
   }, [selectedId, start, end, editedConfig, appliedConfig, onTabChange, tab.id, selected]);
@@ -129,7 +99,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       .catch((reason: unknown) => { if (!controller.signal.aborted) { setHistory([]); setError(errorMessage(reason)); } })
       .finally(() => { if (!controller.signal.aborted) setLoadingHistory(false); });
     return () => controller.abort();
-  }, [active, selectedId, state?.run_id]);
+  }, [active, selectedId, selected, state?.run_id, state?.selected_start]);
 
   function clearRunView(resetViewport = true) {
     replay.clearSnapshot();

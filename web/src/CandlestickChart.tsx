@@ -48,6 +48,8 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
   initialViewport.current = initialRange;
   const following = useRef(initialRange === null);
   const [isFollowing, setIsFollowing] = useState(initialRange === null);
+  const requestedFocus = useRef({ focusTime, focusVersion });
+  requestedFocus.current = { focusTime, focusVersion };
   const timestamps = useRef(new Map<number, string>());
   callbacks.current = { onSelectEvent, onSelectBar, onRangeChange };
 
@@ -109,8 +111,9 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       chart.current = instance;
       candles.current = series;
       markers.current = markerPlugin;
-      priorFocus.current = focusTime;
-      priorFocusVersion.current = focusVersion;
+      priorFocus.current = requestedFocus.current.focusTime;
+      priorFocusVersion.current = requestedFocus.current.focusVersion;
+      const emaSeries = ema.current;
       instance.timeScale().subscribeVisibleLogicalRangeChange((value) => {
         if (value) callbacks.current.onRangeChange?.({ from: Number(value.from), to: Number(value.to) });
       });
@@ -120,7 +123,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         chart.current = null;
         candles.current = null;
         markers.current = null;
-        ema.current.clear();
+        emaSeries.clear();
         range.current = null;
         priorCount.current = 0;
         priorFocus.current = null;
