@@ -5,7 +5,7 @@ import { PanelTabs } from './PanelTabs';
 import { useAnalysisSettings } from './useAnalysisSettings';
 import { AnalysisSettings } from './AnalysisSettings';
 import { useHistoricalAnalysis } from './useHistoricalAnalysis';
-import { PatternGroups } from './PatternGroups';
+import { PatternGroups, projectOccurrences } from './PatternGroups';
 import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventInspector } from './EventInspector';
@@ -277,7 +277,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         {replay.readError && <p role="alert">Chart update failed: {replay.readError} <button type="button" onClick={replay.retrySnapshot}>Retry chart update</button></p>}
         {error && <p role="alert" className="inline-error">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button></p>}
       </div>
-      <PanelTabs id={tab.id} panel={panel} count={events.length} onChange={setPanel} />
+      <PanelTabs id={tab.id} panel={panel} count={projectOccurrences(events, periodStart ?? '', periodEnd ?? '').length} onChange={setPanel} />
       <div className="panel-body" id={`panel-${tab.id}`} role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
         {panel === 'patterns' ? <>
           {!state && <p role="status">{historical.busy ? 'Calculating historical detections…' : historical.loaded ? 'Historical detections loaded for this view.' : `Use Detector settings to calculate this view. ${historical.coverage}`}</p>}
