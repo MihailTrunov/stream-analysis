@@ -1,23 +1,13 @@
-:root { font-family: system-ui, sans-serif; color: #182430; background: #f7f9fb; }
 body { margin: 0; }
-main { max-width: 960px; margin: 0 auto; padding: 2rem; }
-header { border-bottom: 1px solid #bac5ce; margin-bottom: 2rem; }
-section { background: white; border: 1px solid #d5dde3; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
-button { margin-right: .75rem; padding: .5rem .75rem; }
-table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-th, td { border: 1px solid #d5dde3; padding: .5rem; text-align: left; }
+.diagnostics-content table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+.diagnostics-content th, .diagnostics-content td { border: 1px solid #d5dde3; padding: .5rem; text-align: left; }
 dl { display: grid; grid-template-columns: 12rem 1fr; gap: .5rem; }
 dt { font-weight: 600; }
 dd { margin: 0; }
 .form-row { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
-label { display: inline-flex; align-items: center; gap: .5rem; margin: .35rem .75rem .35rem 0; }
-input, select { padding: .4rem; }
 fieldset { margin: .75rem 0; border: 1px solid #d5dde3; }
 code { overflow-wrap: anywhere; }
-.chart-viewport { max-width: 100%; }
-.trading-chart { width: 100%; height: 520px; background: #fbfcfd; border: 1px solid #d5dde3; }
 .chart-caption { font-size: 0.9rem; color: #435364; }
-.replay-controls { align-items: center; }
 .event-timeline { margin-top: 1.5rem; }
 .event-timeline ol { max-height: 19rem; overflow-y: auto; padding-left: 1.75rem; }
 .event-timeline li { margin: .35rem 0; }
@@ -37,7 +27,7 @@ code { overflow-wrap: anywhere; }
 .manual-validation li { margin-bottom: .6rem; overflow-wrap: anywhere; }
 
 /* The research workspace owns the viewport; long controls scroll independently. */
-:root { color: #24323f; background: #edf1f4; font-size: 13px; font-synthesis: none; }
+:root { --workspace-panel-width: 354px; --workspace-accent: #217e78; font-family: system-ui, sans-serif; color: #24323f; background: #edf1f4; font-size: 13px; font-synthesis: none; }
 * { box-sizing: border-box; }
 button, input, select, textarea { font: inherit; }
 button { margin: 0; border: 1px solid #d6dfe5; border-radius: 5px; background: #fff;
@@ -73,7 +63,7 @@ summary { cursor: pointer; line-height: 1.5; }
 .add-tab { background: transparent; border: 0; padding: 0 17px; font-size: 18px; }
 .workspace-local { font-size: 9px; letter-spacing: 1.2px; color: #7c8e99; margin-left: auto; padding: 15px 22px; white-space: nowrap; }
 .analysis-session { flex: 1; min-height: 0; margin: 0; border: 0; border-radius: 0; padding: 0; overflow: hidden;
-  display: grid; grid-template-columns: minmax(0, 1fr) 354px; background: #fff; }
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--workspace-panel-width); background: #fff; }
 .chart-stage { min-width: 0; min-height: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .chart-overlay { display: flex; gap: 9px; align-items: center; position: absolute; top: 16px; left: 20px; z-index: 2; }
 .chart-overlay select { padding: 6px 24px 6px 10px; border-color: #dfe7eb; font-weight: 650; font-size: 15px; background: #fff; }
@@ -82,8 +72,6 @@ summary { cursor: pointer; line-height: 1.5; }
 .source-badge.synthetic { border-color: #ead9b8; color: #8c6831; background: #fff9ec; }
 .chart-viewport { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; padding-top: 62px; }
 .trading-chart { flex: 1; width: 100%; min-height: 0; height: auto; border: 0; background: #fbfcfd; }
-.trading-chart table { margin: 0; border-collapse: collapse; }
-.trading-chart td, .trading-chart th { padding: 0; border: 0; }
 .chart-overlay select[aria-label="Chart timeframe"] { width: 68px; padding-right: 10px; }
 .chart-navigation { position: absolute; z-index: 2; bottom: 65px; right: 80px; display: flex; gap: 4px; padding: 4px;
   border: 1px solid #d9e4e7; background: #ffffffee; border-radius: 7px; box-shadow: 0 2px 10px #2338460b; }
@@ -96,7 +84,7 @@ summary { cursor: pointer; line-height: 1.5; }
   background: #f8fafb; color: #788b96; border-top: 1px solid #e1e9ed; font-size: 10px; }
 .history-loading { position: absolute; z-index: 4; top: 25px; right: 90px; color: #6c8490; font-size: 11px; }
 .workspace-panel { border-left: 1px solid #d5dfe5; min-height: 0; display: flex; flex-direction: column; background: #fff; }
-.panel-controls { padding: 19px 18px 15px; border-bottom: 1px solid #e1e8ec; flex-shrink: 0; }
+.panel-controls { padding: 19px 18px 15px; border-bottom: 1px solid #e1e8ec; flex-shrink: 0; max-height: 60%; overflow-y: auto; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .panel-heading h2 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: -.2px; }
 .connection-status { font-size: 9px; color: #54877b; border-radius: 3px; padding: 3px 5px; background: #eff7f2; letter-spacing: .8px; }
@@ -108,7 +96,7 @@ summary { cursor: pointer; line-height: 1.5; }
 .input-label input, .input-label select { width: 100%; padding: 8px; font-size: 12px; color: #334a57; }
 .navigation-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; }
 .navigation-actions button { font-size: 11px; }
-button.primary { background: #217e78; border-color: #217e78; color: #fff; }
+button.primary { background: var(--workspace-accent); border-color: var(--workspace-accent); color: #fff; }
 button.primary:hover:not(:disabled) { background: #176d68; }
 .transport { display: grid; grid-template-columns: repeat(4, 1fr) 1.3fr; gap: 6px; margin-top: 16px; padding-top: 15px; border-top: 1px solid #e8eef1; }
 .transport button { font-size: 14px; min-height: 32px; padding: 5px; }
@@ -195,6 +183,7 @@ button.primary:hover:not(:disabled) { background: #176d68; }
   .chart-stage { height: 65dvh; min-height: 380px; flex-shrink: 0; }
   .workspace-panel { border-left: 0; border-top: 1px solid #d5dfe5; }
   .panel-body { overflow: visible; }
+  .panel-controls { max-height: none; overflow: visible; }
   .chart-overlay { left: 10px; gap: 6px; }
   .source-footer { font-size: 9px; padding: 6px 10px; }
   .source-badge { display: none; }
