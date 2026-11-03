@@ -10,6 +10,7 @@ export interface AnalysisTab {
   start?: string;
   end?: string;
   config?: DetectionConfig;
+  appliedConfig?: DetectionConfig;
   viewport?: { from: number; to: number; origin: string };
 }
 export interface Workspace { version: 1; tabs: AnalysisTab[]; activeId: string }

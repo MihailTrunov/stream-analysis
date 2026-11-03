@@ -110,3 +110,25 @@ test('ambiguous UK picker times can be explicitly resolved by choosing UTC', asy
   const after = await (await page.request.get('/api/replay/active')).json();
   expect(after.active.cursor_index).toBe(before.active.cursor_index);
  });
+
+test('unapplied detector edits remain drafts after reload', async ({ page }) => {
+  await page.goto('/');
+  const launch = page.getByRole('button', { name: 'Start replay from', exact: true });
+  await expect(launch).toBeEnabled();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  const enabled = page.locator('.detector-configuration input[type=checkbox]').first();
+  await enabled.uncheck();
+  await expect(launch).toBeDisabled();
+  await expect.poll(async () => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!);
+    return saved.tabs[0].config.patterns[0].enabled;
+  })).toBe(false);
+  await page.reload();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await expect(page.locator('.detector-configuration input[type=checkbox]').first()).not.toBeChecked();
+  await expect(launch).toBeDisabled();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await expect(launch).toBeEnabled();
+  await page.reload();
+  await expect(launch).toBeEnabled();
+});

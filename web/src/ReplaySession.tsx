@@ -24,6 +24,9 @@ const errorMessage = (reason: unknown) => reason instanceof Error ? reason.messa
 export function ReplaySession({ tab, active, sources, patterns, activeRun, onTabChange, onRunChange }: Props) {
   const restored = useRef(tab);
   const initialRun = activeRun?.run_id === tab.runId ? activeRun : null;
+  const [appliedConfig, setAppliedConfig] = useState(initialRun?.detection_config ?? tab.appliedConfig ?? null);
+  const appliedRef = useRef(appliedConfig);
+  appliedRef.current = appliedConfig;
   const draftConfig = useRef<DetectionConfig | null>(initialRun?.detection_config ?? tab.config ?? null);
   const [selectedId, setSelectedId] = useState(initialRun?.dataset_revision_id
     ?? (sources.some((source) => source.dataset_revision_id === tab.sourceId) ? tab.sourceId
@@ -88,7 +91,12 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           method: 'POST', body: JSON.stringify(editable), signal: controller.signal,
         });
         if (controller.signal.aborted) return;
-        setConfig(value); setEditedConfig(editable); setPreviewHash(validation.detection_config_hash);
+        const applied = appliedRef.current;
+        const isDefault = !previous || previous.instrument_id !== selected.instrument_id;
+        const isApplied = isDefault || JSON.stringify(editable) === JSON.stringify(applied);
+        if (isDefault) setAppliedConfig(editable);
+        setConfig(value); setEditedConfig(editable);
+        setPreviewHash(isApplied ? validation.detection_config_hash : null);
       }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(errorMessage(reason)); });
     return () => controller.abort();
   }, [selectedId]);
@@ -97,8 +105,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     if (!selected) return;
     if (editedConfig) draftConfig.current = editedConfig;
     onTabChange(tab.id, { sourceId: selectedId, instrument: selected.instrument_id, start, end,
-      ...(editedConfig ? { config: editedConfig } : {}) });
-  }, [selectedId, start, end, editedConfig, onTabChange, tab.id, selected]);
+      ...(editedConfig ? { config: editedConfig, appliedConfig: appliedConfig ?? undefined } : {}) });
+  }, [selectedId, start, end, editedConfig, appliedConfig, onTabChange, tab.id, selected]);
 
   useEffect(() => {
     if (!active || !selected) return;
@@ -186,7 +194,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       const result = await apiJson<{ detection_config_hash: string }>('/config/preview', {
         method: 'POST', body: JSON.stringify(editedConfig),
       });
-      setPreviewHash(result.detection_config_hash);
+      setPreviewHash(result.detection_config_hash); setAppliedConfig(editedConfig);
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
@@ -373,7 +381,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           </fieldset>}
           {state && <p className="availability-note">Stop replay to change its detector settings.</p>}
           {config && <button type="button" disabled={Boolean(state) || busy} onClick={() => {
-            setEditedConfig(config.detection_config); setPreviewHash(config.detection_config_hash); setError(null);
+            setEditedConfig(config.detection_config); setAppliedConfig(config.detection_config); setPreviewHash(config.detection_config_hash); setError(null);
           }}>Restore default settings</button>}
           <details><summary>Chart layers</summary><div className="overlay-controls">{(Object.keys(layers) as Array<keyof OverlayVisibility>).map((key) => <label key={key}>
             <input type="checkbox" checked={layers[key]} onChange={(event) => setLayers({ ...layers, [key]: event.target.checked })} />
