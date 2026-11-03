@@ -202,3 +202,39 @@ test('analysis panel tabs support arrow keys and link to their panel', async ({ 
   await expect(patterns).toBeFocused();
   await expect(patterns).toHaveAttribute('aria-selected', 'true');
 });
+
+test('a failed session render leaves other tabs usable', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('stream-analysis.workspace.v1', JSON.stringify({ version: 2, activeId: 'one', tabs: [
+      { id: 'one', instrument: 'US30', sourceId: '', timezone: 'Europe/London' },
+      { id: 'two', instrument: 'DAX', sourceId: '', timezone: 'Europe/London' },
+    ] }));
+  });
+  await page.route('**/api/replay/sources', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.sources = body.sources.map((source: { instrument_id: string }) => source.instrument_id === 'US30'
+      ? { ...source, suggested_start: 'invalid date' } : source);
+    await route.fulfill({ response, json: body });
+  });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Reset tab settings' })).toBeVisible();
+  await page.getByRole('tab', { name: /DAX/ }).click();
+  await expect(page.getByRole('img', { name: /candlestick chart/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+});
+
+test('chart and panel controls remain reachable in short and narrow windows', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeInViewport();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button', { name: 'Apply settings', exact: true })).toBeInViewport();
+  await page.screenshot({ path: '/tmp/stream-analysis-review-short.png' });
+  await page.setViewportSize({ width: 600, height: 800 });
+  await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeInViewport();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button', { name: 'Apply settings', exact: true })).toBeInViewport();
+});
