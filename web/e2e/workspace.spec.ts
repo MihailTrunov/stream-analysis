@@ -132,3 +132,37 @@ test('unapplied detector edits remain drafts after reload', async ({ page }) => 
   await page.reload();
   await expect(launch).toBeEnabled();
 });
+
+test('slow chart reads finish before the next automatic candle advance', async ({ page }) => {
+  let views = 0;
+  await page.route('**/api/replay/*/view?*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    views += 1;
+    await route.continue();
+  });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await page.getByLabel('Playback speed').selectOption('4');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(page.getByText('3 replay bars revealed', { exact: false })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('img', { name: /63 visible bars/ })).toBeVisible();
+  expect(views).toBeGreaterThanOrEqual(3);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+});
+
+test('failed chart updates block playback until an explicit retry succeeds', async ({ page }) => {
+  let fail = true;
+  await page.route('**/api/replay/*/view?*', async (route) => {
+    if (fail) await route.fulfill({ status: 503, json: { detail: 'Simulated unavailable chart' } });
+    else await route.continue();
+  });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Simulated unavailable chart');
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeDisabled();
+  fail = false;
+  await page.getByRole('button', { name: 'Retry chart update' }).click();
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeEnabled();
+});

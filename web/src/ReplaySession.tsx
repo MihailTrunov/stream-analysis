@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventTimeline } from './EventTimeline';
 import { EventInspector } from './EventInspector';
 import { EventReview, MissedPatternReview } from './ReviewAnnotations';
 import { apiJson, type DetectionConfig, type ReplayBar, type ReplayConfig,
   type ReplayDetectorEvent, type ReplayObservation, type ReplaySource,
-  type ReplayState, type ReplayViewResponse, type ReviewPattern, type ValidationAnnotation } from './replay';
+  type ReplayState, type ReviewPattern } from './replay';
 import { dateTimeInput, displayTime, inputInstant, type DisplayTimezone } from './time';
 import { preferredSource, type AnalysisTab } from './workspace';
 
@@ -19,6 +20,9 @@ interface Props {
   onRunChange: (id: string, state: ReplayState | null) => void;
 }
 const defaultLayers: OverlayVisibility = { ema: true, trend: true, swing: true, range: true, session: true };
+const emptyBars: ReplayBar[] = [];
+const emptyObservations: ReplayObservation[] = [];
+const emptyEvents: ReplayDetectorEvent[] = [];
 const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 
 export function ReplaySession({ tab, active, sources, patterns, activeRun, onTabChange, onRunChange }: Props) {
@@ -32,19 +36,12 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     ?? (sources.some((source) => source.dataset_revision_id === tab.sourceId) ? tab.sourceId
       : preferredSource(sources, tab.instrument)?.dataset_revision_id ?? ''));
   const selected = sources.find((source) => source.dataset_revision_id === selectedId);
-  const [state, setState] = useState<ReplayState | null>(initialRun);
-  const stateRef = useRef(state);
-  stateRef.current = state;
   const [start, setStart] = useState(tab.start ?? '');
   const [end, setEnd] = useState(tab.end ?? '');
   const [config, setConfig] = useState<ReplayConfig | null>(null);
   const [editedConfig, setEditedConfig] = useState<DetectionConfig | null>(null);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
   const [history, setHistory] = useState<ReplayBar[]>([]);
-  const [chartBars, setChartBars] = useState<ReplayBar[]>([]);
-  const [observations, setObservations] = useState<ReplayObservation[]>([]);
-  const [events, setEvents] = useState<ReplayDetectorEvent[]>([]);
-  const [annotations, setAnnotations] = useState<ValidationAnnotation[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const [focusTime, setFocusTime] = useState<string | null>(null);
   const [focusVersion, setFocusVersion] = useState(0);
@@ -63,12 +60,22 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const popover = useRef<HTMLDivElement>(null);
   const viewport = useRef<AnalysisTab['viewport'] | null>(tab.viewport ?? null);
   const saveViewport = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queue = useRef<Promise<void>>(Promise.resolve());
+  const replay = useReplayController(initialRun, active, speed,
+    (next) => onRunChange(tab.id, next), (stop) => {
+      if (stop) setHistory(visible);
+      clearRunView(!stop);
+    }, setError);
+  const { state, stateRef, setState, control, annotations, setAnnotations } = replay;
+  const chartBars = replay.snapshot?.run_id === state?.run_id ? replay.snapshot?.bars ?? emptyBars : emptyBars;
+  const observations = replay.snapshot?.run_id === state?.run_id ? replay.snapshot?.observations ?? emptyObservations : emptyObservations;
+  const events = replay.snapshot?.run_id === state?.run_id ? replay.snapshot?.events ?? emptyEvents : emptyEvents;
+  const working = busy || replay.busy;
   const otherReplay = activeRun && activeRun.run_id !== state?.run_id;
   const selectedEvent = events.find((event) => event.emission_order === selectedOrder);
-  const visibleHistory = state ? history.filter((bar) => bar.timestamp < state.selected_start) : history;
-  const visible = state ? [...visibleHistory, ...chartBars] : history;
-  const cursor = state ? state.cursor_time ?? visibleHistory.at(-1)?.timestamp ?? null : history.at(-1)?.timestamp ?? null;
+  const visibleHistory = useMemo(() => state ? history.filter((bar) => bar.timestamp < state.selected_start) : history,
+    [history, state]);
+  const visible = useMemo(() => state ? [...visibleHistory, ...chartBars] : history, [state, visibleHistory, chartBars, history]);
+  const cursor = state ? replay.snapshot?.cursor_time ?? visibleHistory.at(-1)?.timestamp ?? null : history.at(-1)?.timestamp ?? null;
 
   useEffect(() => {
     if (tab.runId && !initialRun) onTabChange(tab.id, { runId: null });
@@ -123,58 +130,12 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     return () => controller.abort();
   }, [active, selectedId, state?.run_id]);
 
-  useEffect(() => {
-    if (!active || !state) return;
-    const controller = new AbortController();
-    const params = new URLSearchParams({ start: state.selected_start, end: state.selected_end, limit: '500' });
-    void apiJson<ReplayViewResponse>(`/replay/${state.run_id}/view?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) {
-        setChartBars(result.bars); setObservations(result.observations); setEvents(result.events);
-      } }).catch((reason: unknown) => { if (!controller.signal.aborted) setError(errorMessage(reason)); });
-    void apiJson<{ annotations: ValidationAnnotation[] }>(`/replay/${state.run_id}/annotations`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setAnnotations(result.annotations); })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(errorMessage(reason)); });
-    return () => controller.abort();
-  }, [active, state?.run_id, state?.cursor_index]);
-
   function clearRunView(resetViewport = true) {
-    setChartBars([]); setObservations([]); setEvents([]); setAnnotations([]);
+    replay.clearSnapshot();
     setSelectedOrder(null); setFocusTime(null); setReviewAnchor(null); setReviewInterval(null);
     setDetails(null); setPinned(false);
     if (resetViewport) viewport.current = null;
   }
-
-  function control(action: 'play' | 'pause' | 'step' | 'tick' | 'reset' | 'next-event' | 'stop') {
-    setBusy(true);
-    queue.current = queue.current.then(async () => {
-      const current = stateRef.current;
-      if (!current) return;
-      try {
-        const next = await apiJson<ReplayState>(`/replay/${current.run_id}/${action}`, { method: 'POST' });
-        if (action === 'stop') { setHistory(visible); clearRunView(false); }
-        if (action === 'reset') clearRunView();
-        stateRef.current = action === 'stop' ? null : next;
-        setState(stateRef.current); onRunChange(tab.id, stateRef.current);
-      } catch (reason) { setError(errorMessage(reason)); }
-    }).finally(() => setBusy(false));
-    return queue.current;
-  }
-
-  useEffect(() => {
-    if (!active && state?.status === 'running') void control('pause');
-  }, [active, state?.status]);
-
-  useEffect(() => {
-    const pauseHidden = () => { if (document.hidden && stateRef.current?.status === 'running') void control('pause'); };
-    document.addEventListener('visibilitychange', pauseHidden);
-    return () => document.removeEventListener('visibilitychange', pauseHidden);
-  }, []);
-
-  useEffect(() => {
-    if (!active || busy || state?.status !== 'running' || !state.has_next) return;
-    const timer = window.setTimeout(() => void control('tick'), 1000 / speed);
-    return () => window.clearTimeout(timer);
-  }, [active, busy, state?.status, state?.cursor_index, state?.has_next, speed]);
 
   useEffect(() => () => {
     if (closePreview.current) clearTimeout(closePreview.current);
@@ -208,7 +169,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         selected_start: inputInstant(start, tab.timezone), selected_end: inputInstant(end, tab.timezone),
         config_id: config.config_id, config_version: config.config_version, detection_config: editedConfig,
       }) });
-      clearRunView(); stateRef.current = next; setState(next); onRunChange(tab.id, next);
+      clearRunView(); setState(next);
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
@@ -278,7 +239,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     <div className="chart-stage">
       <div className="chart-overlay">
         <label className="sr-only" htmlFor={`instrument-${tab.id}`}>Instrument</label>
-        <select id={`instrument-${tab.id}`} aria-label="Instrument" value={selected?.instrument_id ?? tab.instrument} disabled={Boolean(state) || busy}
+        <select id={`instrument-${tab.id}`} aria-label="Instrument" value={selected?.instrument_id ?? tab.instrument} disabled={Boolean(state) || working}
           onChange={(event) => { const source = preferredSource(sources, event.target.value); if (source) chooseSource(source.dataset_revision_id); }}>
           <option value="US30">US30</option><option value="DAX">DAX</option>
         </select>
@@ -313,23 +274,25 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         <div className="mode-control" aria-label="Analysis mode"><button type="button" className="selected">History</button>
           <button type="button" disabled title="Live market connections are not available in this build">Live <span>Coming next</span></button></div>
         <label className="input-label">Go to date & time <input aria-label="Chart date and time" type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label>
-        <div className="navigation-actions"><button type="button" onClick={moveTo} disabled={busy || !start}>Move to</button>
-          <button className="primary" type="button" onClick={() => void launch()} disabled={busy || Boolean(state) || Boolean(otherReplay) || !selected || !previewHash}>Start replay from</button></div>
+        <div className="navigation-actions"><button type="button" onClick={moveTo} disabled={working || !start}>Move to</button>
+          <button className="primary" type="button" onClick={() => void launch()} disabled={working || Boolean(state) || Boolean(otherReplay) || !selected || !previewHash}>Start replay from</button></div>
         {otherReplay && <p className="availability-note">Another tab has a replay. Stop it there before starting another.</p>}
         <div className="transport" aria-label="Replay controls">
-          <button type="button" aria-label="Play" title="Play" onClick={() => void control('play')} disabled={busy || !state?.has_next || state.status === 'running'}>▶</button>
-          <button type="button" aria-label="Pause" title="Pause" onClick={() => void control('pause')} disabled={busy || state?.status !== 'running'}>Ⅱ</button>
-          <button type="button" aria-label="Stop replay" title="Stop replay" onClick={() => void control('stop')} disabled={busy || !state}>■</button>
-          <button type="button" aria-label="Step one visible bar" title="Step one candle" onClick={() => void control('step')} disabled={busy || !state?.has_next || state.status === 'running'}>▹│</button>
+          <button type="button" aria-label="Play" title="Play" onClick={() => void control('play')} disabled={working || !state?.has_next || !replay.ready || state.status === 'running'}>▶</button>
+          <button type="button" aria-label="Pause" title="Pause" onClick={() => void control('pause')} disabled={working || state?.status !== 'running'}>Ⅱ</button>
+          <button type="button" aria-label="Stop replay" title="Stop replay" onClick={() => void control('stop')} disabled={working || !state}>■</button>
+          <button type="button" aria-label="Step one visible bar" title="Step one candle" onClick={() => void control('step')} disabled={working || !state?.has_next || !replay.ready || state.status === 'running'}>▹│</button>
           <select aria-label="Playback speed" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
             {[0.5, 1, 2, 4].map((value) => <option value={value} key={value}>{value}×</option>)}
           </select>
         </div>
         {state && <><p className="replay-status" aria-live="polite">Replay {state.status} · {state.instrument_id} · {state.timeframe} · cursor {state.cursor_index}</p>
-          <div className="secondary-actions"><button type="button" onClick={() => void control('next-event')} disabled={busy || !state.has_next || state.status === 'running'}>Next detector event</button>
-            <button type="button" onClick={() => void control('reset')} disabled={busy}>Reset replay</button></div></>}
+          <div className="secondary-actions"><button type="button" onClick={() => void control('next-event')} disabled={working || !state.has_next || state.status === 'running'}>Next detector event</button>
+            <button type="button" onClick={() => void control('reset')} disabled={working}>Reset replay</button></div></>}
         {focusTime && <div className="focus-notice">Viewing {displayTime(focusTime, tab.timezone)}
           <button type="button" onClick={() => setFocusTime(null)}>Return to replay cursor</button></div>}
+        {state && !replay.ready && <p role="status">Updating chart to replay position…</p>}
+        {replay.readError && <p role="alert">Chart update failed: {replay.readError} <button type="button" onClick={replay.retrySnapshot}>Retry chart update</button></p>}
         {error && <p role="alert" className="inline-error">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button></p>}
       </div>
       <div className="panel-tabs" role="tablist" aria-label="Analysis panel">
@@ -359,7 +322,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         </> : <>
           <div className="settings-heading"><span className="timeframe-label">1 minute</span><span className="quiet">Analytical timeframe</span></div>
           <p className="availability-note">Additional analytical timeframes and automatic historical detection are not available yet.</p>
-          {editedConfig && <fieldset disabled={Boolean(state) || busy} className="detector-configuration">
+          {editedConfig && <fieldset disabled={Boolean(state) || working} className="detector-configuration">
             <legend>Detectors & components</legend>
             {(['patterns', 'components'] as const).map((group) => editedConfig[group].map((selection, index) => <details key={`${group}-${index}`} open={group === 'patterns'}>
               <summary>{selection.pattern_id ?? selection.component_id} <span>v{String(selection.pattern_version ?? selection.component_version ?? '1')}</span></summary>
@@ -380,7 +343,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
             <button type="button" onClick={() => void preview()}>Apply settings</button>
           </fieldset>}
           {state && <p className="availability-note">Stop replay to change its detector settings.</p>}
-          {config && <button type="button" disabled={Boolean(state) || busy} onClick={() => {
+          {config && <button type="button" disabled={Boolean(state) || working} onClick={() => {
             setEditedConfig(config.detection_config); setAppliedConfig(config.detection_config); setPreviewHash(config.detection_config_hash); setError(null);
           }}>Restore default settings</button>}
           <details><summary>Chart layers</summary><div className="overlay-controls">{(Object.keys(layers) as Array<keyof OverlayVisibility>).map((key) => <label key={key}>
@@ -388,7 +351,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
             {key === 'ema' ? 'EMA' : key === 'trend' ? 'Trend legs' : key === 'swing' ? 'Swings and structure' : key === 'range' ? 'Range/compression' : 'Sessions'}</label>)}</div></details>
         </>}
         <details className="source-settings"><summary>Source & run information</summary>
-          <label className="input-label">Dataset revision <select aria-label="Dataset revision" value={selectedId} onChange={(event) => chooseSource(event.target.value)} disabled={Boolean(state) || busy}>
+          <label className="input-label">Dataset revision <select aria-label="Dataset revision" value={selectedId} onChange={(event) => chooseSource(event.target.value)} disabled={Boolean(state) || working}>
             {sources.filter((source) => source.instrument_id === (selected?.instrument_id ?? tab.instrument)).map((source) => <option key={source.dataset_revision_id} value={source.dataset_revision_id}>{source.dataset_revision_id}</option>)}
           </select></label>
           <label className="input-label">Display timezone <select aria-label="Display timezone" value={tab.timezone} onChange={(event) => chooseTimezone(event.target.value as DisplayTimezone)}><option value="Europe/London">UK · GMT / BST</option><option value="UTC">UTC</option></select></label>
