@@ -164,6 +164,12 @@ class TradingCalendar:
                 match = (window, start)
         return match
 
+    def trading_day_bounds(self, timestamp: datetime) -> tuple[datetime, datetime]:
+        """UTC bounds of the verified analytical date containing this instant."""
+        trading_date = self.derive(timestamp).trading_date
+        return (self._instant(trading_date, self.trading_day_boundary),
+                self._instant(trading_date + timedelta(days=1), self.trading_day_boundary))
+
     def derive(self, timestamp: datetime) -> SessionState:
         if (
             not isinstance(timestamp, datetime)
