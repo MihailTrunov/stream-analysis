@@ -80,6 +80,15 @@ describe('TradingView chart model', () => {
       visibility, null, null)).toThrow('strictly ordered');
   });
 
+  it('places selected off-timeframe evidence on a completed displayed candle without early exposure', () => {
+    const candle = { ...bars[0], available_at: '2026-01-05T12:15:00Z' };
+    const event = { ...transition, detection_time: '2026-01-05T12:14:00Z', available_at: '2026-01-05T12:15:00Z' };
+    const model = buildChartModel([candle], [], [event], first, visibility, 0, null);
+    expect(model.markers.find((marker) => marker.id === 'event:0')?.time).toBe(Date.parse(first) / 1000);
+    const early = buildChartModel([{ ...candle, available_at: '2026-01-05T12:14:00Z' }], [], [event], first, visibility, 0, null);
+    expect(early.markers.some((marker) => marker.id === 'event:0')).toBe(false);
+  });
+
   it('keeps an accessible fallback and TradingView attribution around the canvas', () => {
     const markup = renderToStaticMarkup(<CandlestickChart bars={bars} observations={[]}
       cursorTime={second} overlays={visibility} />);

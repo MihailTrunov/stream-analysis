@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { validateReplayState, validateReplayView } from './validation';
-import { apiJson, type ReplayState, type ReplayViewResponse, type ValidationAnnotation } from './replay';
+import { apiJson, sessionPath, type Timeframe, type ReplayState, type ReplayViewResponse, type ValidationAnnotation } from './replay';
 
 export type ReplayAction = 'play' | 'pause' | 'step' | 'tick' | 'reset' | 'next-event' | 'stop';
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 /** Own the command queue and coherent rendered snapshot for one analysis tab. */
-export function useReplayController(initial: ReplayState | null, active: boolean, speed: number,
+export function useReplayController(initial: ReplayState | null, active: boolean, speed: number, timeframe: Timeframe,
   onChange: (state: ReplayState | null) => void, onClear: (stop: boolean) => void,
   onError: (error: string) => void) {
   const [state, updateState] = useState(initial);
@@ -30,7 +30,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
       const current = stateRef.current;
       if (!current) return;
       try {
-        const next = validateReplayState(await apiJson<ReplayState>(`/replay/${current.run_id}/${action}`, { method: 'POST' }));
+        const next = validateReplayState(await apiJson<ReplayState>(`${sessionPath(current)}/${action}${current.analysis_session ? `?timeframe=${timeframe}` : ''}`, { method: 'POST' }));
         if (action === 'stop' || action === 'reset') {
           callbacks.current.onClear(action === 'stop'); clearSnapshot();
         }
@@ -38,7 +38,8 @@ export function useReplayController(initial: ReplayState | null, active: boolean
       } catch (error) { setCommandError(message(error)); callbacks.current.onError(message(error)); }
     }).finally(() => setPending((count) => count - 1));
     return queue.current;
-  }, [clearSnapshot, setState]);
+  }, [clearSnapshot, setState, timeframe]);
+  const prefix = state ? sessionPath(state) : '';
   const runId = state?.run_id;
   const start = state?.selected_start;
   const end = state?.selected_end;
@@ -47,8 +48,8 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     if (!active || !runId || !start || !end) return;
     const controller = new AbortController();
     setReadError(null);
-    const params = new URLSearchParams({ start, end, limit: '500' });
-    void apiJson<ReplayViewResponse>(`/replay/${runId}/view?${params}`, { signal: controller.signal })
+    const params = new URLSearchParams({ start, end, limit: '500', timeframe });
+    void apiJson<ReplayViewResponse>(`${prefix}/view?${params}`, { signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
         const next = validateReplayView(result);
@@ -57,16 +58,16 @@ export function useReplayController(initial: ReplayState | null, active: boolean
       })
       .catch((error: unknown) => { if (!controller.signal.aborted) setReadError(message(error)); });
     return () => controller.abort();
-  }, [active, runId, start, end, cursor, retry]);
+  }, [active, runId, start, end, cursor, retry, prefix, timeframe]);
   useEffect(() => {
     if (!active || !runId) return;
     const controller = new AbortController();
-    void apiJson<{ annotations: ValidationAnnotation[] }>(`/replay/${runId}/annotations`, { signal: controller.signal })
+    void apiJson<{ annotations: ValidationAnnotation[] }>(`${prefix}/annotations`, { signal: controller.signal })
       .then((result) => { if (!controller.signal.aborted) setAnnotations(result.annotations); })
       .catch((error: unknown) => { if (!controller.signal.aborted) callbacks.current.onError(message(error)); });
     return () => controller.abort();
-  }, [active, runId]);
-  const ready = !commandError && !readError && snapshot?.run_id === runId && snapshot?.cursor_index === cursor;
+  }, [active, runId, prefix]);
+  const ready = !commandError && !readError && snapshot?.run_id === runId && snapshot?.cursor_index === cursor && (!state?.analysis_session || snapshot?.timeframe === timeframe);
   useEffect(() => {
     if (!active && state?.status === 'running') void control('pause');
   }, [active, state?.status, control]);
@@ -85,7 +86,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     if (!current) return;
     setPending((count) => count + 1);
     try {
-      const recovered = validateReplayState(await apiJson<ReplayState>(`/replay/${current.run_id}`));
+      const recovered = validateReplayState(await apiJson<ReplayState>(sessionPath(current)));
       if (stateRef.current?.run_id !== current.run_id) return;
       setCommandError(null); setState(recovered); setRetry((value) => value + 1);
     } catch (error) { setCommandError(message(error)); }

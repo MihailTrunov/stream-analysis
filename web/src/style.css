@@ -194,3 +194,9 @@ button.primary:hover:not(:disabled) { background: #176d68; }
   .app-header .quiet { display: none; }
   .evidence-popover { right: 12px; top: 80px; width: calc(100vw - 24px); max-height: calc(100dvh - 100px); }
 }
+/* Occurrence groups retain the timeline's row styling with independent history. */
+.event-timeline .occurrence-row { display: flex; align-items: flex-start; width: 100%; gap: 4px; }
+.event-timeline .occurrence-row > button:first-child { flex: 1; min-width: 0; background: #f8fafb; border: 0; }
+.event-timeline .occurrence-row .event-info { width: 25px; flex: 0 0 25px; }
+.event-timeline li:has(.occurrence-row) { flex-direction: column; }
+.event-timeline li:has(.occurrence-row) details { width: 100%; }

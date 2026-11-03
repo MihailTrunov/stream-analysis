@@ -149,14 +149,19 @@ export function buildChartModel(
       }
     }
   }
+  const availableThrough = visible.at(-1)?.available_at ?? cursorTime;
   for (const event of events) {
-    if (event.detection_time > cursorTime || !present.has(event.detection_time)) continue;
+    if (Date.parse(event.available_at ?? event.detection_time) > Date.parse(availableThrough)) continue;
+    const location = present.has(event.detection_time) ? event.detection_time
+      : selectedEventOrder === event.emission_order ? [...model.timestamps.values()].reverse()
+        .find((timestamp) => timestamp <= event.detection_time) : undefined;
+    if (!location) continue;
     const shortState = event.to_state === 'CANDIDATE' ? 'C'
       : event.to_state === 'ACTIVE' ? 'A'
       : event.to_state === 'COMPLETED' ? 'Done'
       : event.to_state === 'INVALIDATED' ? 'X' : event.to_state;
     model.markers.push({
-      id: `event:${event.emission_order}`, time: chartTime(event.detection_time),
+      id: `event:${event.emission_order}`, time: chartTime(location),
       position: 'aboveBar', shape: 'circle',
       color: selectedEventOrder === event.emission_order ? '#1b3554'
         : event.to_state === 'INVALIDATED' ? '#bc3c48' : '#7056ad',

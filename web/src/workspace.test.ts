@@ -19,7 +19,7 @@ describe('workspace restoration', () => {
       { id: 'one', instrument: 'US30', sourceId: 'source', timezone: 'Europe/London',
         start: 42, end: {}, runId: [], config: { instrument_id: 'US30' }, appliedConfig: {} },
     ] }));
-    expect(restored.version).toBe(2);
+    expect(restored.version).toBe(3);
     expect(restored.tabs[0].config).toBeUndefined();
     expect(restored.tabs[0].appliedConfig).toBeUndefined();
     expect(restored.tabs[0].start).toBeUndefined();

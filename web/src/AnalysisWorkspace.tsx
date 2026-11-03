@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { validateReplayState } from './validation';
 import { SessionBoundary } from './SessionBoundary';
 import { ReplaySession } from './ReplaySession';
-import { apiJson, type ReplaySource, type ReplayState, type ReviewPattern } from './replay';
+import { apiJson, sessionPath, type ReplaySource, type ReplayState, type ReviewPattern } from './replay';
 import { newTab, restoreWorkspace, WORKSPACE_KEY, type AnalysisTab, type Workspace } from './workspace';
 
-interface Bootstrap { sources: ReplaySource[]; patterns: ReviewPattern[]; active: ReplayState | null }
+interface Bootstrap { sources: ReplaySource[]; patterns: ReviewPattern[]; sessions: ReplayState[] }
 
 export function AnalysisWorkspace() {
   const [workspace, setWorkspace] = useState<Workspace>(() => {
@@ -22,19 +22,22 @@ export function AnalysisWorkspace() {
       apiJson<{ sources: ReplaySource[] }>('/replay/sources', { signal: controller.signal }),
       apiJson<{ patterns: ReviewPattern[] }>('/pattern-definitions', { signal: controller.signal }),
       apiJson<{ active: ReplayState | null }>('/replay/active', { signal: controller.signal }),
-    ]).then(async ([catalog, definitions, running]) => {
+      apiJson<{ sessions: ReplayState[] }>('/analysis/active', { signal: controller.signal }),
+    ]).then(async ([catalog, definitions, legacy, analyses]) => {
+      const running = [...analyses.sessions, ...(legacy.active ? [legacy.active] : [])];
+      const sessions = await Promise.all(running.map(async (item) => {
+        validateReplayState(item);
+        return item.status === 'running' ? apiJson<ReplayState>(`${sessionPath(item)}/pause`, {
+          method: 'POST', signal: controller.signal }) : item;
+      }));
       if (controller.signal.aborted) return;
-      if (running.active) validateReplayState(running.active);
-      const active = running.active?.status === 'running'
-        ? await apiJson<ReplayState>(`/replay/${running.active.run_id}/pause`, { method: 'POST', signal: controller.signal })
-        : running.active;
-      if (controller.signal.aborted) return;
-      if (active) setWorkspace((current) => {
-        if (current.tabs.some((tab) => tab.runId === active.run_id)) return current;
-        const tab = { ...newTab(active.instrument_id), sourceId: active.dataset_revision_id, runId: active.run_id };
-        return { ...current, tabs: [...current.tabs, tab], activeId: tab.id };
+      setWorkspace((current) => {
+        const missing = sessions.filter((item) => !current.tabs.some((tab) => tab.runId === item.run_id));
+        return missing.length ? { ...current, tabs: [...current.tabs, ...missing.map((item) => ({
+          ...newTab(item.instrument_id), sourceId: item.dataset_revision_id, runId: item.run_id,
+        }))] } : current;
       });
-      setBootstrap({ sources: catalog.sources, patterns: definitions.patterns, active });
+      setBootstrap({ sources: catalog.sources, patterns: definitions.patterns, sessions });
     }).catch((reason: unknown) => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -56,8 +59,12 @@ export function AnalysisWorkspace() {
 
   const updateRun = useCallback((id: string, state: ReplayState | null) => {
     updateTab(id, { runId: state?.run_id ?? null });
-    setBootstrap((current) => current ? { ...current, active: state } : current);
-  }, [updateTab]);
+    const previous = workspace.tabs.find((tab) => tab.id === id)?.runId;
+    setBootstrap((current) => current ? { ...current, sessions: [
+      ...current.sessions.filter((item) => item.run_id !== previous && item.run_id !== state?.run_id),
+      ...(state ? [state] : []),
+    ] } : current);
+  }, [updateTab, workspace.tabs]);
 
   function closeTab(id: string) {
     setWorkspace((current) => {
@@ -84,8 +91,8 @@ export function AnalysisWorkspace() {
           <span className="tab-status" aria-hidden="true" />{tab.instrument}<span className="tab-mode">{tab.runId ? 'Replay' : 'History'}</span>
         </button>
         <button type="button" className="close-tab" aria-label={`Close ${tab.instrument} tab`}
-          title={tab.runId && bootstrap?.active?.run_id === tab.runId ? 'Stop this replay before closing its tab' : 'Close tab'}
-          disabled={workspace.tabs.length === 1 || (Boolean(tab.runId) && bootstrap?.active?.run_id === tab.runId)}
+          title={tab.runId && bootstrap?.sessions.some((item) => item.run_id === tab.runId) ? 'Stop this replay before closing its tab' : 'Close tab'}
+          disabled={workspace.tabs.length === 1 || (Boolean(tab.runId) && bootstrap?.sessions.some((item) => item.run_id === tab.runId))}
           onClick={() => closeTab(tab.id)}>×</button>
       </div>)}
       <button type="button" className="add-tab" aria-label="New analysis tab" disabled={workspace.tabs.length >= 20}
@@ -102,6 +109,6 @@ export function AnalysisWorkspace() {
           activeId: current.activeId === tab.id ? replacement.id : current.activeId };
       })}><ReplaySession tab={tab}
       active={tab.id === workspace.activeId} sources={bootstrap.sources} patterns={bootstrap.patterns}
-      activeRun={bootstrap.active} onTabChange={updateTab} onRunChange={updateRun} /></SessionBoundary>)}
+      activeRun={bootstrap.sessions.find((item) => item.run_id === tab.runId) ?? null} onTabChange={updateTab} onRunChange={updateRun} /></SessionBoundary>)}
   </>;
 }

@@ -37,7 +37,17 @@ export interface ReplayConfig {
   detection_config_hash: string;
   warmup_bars: number;
 }
+export const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'] as const;
+export type Timeframe = typeof TIMEFRAMES[number];
+export type DetectorPolicy = 'live' | 'manual' | 'always';
+export interface AnalysisStream { config: DetectionConfig; policies: Record<string, DetectorPolicy> }
+export function sessionPath(state: ReplayState) { return `${state.analysis_session ? '/analysis' : '/replay'}/${state.run_id}`; }
+
 export interface ReplayState {
+  analysis_session?: boolean;
+  available_at?: string;
+  streams?: AnalysisStream[];
+  initialization?: Array<{ run_id: string; timeframe: string; processed: number; required: number }>;
   run_id: string;
   status: 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'aborted';
   dataset_revision_id: string;
@@ -64,6 +74,7 @@ export interface ReplayState {
   };
 }
 export interface ReplayBar {
+  available_at?: string;
   timestamp: string;
   open: string;
   high: string;
@@ -92,6 +103,8 @@ export interface ReplayObservation {
   }>;
 }
 export interface ReplayDetectorEvent {
+  available_at?: string;
+  interval_start?: string;
   event_id: string;
   run_id: string;
   dataset_revision_id: string;
@@ -146,12 +159,13 @@ export interface ReviewPattern {
   name: string;
 }
 export interface ReplayViewResponse extends ReplayBarsResponse {
+  timeframe?: Timeframe;
   observations: ReplayObservation[];
   events: ReplayDetectorEvent[];
 }
 
 const instantFields = new Set(['timestamp', 'event_time', 'detection_time', 'cursor_time',
-  'selected_start', 'selected_end', 'range_start', 'range_end', 'suggested_start', 'suggested_end']);
+  'selected_start', 'selected_end', 'available_at', 'interval_start', 'range_start', 'range_end', 'suggested_start', 'suggested_end']);
 
 export function normalizeApiInstants(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeApiInstants);

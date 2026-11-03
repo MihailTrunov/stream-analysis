@@ -98,7 +98,8 @@ export function EventInspector({ event, timezone = 'UTC' }: { event: ReplayDetec
       <dt>New state</dt><dd>{event.to_state}</dd>
       <dt>Trigger</dt><dd><code>{event.trigger_id}</code></dd>
       <dt>Event time (underlying behaviour)</dt><dd><time dateTime={event.event_time}>{displayTime(event.event_time, timezone)}</time></dd>
-      <dt>Detection time (first observable)</dt><dd><time dateTime={event.detection_time}>{displayTime(event.detection_time, timezone)}</time></dd>
+      <dt>{event.available_at ? 'Detection time (recorded candle label)' : 'Detection time (first observable)'}</dt><dd><time dateTime={event.detection_time}>{displayTime(event.detection_time, timezone)}</time></dd>
+      {event.available_at && <><dt>Available after candle close</dt><dd><time dateTime={event.available_at}>{displayTime(event.available_at, timezone)}</time></dd></>}
     </dl>
     <h4>Structured rationale</h4>
     <dl>
