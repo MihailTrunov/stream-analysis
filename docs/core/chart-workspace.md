@@ -1,7 +1,7 @@
 # Chart workspace specification
 
 Status: approved product and interaction decisions from the November 2026 UI
-analysis; implementation is pending. Reconciled with Jira on 2026-11-03.
+analysis; implementation progress is tracked in the delivery plan. Reconciled with Jira on 2026-11-03.
 
 This is the authoritative specification for the next chart-workspace delivery.
 It supersedes earlier single-walkthrough, one-minute-only analytical, UTC-display,
@@ -55,6 +55,10 @@ maps work to Jira and defines implementation prerequisites.
   to latest restores the newest candle and resumes following.
 - Loading, disconnection, unavailable source history and uncalculated analysis
   must be distinguishable. Never fabricate candles to fill an unexpected gap.
+
+Aggregation, initialization, availability and outcome compatibility follow the
+[versioned implementation contract](../plans/2026-11-03-multitimeframe-session-implementation.md).
+Display timezone never changes those analytical rules.
 
 ## Timeframes and detector configuration
 

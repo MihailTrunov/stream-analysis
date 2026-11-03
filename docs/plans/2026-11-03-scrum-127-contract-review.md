@@ -1,9 +1,12 @@
 # SCRUM-127 — multi-timeframe contract review
 
-Status: review draft, not an approved aggregation/runtime implementation contract.
-The candle-anchor question has been presented to the owner while SCRUM-132
-layout work proceeds independently. Keep SCRUM-127 open until its decisions
-and hand-reviewed golden expectations are finalized.
+Status: original review draft retained as design history. The owner subsequently
+requested the recommended four-task implementation on master. The UTC intraday /
+instrument trading-day daily choice and executable semantics are now specified in
+[the implementation contract](2026-11-03-multitimeframe-session-implementation.md).
+Its versioned decisions supersede the proposals and pending-anchor wording below.
+Provider calendar extension and live-ingress acceptance remain separate delivery
+work; existing verified calendar versions are preserved.
 
 ## Confirmed constraints
 
