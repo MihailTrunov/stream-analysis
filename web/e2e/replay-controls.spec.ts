@@ -30,7 +30,7 @@ test('next event, viewport navigation and reset preserve causal run identity', a
   await expect(page.getByRole('button', { name: 'Start replay from' })).toBeEnabled();
   await selectShortDemo(page);
   await page.getByRole('button', { name: 'Start replay from' }).click();
-  await expect(page.getByText(/Replay created/)).toBeVisible();
+  await expect(page.getByText(/Replay paused/)).toBeVisible();
   const region = page.getByRole('tabpanel', { name: 'US30 Replay', exact: true });
   const firstRun = await region.locator('dd code').first().textContent();
   await page.getByRole('button', { name: 'Next detector event' }).click();

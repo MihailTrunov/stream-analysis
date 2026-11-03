@@ -8,10 +8,11 @@ test('default four-hour offline chart has usable scales and stays cursor-bounded
     .toHaveValue('offline-replay-us30-v3');
   await expect(page.getByText(/Synthetic demo only — not research-grade/)).toBeVisible();
   await page.getByRole('button', { name: 'Start replay from' }).click();
-  await expect(page.getByText(/Replay created/)).toBeVisible();
+  await expect(page.getByText(/Replay paused/)).toBeVisible();
   const region = page.getByRole('tabpanel', { name: 'US30 Replay', exact: true });
   const runId = await region.locator('dd code').first().textContent();
   await page.getByRole('button', { name: 'Next detector event' }).click();
+  await expect(page.getByText(/Stopped on/)).toBeVisible();
   const chart = page.getByRole('img', { name: /Interactive UK time candlestick chart with price and time scales/ });
   await expect(chart).toBeVisible();
   const box = await chart.boundingBox();
@@ -25,9 +26,9 @@ test('default four-hour offline chart has usable scales and stays cursor-bounded
   await page.mouse.move((box?.x ?? 0) + 100, (box?.y ?? 0) + 150);
   await page.mouse.up();
   expect(await page.getByText(/Replay paused ·/).textContent()).toBe(cursor);
-  const state = await page.request.get(`/api/replay/${runId}`);
+  const state = await page.request.get(`/api/analysis/${runId}`);
   const snapshot = await state.json() as { cursor_time: string };
-  const view = await page.request.get(`/api/replay/${runId}/view`, { params: {
+  const view = await page.request.get(`/api/analysis/${runId}/view`, { params: {
     start: '2026-01-05T10:00:00Z', end: '2026-01-05T14:00:00Z', limit: 500,
   } });
   const payload = await view.json() as { bars: Array<{ timestamp: string }>; events: Array<{ detection_time: string }> };

@@ -7,20 +7,20 @@ test('pinned offline replay reveals only current and past candles', async ({ pag
   await expect(page.getByRole('button', { name: 'Start replay from' })).toBeEnabled();
   await selectShortDemo(page);
   await page.getByRole('button', { name: 'Start replay from' }).click();
-  await expect(page.getByText(/Replay created/)).toBeVisible();
+  await expect(page.getByText(/Replay paused/)).toBeVisible();
   await expect(page.getByRole('img', { name: /11 visible bars/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
   expect(await page.locator('.trading-chart canvas').count()).toBeGreaterThan(1);
   const runId = await page.getByRole('tabpanel', { name: 'US30 Replay', exact: true }).locator('dd code').first().textContent();
-  const response = await page.request.get(`/api/replay/${runId}/view`, { params: {
+  const response = await page.request.get(`/api/analysis/${runId}/view`, { params: {
     start: '2026-01-05T12:11:00Z', end: '2026-01-05T12:14:00Z',
   } });
   expect(response.ok()).toBe(true);
   const first = await response.json() as { bars: Array<{ timestamp: string }> };
-  expect(first.bars).toHaveLength(1);
-  expect(first.bars[0].timestamp).toBe('2026-01-05T12:11:00Z');
+  expect(first.bars).toHaveLength(12);
+  expect(first.bars.at(-1)!.timestamp).toBe('2026-01-05T12:11:00Z');
   await page.getByText('Current market state', { exact: true }).click();
   await expect(page.getByText(/Current market state:/)).toBeVisible();
   await page.getByRole('tab', { name: 'Detector settings' }).click();
@@ -32,11 +32,11 @@ test('pinned offline replay reveals only current and past candles', async ({ pag
 
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   await expect(page.getByRole('img', { name: /13 visible bars/ })).toBeVisible();
-  const second = await page.request.get(`/api/replay/${runId}/view`, { params: {
+  const second = await page.request.get(`/api/analysis/${runId}/view`, { params: {
     start: '2026-01-05T12:11:00Z', end: '2026-01-05T12:14:00Z',
   } });
   const secondView = await second.json() as { bars: Array<{ timestamp: string }> };
-  expect(secondView.bars).toHaveLength(2);
+  expect(secondView.bars).toHaveLength(13);
   expect(secondView.bars.some((bar) => bar.timestamp === '2026-01-05T12:13:00Z')).toBe(false);
   await page.getByRole('button', { name: 'Stop replay' }).click();
 });

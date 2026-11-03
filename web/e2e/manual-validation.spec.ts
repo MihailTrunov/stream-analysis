@@ -8,7 +8,7 @@ test('manual event review is audited and stays with the original run', async ({ 
   await selectShortDemo(page);
   await page.getByRole('button', { name: 'Start replay from' }).click();
   await page.getByRole('button', { name: 'Next detector event' }).click();
-  const timeline = page.getByRole('region', { name: 'Detector event timeline' });
+  const timeline = page.getByRole('region', { name: 'Detected patterns' });
   await timeline.getByTestId('timeline-event').click();
   const review = page.getByRole('region', { name: 'Manual validation' });
   await review.getByLabel('Review label').selectOption('correct');
@@ -49,7 +49,7 @@ test('missed-pattern review uses a visible chart interval without inventing an e
   await missed.getByRole('button', { name: 'Add missed pattern' }).click();
   await expect(missed).toContainText('expected compression candidate');
   await expect(missed.getByRole('link', { name: 'Export review JSON' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Detector event timeline' }).getByTestId('timeline-event')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Detected patterns' }).getByTestId('timeline-event')).toHaveCount(1);
   await missed.getByRole('button', { name: 'Edit missed-pattern review' }).click();
   await missed.getByLabel('Missed-pattern status').selectOption('needs_review');
   await missed.getByRole('button', { name: 'Save missed-pattern revision' }).click();

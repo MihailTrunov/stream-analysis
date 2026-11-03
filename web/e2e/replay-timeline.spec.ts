@@ -7,13 +7,13 @@ test('event timeline selection focuses chart without advancing replay', async ({
   await expect(page.getByRole('button', { name: 'Start replay from' })).toBeEnabled({ timeout: 60_000 });
   await selectShortDemo(page);
   await page.getByRole('button', { name: 'Start replay from' }).click();
-  const timeline = page.getByRole('region', { name: 'Detector event timeline' });
-  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
+  const timeline = page.getByRole('region', { name: 'Detected patterns' });
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(1);
   await page.getByRole('button', { name: 'Next detector event' }).click();
-  const cursor = await page.getByText(/Replay paused ·/).textContent();
   const event = timeline.getByTestId('timeline-event');
   await expect(event).toHaveCount(1);
   await expect(event).toContainText('persistence_confirmed');
+  const cursor = await page.getByText(/Replay paused ·/).textContent();
   await event.click();
   await expect(event).toHaveAttribute('aria-current', 'true');
   await expect(page.locator('.focus-notice')).toBeVisible();

@@ -1,11 +1,5 @@
 import { expect, test } from './fixtures';
 
-test.afterEach(async ({ request }) => {
-  const response = await request.get('/api/replay/active');
-  const result = await response.json() as { active: { run_id: string } | null };
-  if (result.active) await request.post(`/api/replay/${result.active.run_id}/stop`);
-});
-
 test('chart dominates the initial workspace, zooms, and discards cached future candles on replay entry', async ({ page }) => {
   await page.goto('/');
   const start = page.getByRole('button', { name: 'Start replay from', exact: true });
@@ -31,14 +25,14 @@ test('chart dominates the initial workspace, zooms, and discards cached future c
   await start.click();
   await expect(chart).toHaveAccessibleName(/60 visible bars/);
   await expect(page.getByText('0 replay bars revealed', { exact: false })).toBeVisible();
-  const snapshot = await (await page.request.get('/api/replay/active')).json() as {
-    active: { run_id: string; selected_start: string; selected_end: string; cursor_time: null };
+  const snapshot = await (await page.request.get('/api/analysis/active')).json() as {
+    sessions: Array<{ run_id: string; selected_start: string; selected_end: string; cursor_time: null }>;
   };
-  expect(snapshot.active.cursor_time).toBeNull();
-  const data = await (await page.request.get(`/api/replay/${snapshot.active.run_id}/view`, { params: {
-    start: snapshot.active.selected_start, end: snapshot.active.selected_end,
+  expect(snapshot.sessions[0].cursor_time).toBeNull();
+  const data = await (await page.request.get(`/api/analysis/${snapshot.sessions[0].run_id}/view`, { params: {
+    start: snapshot.sessions[0].selected_start, end: snapshot.sessions[0].selected_end,
   } })).json() as { bars: unknown[]; events: unknown[] };
-  expect(data.bars).toHaveLength(0);
+  expect(data.bars).toHaveLength(60);
   expect(data.events).toHaveLength(0);
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   await expect(chart).toHaveAccessibleName(/61 visible bars/);
@@ -61,14 +55,14 @@ test('tab switching pauses replay, renders only the focused chart, and restores 
   await expect(page.getByText(/Replay running/)).toBeVisible();
   await page.getByRole('button', { name: 'New analysis tab' }).click();
   await expect.poll(async () => {
-    const snapshot = await (await page.request.get('/api/replay/active')).json() as { active: { status: string } };
-    return snapshot.active.status;
+    const snapshot = await (await page.request.get('/api/analysis/active')).json() as { sessions: Array<{ status: string }> };
+    return snapshot.sessions[0].status;
   }).toBe('paused');
   await page.getByLabel('Instrument', { exact: true }).selectOption('DAX');
   await expect(page.getByRole('img', { name: /300 visible bars/ })).toBeVisible();
   await expect(page.locator('.trading-chart')).toHaveCount(1);
   await expect(page.getByRole('tab', { name: /DAX.*History/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
   await page.reload();
   await expect(page.getByLabel('Instrument', { exact: true })).toHaveValue('DAX');
   await expect(page.getByRole('tab', { name: /DAX.*History/ })).toHaveAttribute('aria-selected', 'true');
@@ -103,12 +97,12 @@ test('ambiguous UK picker times can be explicitly resolved by choosing UTC', asy
   await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   await expect(page.getByText('1 replay bars revealed', { exact: false })).toBeVisible();
-  const before = await (await page.request.get('/api/replay/active')).json();
+  const before = await (await page.request.get('/api/analysis/active')).json();
   await page.getByRole('button', { name: 'Move to', exact: true }).click();
   await expect(page.locator('.focus-notice')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
-  const after = await (await page.request.get('/api/replay/active')).json();
-  expect(after.active.cursor_index).toBe(before.active.cursor_index);
+  const after = await (await page.request.get('/api/analysis/active')).json();
+  expect(after.sessions[0].cursor_index).toBe(before.sessions[0].cursor_index);
  });
 
 test('unapplied detector edits remain drafts after reload', async ({ page }) => {
@@ -121,7 +115,7 @@ test('unapplied detector edits remain drafts after reload', async ({ page }) => 
   await expect(launch).toBeDisabled();
   await expect.poll(async () => page.evaluate(() => {
     const saved = JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!);
-    return saved.tabs[0].config.patterns[0].enabled;
+    return saved.tabs[0].streams[0].config.patterns[0].enabled;
   })).toBe(false);
   await page.reload();
   await page.getByRole('tab', { name: 'Detector settings' }).click();
@@ -135,7 +129,7 @@ test('unapplied detector edits remain drafts after reload', async ({ page }) => 
 
 test('slow chart reads finish before the next automatic candle advance', async ({ page }) => {
   let views = 0;
-  await page.route('**/api/replay/*/view?*', async (route) => {
+  await page.route('**/api/analysis/*/view?*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700));
     views += 1;
     await route.continue();
@@ -153,7 +147,7 @@ test('slow chart reads finish before the next automatic candle advance', async (
 
 test('failed chart updates block playback until an explicit retry succeeds', async ({ page }) => {
   let fail = true;
-  await page.route('**/api/replay/*/view?*', async (route) => {
+  await page.route('**/api/analysis/*/view?*', async (route) => {
     if (fail) await route.fulfill({ status: 503, json: { detail: 'Simulated unavailable chart' } });
     else await route.continue();
   });
@@ -168,11 +162,15 @@ test('failed chart updates block playback until an explicit retry succeeds', asy
 });
 
 test('events outside the loaded candle window show an explicit limitation', async ({ page }) => {
-  await page.route('**/api/replay/*/view?*', async (route) => {
+  let clippedOrder = -1;
+  await page.route('**/api/analysis/*/view?*', async (route) => {
     const response = await route.fetch();
     const body = await response.json();
     if (body.events.length) {
-      const time = Date.parse(body.events[0].detection_time);
+      const occurrence = body.events[0].instance_id;
+      const latest = body.events.filter((event: { instance_id: string }) => event.instance_id === occurrence).at(-1);
+      clippedOrder = latest.emission_order;
+      const time = Date.parse(latest.detection_time);
       body.bars = body.bars.filter((bar: { timestamp: string }) => Date.parse(bar.timestamp) !== time);
       body.observations = body.observations.filter((bar: { timestamp: string }) => Date.parse(bar.timestamp) !== time);
     }
@@ -182,7 +180,9 @@ test('events outside the loaded candle window show an explicit limitation', asyn
   await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
   await page.getByRole('button', { name: 'Next detector event', exact: true }).click();
-  const event = page.getByTestId('timeline-event').first();
+  for (let i = 0; i < 5; i += 1) await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  await expect(page.getByRole('button', { name: 'Next detector event', exact: true })).toBeEnabled();
+  const event = page.locator(`[data-testid=timeline-event][data-emission-order="${clippedOrder}"]`);
   await expect(event).toBeVisible();
   await event.click();
   await expect(page.getByRole('alert')).toContainText('outside the loaded candle window');
@@ -237,4 +237,84 @@ test('chart and panel controls remain reachable in short and narrow windows', as
   await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeInViewport();
   await page.getByRole('button', { name: 'Apply settings', exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Apply settings', exact: true })).toBeInViewport();
+});
+
+test('independent tabs replay concurrently and five-minute Step preserves every source close', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await page.getByLabel('Add analytical timeframe').selectOption('5m');
+  await expect(page.getByRole('group', { name: '5m analytical settings' })).toBeVisible();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByLabel('Chart timeframe', { exact: true }).selectOption('5m');
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  await expect(page.getByText('5 replay bars revealed', { exact: false })).toBeVisible();
+  const first = (await (await page.request.get('/api/analysis/active')).json()).sessions[0];
+  expect(first.initialization.map((item: { processed: number }) => item.processed)).toEqual([65, 13]);
+  await page.getByRole('button', { name: 'New analysis tab' }).click();
+  await page.getByLabel('Instrument', { exact: true }).selectOption('DAX');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  await expect(page.getByText('1 replay bars revealed', { exact: false })).toBeVisible();
+  expect((await (await page.request.get('/api/analysis/active')).json()).sessions).toHaveLength(2);
+  expect((await (await page.request.get(`/api/analysis/${first.run_id}`)).json()).cursor_index).toBe(first.cursor_index);
+  await page.reload();
+  await expect(page.getByLabel('Instrument', { exact: true })).toHaveValue('DAX');
+  await page.getByRole('tab', { name: /US30.*Replay/ }).click();
+  await expect(page.getByLabel('Chart timeframe', { exact: true })).toHaveValue('5m');
+  await expect(page.getByText('5 replay bars revealed', { exact: false })).toBeVisible();
+});
+
+test('manual historical calculation shows occurrence sections without starting replay', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Fit candles', exact: true }).click();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await page.getByRole('button', { name: 'Calculate RANGE_COMPRESSION_V1 for current view · 1m', exact: true }).click();
+  await page.getByRole('tab', { name: /^Patterns/ }).click();
+  await expect(page.getByText('Historical detections loaded for this view.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Developing patterns' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Active patterns' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Completed patterns' })).toBeVisible();
+  expect((await (await page.request.get('/api/analysis/active')).json()).sessions).toHaveLength(0);
+  await page.screenshot({ path: '/tmp/stream-analysis-pattern-groups.png', fullPage: true });
+});
+
+test('Always on calculates historical detections and display changes reuse compatible results', async ({ page }) => {
+  let calculations = 0;
+  page.on('request', (request) => { if (request.method() === 'POST' && request.url().endsWith('/api/analysis')) calculations += 1; });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await page.getByLabel('1m RANGE_COMPRESSION_V1 operation mode').selectOption('always');
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await page.getByRole('tab', { name: /^Patterns/ }).click();
+  await expect(page.getByText('Historical detections loaded for this view.')).toBeVisible({ timeout: 15000 });
+  const before = calculations;
+  await page.getByLabel('Chart timeframe', { exact: true }).selectOption('5m');
+  await expect(page.getByRole('img', { name: /60 visible bars/ })).toBeVisible();
+  await expect(page.getByText('Historical detections loaded for this view.')).toBeVisible();
+  await expect.poll(() => calculations).toBe(before);
+});
+
+test('a migrated configuration can add a registered detector without discarding existing parameters', async ({ page, request }) => {
+  const legacy = (await (await request.get('/api/replay/config-default?instrument_id=US30')).json()).detection_config;
+  await page.addInitScript((config) => {
+    localStorage.setItem('stream-analysis.workspace.v1', JSON.stringify({ version: 2, activeId: 'one', tabs: [
+      { id: 'one', instrument: 'US30', sourceId: 'offline-replay-us30-v3', timezone: 'Europe/London', config, appliedConfig: config },
+    ] }));
+  }, legacy);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await page.getByLabel('Add detector 1m', { exact: true }).selectOption('EMA_STRUCTURE_REVERSAL_V1');
+  await expect(page.getByLabel('1m EMA_STRUCTURE_REVERSAL_V1 enabled', { exact: true })).toBeChecked();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!));
+  expect(saved.tabs[0].streams[0].config.components.find((item: { component_id: string }) => item.component_id === 'range_state').parameters)
+    .toEqual(legacy.components.find((item: { component_id: string }) => item.component_id === 'range_state').parameters);
 });

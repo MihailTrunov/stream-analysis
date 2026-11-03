@@ -5,10 +5,11 @@ test('detector annotation appears only when emitted and inspects its exact event
   await page.goto('/');
   await selectShortDemo(page);
   await page.getByRole('button', { name: 'Start replay from' }).click();
-  const timeline = page.getByRole('region', { name: 'Detector event timeline' });
-  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
+  const timeline = page.getByRole('region', { name: 'Detected patterns' });
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(1);
+  await expect(timeline.getByRole('region', { name: 'Developing patterns' })).toContainText('CANDIDATE');
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
-  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(1);
   await page.getByRole('button', { name: 'Step one visible bar' }).click();
   const annotation = timeline.getByTestId('timeline-event');
   await expect(annotation).toHaveCount(1);
@@ -22,11 +23,11 @@ test('detector annotation appears only when emitted and inspects its exact event
   await expect(inspector).toContainText('Detection config hash');
   await expect(inspector).toContainText('Dataset revision');
   await expect(inspector).toContainText('Event time (underlying behaviour)');
-  await expect(inspector).toContainText('Detection time (first observable)');
+  await expect(inspector).toContainText('Detection time (recorded candle label)');
   await expect(inspector).toContainText('Threshold');
   await expect(inspector).toContainText('Recorded features');
   await page.getByRole('button', { name: 'Reset replay' }).click();
-  await expect(timeline.getByTestId('timeline-event')).toHaveCount(0);
+  await expect(timeline.getByTestId('timeline-event')).toHaveCount(1);
   await expect(inspector).toHaveCount(0);
   await page.getByRole('button', { name: 'Stop replay' }).click();
 });
