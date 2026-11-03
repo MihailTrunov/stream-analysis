@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { dateTimeInput, inputInstant, displayTime, type DisplayTimezone } from './time';
 import { apiJson, type ReplayDetectorEvent, type ReviewPattern, type ValidationAnnotation } from './replay';
 
 const REVIEW_LABELS = [
@@ -121,6 +122,7 @@ export function EventReview({ runId, event, annotations, onSaved }: ReviewProps)
 }
 
 interface MissedProps {
+  timezone?: DisplayTimezone;
   runId: string;
   cursorTime: string | null;
   selectedInterval: { start: string; end: string } | null;
@@ -129,7 +131,7 @@ interface MissedProps {
   onSaved: (record: ValidationAnnotation) => void;
 }
 
-export function MissedPatternReview({ runId, cursorTime, selectedInterval, patterns, annotations, onSaved }: MissedProps) {
+export function MissedPatternReview({ runId, cursorTime, selectedInterval, patterns, annotations, onSaved, timezone = 'UTC' }: MissedProps) {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [pattern, setPattern] = useState('');
@@ -138,6 +140,7 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
   const [label, setLabel] = useState<'missed_pattern' | 'needs_review'>('missed_pattern');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previousTimezone = useRef(timezone);
   const missed = annotations.filter((item) => item.target_kind === 'missed_pattern');
 
   useEffect(() => {
@@ -146,15 +149,27 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
 
   useEffect(() => {
     if (selectedInterval) {
-      setStart(selectedInterval.start.slice(0, 16));
-      setEnd(selectedInterval.end.slice(0, 16));
+      setStart(dateTimeInput(selectedInterval.start, timezone));
+      setEnd(dateTimeInput(selectedInterval.end, timezone));
     }
-  }, [selectedInterval]);
+  }, [selectedInterval, timezone]);
+
+  useEffect(() => {
+    const previous = previousTimezone.current;
+    if (previous !== timezone && !selectedInterval) {
+      const convert = (value: string) => {
+        try { return value ? dateTimeInput(inputInstant(value, previous), timezone) : value; }
+        catch { setError('Timezone changed. Check the missed-pattern interval.'); return value; }
+      };
+      setStart(convert(start)); setEnd(convert(end));
+    }
+    previousTimezone.current = timezone;
+  }, [timezone, selectedInterval, start, end]);
 
   function useCurrentBar() {
     if (!cursorTime) return;
-    setStart(cursorTime.slice(0, 16));
-    setEnd(new Date(Date.parse(cursorTime) + 60_000).toISOString().slice(0, 16));
+    setStart(dateTimeInput(cursorTime, timezone));
+    setEnd(dateTimeInput(new Date(Date.parse(cursorTime) + 60_000).toISOString(), timezone));
   }
 
   async function save() {
@@ -162,7 +177,7 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
     try {
       const selected = patterns.find((item) => `${item.pattern_id}@${item.pattern_version}` === pattern);
       if (!editingId && (!selected || !start || !end)) {
-        throw new Error('Choose a pattern and a UTC interval.');
+        throw new Error('Choose a pattern and a time interval.');
       }
       const record = editingId
         ? await apiJson<ValidationAnnotation>(`/annotations/${editingId}`, {
@@ -175,8 +190,8 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
             method: 'POST', body: JSON.stringify({
               target_kind: 'missed_pattern', label, note,
               pattern_id: selected!.pattern_id, pattern_version: selected!.pattern_version,
-              interval_start: new Date(`${start}:00Z`).toISOString(),
-              interval_end: new Date(`${end}:00Z`).toISOString(),
+              interval_start: inputInstant(start, timezone),
+              interval_end: inputInstant(end, timezone),
             }),
           });
       onSaved(record);
@@ -187,10 +202,10 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
 
   return <section aria-label="Missed pattern review" className="manual-validation">
     <h3>Missed pattern on chart</h3>
-    <p>Mark a visible UTC interval where a registered pattern was expected but not detected.
+    <p>Mark a visible {timezone === 'Europe/London' ? 'UK time' : 'UTC'} interval where a registered pattern was expected but not detected.
       This is research metadata, not a detector event.</p>
     {missed.length ? <ul>{missed.map((item) => <li key={item.annotation_id}>
-      <strong>{item.pattern_id}@{item.pattern_version}</strong> · {item.interval_start} to {item.interval_end}
+      <strong>{item.pattern_id}@{item.pattern_version}</strong> · {item.interval_start && displayTime(item.interval_start, timezone)} to {item.interval_end && displayTime(item.interval_end, timezone)}
       {' · '}{latest(item).label.replaceAll('_', ' ')}
       {latest(item).note && <span> · {latest(item).note}</span>}
       <button type="button" onClick={() => {
@@ -204,9 +219,9 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
     {!editingId && <>
       <button type="button" onClick={useCurrentBar} disabled={!cursorTime}>Use current bar interval</button>
       <div className="form-row">
-        <label>Missed interval start (UTC) <input aria-label="Missed interval start UTC" type="datetime-local"
+        <label>Missed interval start ({timezone === 'Europe/London' ? 'UK time' : 'UTC'}) <input aria-label={`Missed interval start ${timezone === 'Europe/London' ? 'UK time' : 'UTC'}`} type="datetime-local"
           value={start} onChange={(change) => setStart(change.target.value)} disabled={saving} /></label>
-        <label>Missed interval end (UTC, exclusive) <input aria-label="Missed interval end UTC" type="datetime-local"
+        <label>Missed interval end ({timezone === 'Europe/London' ? 'UK time' : 'UTC'}, exclusive) <input aria-label={`Missed interval end ${timezone === 'Europe/London' ? 'UK time' : 'UTC'}`} type="datetime-local"
           value={end} onChange={(change) => setEnd(change.target.value)} disabled={saving} /></label>
       </div>
       <label>Expected pattern <select aria-label="Expected pattern" value={pattern}

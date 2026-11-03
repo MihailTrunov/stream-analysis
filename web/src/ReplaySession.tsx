@@ -299,7 +299,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
               onSaved={(record) => setAnnotations((current) => [...current.filter((item) => item.annotation_id !== record.annotation_id), record])} />}
             <details className="review-tools"><summary>Record a missed pattern</summary>
               <MissedPatternReview runId={state.run_id} cursorTime={state.cursor_time} selectedInterval={reviewInterval}
-                patterns={patterns} annotations={annotations}
+                patterns={patterns} annotations={annotations} timezone={tab.timezone}
                 onSaved={(record) => setAnnotations((current) => [...current.filter((item) => item.annotation_id !== record.annotation_id), record])} />
             </details>
             {state.navigation && <p role="status">{state.navigation.stopped_on_event

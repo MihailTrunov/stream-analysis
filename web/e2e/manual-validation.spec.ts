@@ -43,7 +43,7 @@ test('missed-pattern review uses a visible chart interval without inventing an e
   await page.getByRole('button', { name: 'Select current candle for missed-pattern review' }).click();
   await page.getByText('Record a missed pattern', { exact: true }).click();
   await expect(page.getByText(/Selected review interval: 2026-01-05T12:11:00Z/)).toBeVisible();
-  await expect(missed.getByLabel('Missed interval start UTC')).toHaveValue('2026-01-05T12:11');
+  await expect(missed.getByLabel('Missed interval start UK time')).toHaveValue('2026-01-05T12:11');
   await missed.getByLabel('Expected pattern').selectOption('RANGE_COMPRESSION_V1@1');
   await missed.getByLabel('Missed-pattern note').fill('expected compression candidate');
   await missed.getByRole('button', { name: 'Add missed pattern' }).click();
