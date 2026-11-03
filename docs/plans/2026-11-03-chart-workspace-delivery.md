@@ -1,5 +1,14 @@
 # Chart workspace delivery and Jira reconciliation
 
+## Implementation checkpoint — 2026-11-03
+
+SCRUM-132 is In Progress with an implemented initial layout increment on the
+existing M1 backend; see its [implementation note](2026-11-03-scrum-132-workspace-increment.md).
+Full live/session acceptance is still pending. SCRUM-127 is In Progress with a
+[contract review draft](2026-11-03-scrum-127-contract-review.md); its candle-anchor
+choice and analytical rules are not yet approved. The reconciliation record
+below describes the earlier backlog baseline, not completion of the new work.
+
 Reconciled: 2026-11-03. Authorized by the owner after the UI analysis; x-high
 reasoning requested for document/ticket drift resolution. Implementation is pending.
 
