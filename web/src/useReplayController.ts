@@ -49,7 +49,12 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     setReadError(null);
     const params = new URLSearchParams({ start, end, limit: '500' });
     void apiJson<ReplayViewResponse>(`/replay/${runId}/view?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setSnapshot(validateReplayView(result)); })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        const next = validateReplayView(result);
+        if (next.run_id !== runId || next.cursor_index !== cursor) throw new Error('The chart response does not match the requested replay position. Retry the chart update.');
+        setSnapshot(next);
+      })
       .catch((error: unknown) => { if (!controller.signal.aborted) setReadError(message(error)); });
     return () => controller.abort();
   }, [active, runId, start, end, cursor, retry]);
@@ -75,6 +80,17 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     const timer = setTimeout(() => void control('tick'), 1000 / speed);
     return () => clearTimeout(timer);
   }, [active, pending, ready, state?.status, state?.has_next, cursor, speed, control]);
+  async function retrySnapshot() {
+    const current = stateRef.current;
+    if (!current) return;
+    setPending((count) => count + 1);
+    try {
+      const recovered = validateReplayState(await apiJson<ReplayState>(`/replay/${current.run_id}`));
+      if (stateRef.current?.run_id !== current.run_id) return;
+      setCommandError(null); setState(recovered); setRetry((value) => value + 1);
+    } catch (error) { setCommandError(message(error)); }
+    finally { setPending((count) => count - 1); }
+  }
   return { state, stateRef, setState, snapshot, annotations, setAnnotations, control,
-    clearSnapshot, busy: pending > 0, ready, readError: readError ?? commandError, retrySnapshot: () => { setCommandError(null); setRetry((value) => value + 1); } };
+    clearSnapshot, busy: pending > 0, ready, readError: readError ?? commandError, retrySnapshot };
 }
