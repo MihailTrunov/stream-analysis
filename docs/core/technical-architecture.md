@@ -22,6 +22,12 @@ metadata and immutable Parquet history remain the storage baseline; the earlier
 mutable bars-table sketch below was already superseded by the 2026-09-24
 reconciliation and SCRUM-124.
 
+Local implementation checkpoint: the [multi-timeframe session increment](../plans/2026-11-03-multitimeframe-session-delivery.md)
+implements the versioned aggregation engine and tab-local replay/history controllers.
+It reuses the existing detector runtime and persisted evidence boundary; session
+orchestration manifests are stored separately from per-stream run snapshots.
+Provider live and continuous retained-range integration remain follow-up work.
+
 - Keep provider ingress, analysis processing and DOM/chart rendering separate.
   Share each feed's acquisition/persistence across tabs; retain independent
   analytical state/configuration where sessions differ. A hidden tab's rendering

@@ -2,15 +2,19 @@
 
 ## Implementation checkpoint — 2026-11-03
 
-SCRUM-132 is In Progress with an implemented initial layout increment on the
-existing M1 backend; see its [implementation note](2026-11-03-scrum-132-workspace-increment.md).
-Full live/session acceptance is still pending. SCRUM-127 is In Progress with a
-[contract review draft](2026-11-03-scrum-127-contract-review.md); its candle-anchor
-choice and analytical rules are not yet approved. The reconciliation record
-below describes the earlier backlog baseline, not completion of the new work.
+The owner directed merging to `master` and continuing without feature branches.
+The initial chart UI and review fixes are merged and pushed. The recommended
+four-task increment now has resolved candle contracts, deterministic aggregation,
+independent local replay/history sessions and integrated detector/pattern panels;
+see [the delivery evidence](2026-11-03-multitimeframe-session-delivery.md).
+
+Full provider live integration, retained range fetching and API-restart replay
+reconstruction remain follow-up work. The reconciliation record below preserves
+the earlier backlog baseline rather than declaring all new stories Done.
 
 Reconciled: 2026-11-03. Authorized by the owner after the UI analysis; x-high
-reasoning requested for document/ticket drift resolution. Implementation is pending.
+reasoning requested for document/ticket drift resolution. The sections below record
+the original pending-work baseline; current progress is stated above.
 
 ## Authority and scope
 
@@ -106,17 +110,21 @@ remove live monitoring or other approved capabilities from scope.
 
 ## Unresolved implementation contracts
 
-Track detailed questions in SCRUM-127 and affected Stories: candle anchors and
-sessions, partial/missing buckets, later-date verified calendar coverage,
-source-close availability, per-timeframe initialization origins and parameters,
-cross-timeframe event order, higher-timeframe outcome units/day policies,
-provider live/reconnect/reconciliation semantics, immutable recent-history
-publication, and historical result reuse identity.
+Candle anchors, partial/missing buckets, availability and initialization now follow
+the [implementation contract](2026-11-03-multitimeframe-session-implementation.md).
+Remaining integration work includes newly verified later-date calendar coverage,
+provider finalization/catch-up/conflict execution, immutable recent-history
+publication, continuous indexed range fetching and bounded year-scale work.
+Existing outcome v1 M1 units and same-day eligibility are preserved; alternate
+units/overnight eligibility require a separately versioned outcome definition.
 
-Interaction details still to specify during their Stories include full restart
-replay recovery, active replay replacement/reset and speed units, first-run
-selection, DST-ambiguous picker inputs, evidence dismissal and measured work
-budgets. They are not approval to mutate pinned data or bypass causal boundaries.
+Full API-restart cursor recovery remains unspecified implementation work. The
+local increment implements paused entry, fresh-identity Reset, source-complete
+chart-candle Step, playback cadence after accepted chart reads, restored focused
+tabs, explicit UK ambiguous/nonexistent-input rejection and evidence dismissal.
+Provider-connected tab restoration and measured larger-history/browser budgets
+remain their integration acceptance stories. None of these permits changing pinned
+inputs or bypassing causal boundaries.
 
 ## Verification of this reconciliation
 

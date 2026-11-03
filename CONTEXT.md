@@ -9,7 +9,10 @@ and [Jira delivery map](docs/plans/2026-11-03-chart-workspace-delivery.md) exten
 the original MVP with tabbed local live/history sessions, shared retained history
 and concurrent analytical timeframes. They take precedence over older conflicting
 single-walkthrough, M1-only analysis and deferred-local-live assumptions. Product
-scope is agreed; implementation and visual acceptance remain pending. The new
+scope is agreed. The local replay/history, aggregation and detector-panel increment
+is implemented on master; provider live integration, continuous range loading and
+broader visual acceptance remain pending. See the
+[delivery evidence](docs/plans/2026-11-03-multitimeframe-session-delivery.md). The new
 workspace reconciliation has been propagated to Jira, unlike unrelated historical
 follow-ups still deferred below.
 
@@ -31,7 +34,7 @@ The chart workspace supports continuous navigation into earlier instrument histo
 
 **Chart timeframe**: The candle interval displayed in an analysis session, selected independently of its analytical timeframes; changing it does not enable or disable detector processing.
 
-Higher-timeframe candles are constructed from shared canonical one-minute history for charts, live monitoring, historical replay and autonomous evaluation, rather than independently sourced provider candles per timeframe. Alignment and session-boundary rules remain to be specified.
+Higher-timeframe candles are constructed from shared canonical one-minute history for charts, live monitoring, historical replay and autonomous evaluation, rather than independently sourced provider candles per timeframe. Alignment and session-boundary rules now follow the [versioned implementation contract](docs/plans/2026-11-03-multitimeframe-session-implementation.md).
 
 The approved workspace combines detector signals across a session's analytical timeframes, labelling off-chart-timeframe records. Delivery is sequenced in the Jira map; exact higher-timeframe bar semantics are prerequisite SCRUM-127 work.
 
