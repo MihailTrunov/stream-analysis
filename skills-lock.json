@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "code-review": {
+      "source": "vercel-labs/open-agents",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/code-review/SKILL.md",
+      "computedHash": "76d2970a05d902683713a6e45b7968812030d39ad98f22c63aa09317067906da"
+    }
+  }
+}

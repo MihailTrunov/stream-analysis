@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 claude_code_zai_env.sh
+.claude/settings.json
 
 # Python
 .venv/
