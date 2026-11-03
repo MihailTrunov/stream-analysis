@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { validateReplayState } from './validation';
+import { SessionBoundary } from './SessionBoundary';
 import { ReplaySession } from './ReplaySession';
 import { apiJson, type ReplaySource, type ReplayState, type ReviewPattern } from './replay';
 import { newTab, restoreWorkspace, WORKSPACE_KEY, type AnalysisTab, type Workspace } from './workspace';
@@ -22,6 +24,7 @@ export function AnalysisWorkspace() {
       apiJson<{ active: ReplayState | null }>('/replay/active', { signal: controller.signal }),
     ]).then(async ([catalog, definitions, running]) => {
       if (controller.signal.aborted) return;
+      if (running.active) validateReplayState(running.active);
       const active = running.active?.status === 'running'
         ? await apiJson<ReplayState>(`/replay/${running.active.run_id}/pause`, { method: 'POST', signal: controller.signal })
         : running.active;
@@ -92,8 +95,13 @@ export function AnalysisWorkspace() {
     {storageError && <p role="status" className="workspace-warning">Tab restoration is unavailable because browser storage could not be saved.</p>}
     {error && <div className="workspace-loading" role="alert"><h2>Unable to load the workspace</h2><p>{error}</p><p>Check the local API in Diagnostics, then reload.</p></div>}
     {!bootstrap && !error && <div className="workspace-loading" role="status">Loading local instrument history…</div>}
-    {bootstrap && workspace.tabs.map((tab) => <ReplaySession key={tab.id} tab={tab}
+    {bootstrap && workspace.tabs.map((tab) => <SessionBoundary key={tab.id} active={tab.id === workspace.activeId}
+      onReset={() => setWorkspace((current) => {
+        const replacement = { ...newTab(tab.instrument), sourceId: tab.sourceId, runId: tab.runId, timezone: tab.timezone };
+        return { ...current, tabs: current.tabs.map((item) => item.id === tab.id ? replacement : item),
+          activeId: current.activeId === tab.id ? replacement.id : current.activeId };
+      })}><ReplaySession tab={tab}
       active={tab.id === workspace.activeId} sources={bootstrap.sources} patterns={bootstrap.patterns}
-      activeRun={bootstrap.active} onTabChange={updateTab} onRunChange={updateRun} />)}
+      activeRun={bootstrap.active} onTabChange={updateTab} onRunChange={updateRun} /></SessionBoundary>)}
   </>;
 }

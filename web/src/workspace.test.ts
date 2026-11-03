@@ -14,6 +14,19 @@ describe('workspace restoration', () => {
     expect(restored.tabs[0].sourceId).toBe('us30');
   });
 
+  it('migrates legacy drafts and rejects malformed optional settings', () => {
+    const restored = restoreWorkspace(JSON.stringify({ version: 1, activeId: 'one', tabs: [
+      { id: 'one', instrument: 'US30', sourceId: 'source', timezone: 'Europe/London',
+        start: 42, end: {}, runId: [], config: { instrument_id: 'US30' }, appliedConfig: {} },
+    ] }));
+    expect(restored.version).toBe(2);
+    expect(restored.tabs[0].config).toBeUndefined();
+    expect(restored.tabs[0].appliedConfig).toBeUndefined();
+    expect(restored.tabs[0].start).toBeUndefined();
+    expect(restored.tabs[0].end).toBeUndefined();
+    expect(restored.tabs[0].runId).toBeNull();
+  });
+
   it('recovers from invalid local storage without blocking the initial chart', () => {
     const restored = restoreWorkspace('{broken');
     expect(restored.tabs).toHaveLength(1);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { validateReplayState, validateReplayView } from './validation';
 import { apiJson, type ReplayState, type ReplayViewResponse, type ValidationAnnotation } from './replay';
 
 export type ReplayAction = 'play' | 'pause' | 'step' | 'tick' | 'reset' | 'next-event' | 'stop';
@@ -28,7 +29,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
       const current = stateRef.current;
       if (!current) return;
       try {
-        const next = await apiJson<ReplayState>(`/replay/${current.run_id}/${action}`, { method: 'POST' });
+        const next = validateReplayState(await apiJson<ReplayState>(`/replay/${current.run_id}/${action}`, { method: 'POST' }));
         if (action === 'stop' || action === 'reset') {
           callbacks.current.onClear(action === 'stop'); clearSnapshot();
         }
@@ -47,7 +48,7 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     setReadError(null);
     const params = new URLSearchParams({ start, end, limit: '500' });
     void apiJson<ReplayViewResponse>(`/replay/${runId}/view?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setSnapshot(result); })
+      .then((result) => { if (!controller.signal.aborted) setSnapshot(validateReplayView(result)); })
       .catch((error: unknown) => { if (!controller.signal.aborted) setReadError(message(error)); });
     return () => controller.abort();
   }, [active, runId, start, end, cursor, retry]);

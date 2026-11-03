@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { validateReplayState } from './validation';
 import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventTimeline } from './EventTimeline';
@@ -164,11 +165,11 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     if (!selected || !config || !editedConfig || !previewHash || state) return;
     setBusy(true); setError(null);
     try {
-      const next = await apiJson<ReplayState>('/replay', { method: 'POST', body: JSON.stringify({
+      const next = validateReplayState(await apiJson<ReplayState>('/replay', { method: 'POST', body: JSON.stringify({
         dataset_revision_id: selectedId, instrument_id: selected.instrument_id, timeframe: '1m',
         selected_start: inputInstant(start, tab.timezone), selected_end: inputInstant(end, tab.timezone),
         config_id: config.config_id, config_version: config.config_version, detection_config: editedConfig,
-      }) });
+      }) }));
       clearRunView(); setState(next);
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }

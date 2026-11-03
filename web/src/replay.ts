@@ -39,7 +39,7 @@ export interface ReplayConfig {
 }
 export interface ReplayState {
   run_id: string;
-  status: string;
+  status: 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'aborted';
   dataset_revision_id: string;
   source_dataset_id: string;
   canonical_checksum: string;

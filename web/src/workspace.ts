@@ -1,3 +1,4 @@
+import { isDetectionConfig } from './validation';
 import type { DetectionConfig, ReplaySource } from './replay';
 import type { DisplayTimezone } from './time';
 
@@ -13,7 +14,7 @@ export interface AnalysisTab {
   appliedConfig?: DetectionConfig;
   viewport?: { from: number; to: number; origin: string };
 }
-export interface Workspace { version: 1; tabs: AnalysisTab[]; activeId: string }
+export interface Workspace { version: 2; tabs: AnalysisTab[]; activeId: string }
 export const WORKSPACE_KEY = 'stream-analysis.workspace.v1';
 
 export function newTab(instrument = 'US30'): AnalysisTab {
@@ -23,7 +24,7 @@ export function newTab(instrument = 'US30'): AnalysisTab {
 export function restoreWorkspace(raw: string | null): Workspace {
   try {
     const parsed = JSON.parse(raw ?? 'null') as Workspace | null;
-    if (parsed?.version === 1 && Array.isArray(parsed.tabs) && parsed.tabs.length) {
+    if (parsed && [1, 2].includes(parsed.version) && Array.isArray(parsed.tabs) && parsed.tabs.length) {
       const ids = new Set<string>();
       const tabs = parsed.tabs.filter((tab) => {
         if (!tab || typeof tab.id !== 'string' || ids.has(tab.id)
@@ -31,17 +32,23 @@ export function restoreWorkspace(raw: string | null): Workspace {
           || !['Europe/London', 'UTC'].includes(tab.timezone)) return false;
         ids.add(tab.id);
         return true;
-      }).slice(0, 20).map((tab) => ({ ...tab, viewport: tab.viewport
+      }).slice(0, 20).map((tab) => ({ id: tab.id, instrument: tab.instrument, sourceId: tab.sourceId, timezone: tab.timezone,
+        runId: typeof tab.runId === 'string' ? tab.runId : null,
+        start: typeof tab.start === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(tab.start) ? tab.start : undefined,
+        end: typeof tab.end === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(tab.end) ? tab.end : undefined,
+        config: isDetectionConfig(tab.config) ? tab.config : undefined,
+        appliedConfig: parsed.version === 2 && isDetectionConfig(tab.appliedConfig) ? tab.appliedConfig : undefined,
+        viewport: tab.viewport
         && Number.isFinite(tab.viewport.from) && Number.isFinite(tab.viewport.to)
         && Math.abs(tab.viewport.from) < 1_000_000 && Math.abs(tab.viewport.to) < 1_000_000
         && tab.viewport.to > tab.viewport.from && typeof tab.viewport.origin === 'string'
         ? tab.viewport : undefined }));
-      if (tabs.length) return { version: 1, tabs,
+      if (tabs.length) return { version: 2, tabs,
         activeId: tabs.some((tab) => tab.id === parsed.activeId) ? parsed.activeId : tabs[0].id };
     }
   } catch { /* A damaged or obsolete local snapshot must not block the chart. */ }
   const first = newTab();
-  return { version: 1, tabs: [first], activeId: first.id };
+  return { version: 2, tabs: [first], activeId: first.id };
 }
 
 export function preferredSource(sources: ReplaySource[], instrument: string): ReplaySource | undefined {
