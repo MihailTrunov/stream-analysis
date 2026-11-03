@@ -188,3 +188,17 @@ test('events outside the loaded candle window show an explicit limitation', asyn
   await expect(page.getByRole('alert')).toContainText('outside the loaded candle window');
   await expect(page.locator('.focus-notice')).toHaveCount(0);
 });
+
+test('analysis panel tabs support arrow keys and link to their panel', async ({ page }) => {
+  await page.goto('/');
+  const patterns = page.getByRole('tab', { name: /^Patterns/ });
+  await patterns.focus();
+  await page.keyboard.press('ArrowRight');
+  const settings = page.getByRole('tab', { name: 'Detector settings' });
+  await expect(settings).toBeFocused();
+  await expect(settings).toHaveAttribute('aria-selected', 'true');
+  await expect(settings).toHaveAttribute('aria-controls', /panel-/);
+  await page.keyboard.press('Home');
+  await expect(patterns).toBeFocused();
+  await expect(patterns).toHaveAttribute('aria-selected', 'true');
+});

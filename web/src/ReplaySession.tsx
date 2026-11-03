@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { validateReplayState } from './validation';
+import { PanelTabs } from './PanelTabs';
 import { useDetectorSettings } from './useDetectorSettings';
 import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
@@ -55,6 +56,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const [details, setDetails] = useState<ReplayDetectorEvent | null>(null);
   const [pinned, setPinned] = useState(false);
   const closePreview = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detailOpener = useRef<HTMLElement | null>(null);
+  const restoringFocus = useRef(false);
   const popover = useRef<HTMLDivElement>(null);
   const viewport = useRef<AnalysisTab['viewport'] | null>(tab.viewport ?? null);
   const saveViewport = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,9 +207,19 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   function inspect(event: ReplayDetectorEvent, pin: boolean) {
+    if (restoringFocus.current) return;
     if (closePreview.current) clearTimeout(closePreview.current);
     if (pinned && !pin) return;
+    if (pin) detailOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setDetails(event); setPinned(pin);
+  }
+  function closeDetails() {
+    setDetails(null); setPinned(false);
+    if (pinned && detailOpener.current?.isConnected) {
+      restoringFocus.current = true;
+      detailOpener.current.focus();
+      restoringFocus.current = false;
+    }
   }
   function dismissPreview() {
     if (!pinned) closePreview.current = setTimeout(() => setDetails(null), 200);
@@ -273,11 +286,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         {replay.readError && <p role="alert">Chart update failed: {replay.readError} <button type="button" onClick={replay.retrySnapshot}>Retry chart update</button></p>}
         {error && <p role="alert" className="inline-error">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button></p>}
       </div>
-      <div className="panel-tabs" role="tablist" aria-label="Analysis panel">
-        <button type="button" role="tab" id={`patterns-${tab.id}`} aria-selected={panel === 'patterns'} onClick={() => setPanel('patterns')}>Patterns <span>{events.length}</span></button>
-        <button type="button" role="tab" id={`settings-${tab.id}`} aria-selected={panel === 'settings'} onClick={() => setPanel('settings')}>Detector settings</button>
-      </div>
-      <div className="panel-body" role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
+      <PanelTabs id={tab.id} panel={panel} count={events.length} onChange={setPanel} />
+      <div className="panel-body" id={`panel-${tab.id}`} role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
         {panel === 'patterns' ? <>
           {!state && <div className="panel-empty"><span className="empty-symbol" aria-hidden="true">⌁</span><h3>Explore first. Replay when ready.</h3>
             <p>Browse the loaded candles, choose a starting point, then step or play to see detector events.</p>
@@ -343,8 +353,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     </aside>
     {details && <div className="evidence-popover" ref={popover} role="dialog" aria-label="Pattern details" tabIndex={-1}
       onMouseEnter={() => { if (closePreview.current) clearTimeout(closePreview.current); }} onMouseLeave={dismissPreview}
-      onKeyDown={(event) => { if (event.key === 'Escape') { setDetails(null); setPinned(false); } }}>
-      <div className="popover-heading"><span>{pinned ? 'Pinned evidence' : 'Evidence preview'}</span><button type="button" aria-label="Close pattern details" onClick={() => { setDetails(null); setPinned(false); }}>×</button></div>
+      onKeyDown={(event) => { if (event.key === 'Escape') closeDetails(); }}>
+      <div className="popover-heading"><span>{pinned ? 'Pinned evidence' : 'Evidence preview'}</span><button type="button" aria-label="Close pattern details" onClick={closeDetails}>×</button></div>
       <EventInspector event={details} timezone={tab.timezone} />
     </div>}
   </section>;
