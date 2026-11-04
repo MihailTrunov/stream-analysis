@@ -1,0 +1,33 @@
+# SCRUM-128 — shared range requests
+
+Implement the approved shared-history contract as durable window requests above the existing single-active-import queue. Keeping that queue preserves worker/checkpoint semantics; allowing multiple queued imports would require changing its database invariant. A separate in-memory fetch cache would lose outstanding intent on restart, so it is insufficient here.
+
+Each bounded request pins a feed identity: instrument, provider/environment, account fingerprint, provider symbol, midpoint/unsmoothed price basis, source identifier, calendar and normalization version. Equivalent windows reuse the same durable request. Coverage resolves matching published M1 revisions first, verifies their files, and exposes source revision/checksum attribution. Different accounts, synthetic revisions and incompatible normalization/calendar versions cannot silently join that feed.
+
+The import worker schedules only missing expected-open intervals when its existing active slot is free. It rechecks retained and pending coverage before every job, so overlapping requests share work and subsequent segments survive restart as durable intent. Scheduled closures need no price fetch. Published gap reports distinguish an empty open interval (unavailable) from missing minutes in a nonempty result (unexpected gap); provider failures and interrupted imports remain explicit and do not retry in a loop. Conflicting overlapping revisions require resolution rather than precedence inferred from arrival order.
+
+Expose creation/status and bounded local-price reads through the API. Requests are minute-aligned and capped at 31 days; output prices remain capped at 500 candles. Reads can expose the available part while reporting incomplete coverage. Existing replay/evaluation revisions remain immutable; the service does not replace their pinned inputs. A returned source manifest identifies the revisions used for each available span. Composite replay-input publication and chart controls/navigation follow this service increment.
+
+Use the existing atomic staged Parquet publication and checkpoint tables. Persist account fingerprints only, never credentials or raw account identifiers. Versioned calendars reject unsupported dates, and requests cannot include incomplete future minutes. Tests use fake ingress, including overlapping tabs, restart reuse, single-slot scheduling, failed/empty/gapped results, feed separation, conflict reporting, immutable pinned inputs and bounded reads. No provider connection is needed for these tests.
+
+## Delivered API and lifecycle
+
+- `POST /history/requests` accepts `instrument_id` (`US30`/`DAX`), `start` and exclusive `end`. Equivalent UTC windows and feed identities return the same durable `request_id`, including after restart. Bounds must be minute-aligned, no longer than 31 days and inside the verified calendar. The configured account/environment identifies the feed; a provider token is not required to reuse retained data or retain waiting intent.
+- `GET /history/requests/{request_id}` resolves current coverage. The overall status is `available`, `pending`, `conflict`, `failed`, `unexpected_gap` or `unavailable`. Individual spans additionally distinguish `closed` and `missing`: the latter is durable intent waiting for a worker slot, while `pending` has an existing queued/running import ID. A calendar error remains an explicit rejection; retired calendar work is settled without blocking the worker's other requests.
+- `GET /history/requests/{request_id}/bars?limit=500` returns the latest available M1 candles in chronological order with coverage and a hashed source manifest. Partial local results retain their incomplete coverage status. Conflicting retained inputs return HTTP 409 rather than silently choosing a correction. These read endpoints continue to work without provider credentials.
+
+The import worker rechecks retained coverage whenever its active slot is free, schedules the first uncovered open span, and runs the existing checkpoint/publication pipeline. Waiting requests need no browser unload action and survive API/worker restart. Existing manual imports retain their slot and run unchanged. Completed imports with an older normalization version cannot count as coverage or prevent acquisition of the selected normalization version.
+
+No automatic retry loop is introduced. Interrupted imports retain the existing explicit `/imports/{job_id}/resume` recovery path. Failed or unavailable intervals can be retried through an explicit fresh import; gap repair can target only the missing interval. Equivalent-window creation alone does not force a provider retry. A source with unexpected closed-session prices is reported as an unexpected gap and is not returned as trusted prices. Exact equivalent retained revisions can share coverage; other overlapping revisions conservatively report a conflict until explicitly resolved.
+
+Migration `20261104_13` adds only the durable request table and its pending-work index. It does not change the single-active-import constraint or existing source/run records. Apply it before starting the updated API/import worker against an existing database. Downgrading removes range intent while preserving imported revisions and files.
+
+## Verification
+
+Focused tests cover concurrent equivalent requests, overlap/local/pending reuse, waiting behind a manual import, restart retention, real worker scheduling through fake provider ingress, empty/gapped/failed/interrupted imports, scheduled closures and unexpected closed-session bars, old normalization versions, account isolation, retired calendar work, immutable prior inputs, file corruption, API limits/credentials and migration upgrade/downgrade/reuse.
+
+Final verification: **870 Python tests passed, 10 skipped**; **25 browser cases passed**; **24 focused range tests passed**. Targeted Ruff/mypy and `git diff --check` passed. Tests do not contact a live provider; the skipped external integration tests and PostgreSQL-specific concurrency acceptance remain separate from SQLite regression coverage.
+
+## Next integration boundary
+
+SCRUM-128 remains in progress. The source manifest attributes price spans but is not yet a published composite revision accepted as an analysis-session input. Publish that immutable composite input before enabling replay over several acquired ranges. Then connect request/coverage state to chart history loading, leftward navigation and fetch-backed Move to under SCRUM-133. The higher-timeframe historical-price path also still needs the bounded-read adaptation described in the prior increment. No live-provider acceptance or new calendar coverage is claimed here.

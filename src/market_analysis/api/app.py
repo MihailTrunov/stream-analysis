@@ -24,6 +24,12 @@ from market_analysis.application.browser_replay import (
     replay_sources,
 )
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
+from market_analysis.application.history_ranges import (
+    HistoryFeed,
+    history_coverage,
+    history_prices,
+    request_history,
+)
 from market_analysis.application.logging import configure_logging, research_logger
 from market_analysis.application.replay_catalog import (
     DEMO_CONFIG_ID,
@@ -98,6 +104,14 @@ class ImportCreateRequest(BaseModel):
     start: datetime
     end: datetime
     fresh_attempt: bool = False
+
+
+class HistoryCreateRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    instrument_id: Literal["US30", "DAX"]
+    start: datetime
+    end: datetime
 
 
 class ImportResponse(BaseModel):
@@ -200,12 +214,12 @@ def _import_response(job: ImportJob) -> ImportResponse:
     )
 
 
-def _import_config() -> tuple[str, str]:
+def _import_config(*, require_token: bool = True) -> tuple[str, str]:
     token = os.getenv("OANDA_KEY") or os.getenv("OANDA_TOKEN") or ""
     account = os.getenv("OANDA_ACCOUNT") or ""
     environment = (os.getenv("OANDA_ENV") or "live").lower()
     region = (os.getenv("OANDA_REGION") or "UK").upper()
-    if not token or not account or environment != "live" or region != "UK":
+    if (require_token and not token) or not account or environment != "live" or region != "UK":
         raise HTTPException(
             status_code=503,
             detail="OANDA UK/live import credentials and account context are unavailable",
@@ -813,6 +827,61 @@ def create_import(request: ImportCreateRequest) -> ImportResponse:
             except ImportJobError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             return _import_response(job)
+    finally:
+        engine.dispose()
+
+
+@app.post("/history/requests", status_code=202)
+def create_history_request(request: HistoryCreateRequest) -> dict[str, object]:
+    account, environment = _import_config(require_token=False)
+    profile = next(
+        p for p in OANDA_UK_LIVE_PROFILES.values() if p.instrument_id == request.instrument_id
+    )
+    feed = HistoryFeed(
+        instrument_id=request.instrument_id, provider_symbol=profile.provider_symbol,
+        calendar_version=profile.version, environment=cast(Literal["live"], environment),
+        account_fingerprint=sha256(account.encode()).hexdigest(),
+    )
+    engine = create_engine(_database_url())
+    try:
+        with engine.begin() as connection:
+            register_instrument(connection, build_oanda_uk_instrument(profile.provider_symbol))
+            selected = request_history(
+                connection, feed, request.start, request.end, at=datetime.now(UTC)
+            )
+            store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
+            return history_coverage(connection, store, selected.request_id)
+    except (ValueError, SessionCalendarError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        engine.dispose()
+
+
+@app.get("/history/requests/{request_id}")
+def history_request_status(request_id: str) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
+            return history_coverage(connection, store, request_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404 if "not found" in str(error) else 422, detail=str(error)
+        ) from error
+    finally:
+        engine.dispose()
+
+
+@app.get("/history/requests/{request_id}/bars")
+def history_request_bars(request_id: str, limit: int = 500) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
+            return history_prices(connection, store, request_id, limit=limit)
+    except ValueError as error:
+        status = 404 if "not found" in str(error) else 409 if "conflicting" in str(error) else 422
+        raise HTTPException(status_code=status, detail=str(error)) from error
     finally:
         engine.dispose()
 

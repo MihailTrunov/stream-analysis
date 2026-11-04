@@ -14,6 +14,7 @@ from sqlalchemy import Engine, create_engine
 
 from market_analysis.application.diagnostics import write_worker_heartbeat
 from market_analysis.application.historical_import import advance_import
+from market_analysis.application.history_ranges import schedule_history_import
 from market_analysis.application.logging import configure_logging, research_logger
 from market_analysis.config.oanda_uk_calendars import build_oanda_uk_calendar
 from market_analysis.domain.historical_data import ProviderError
@@ -139,6 +140,10 @@ def _run_import_worker(data_root: Path, should_stop: Callable[[], bool]) -> None
                 time.sleep(1.0)
                 continue
             with engine.begin() as connection:
+                schedule_history_import(
+                    connection, DatasetStore(data_root), account=credentials[1],
+                    environment=credentials[2], at=_clock(),
+                )
                 job = claim_import_job(connection, at=_clock())
             if job is None:
                 time.sleep(1.0)
