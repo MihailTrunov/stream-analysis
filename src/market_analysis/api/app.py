@@ -15,7 +15,11 @@ from sqlalchemy import create_engine
 
 from market_analysis import __version__
 from market_analysis.api.analysis import router as analysis_router
-from market_analysis.application.analysis_sessions import analysis_sessions, preview_configuration
+from market_analysis.application.analysis_sessions import (
+    StreamSettings,
+    analysis_sessions,
+    preview_configuration,
+)
 from market_analysis.application.browser_replay import (
     BrowserReplayError,
     ReplayReviewScope,
@@ -29,6 +33,7 @@ from market_analysis.application.history_inputs import (
     publish_history_input,
     read_history_input,
 )
+from market_analysis.application.history_navigation import plan_history_navigation
 from market_analysis.application.history_ranges import (
     HistoryFeed,
     history_coverage,
@@ -123,6 +128,17 @@ class HistoryInputRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     requests: dict[str, str] = Field(min_length=1, max_length=32)
+
+
+class HistoryNavigationRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    source_revision_id: str
+    instrument_id: Literal["US30", "DAX"]
+    target: datetime
+    timeframe: Timeframe
+    streams: tuple[StreamSettings, ...] = Field(default=(), max_length=7)
+    intent: Literal["move", "replay"] = "move"
+    end: datetime | None = None
 
 
 class ImportResponse(BaseModel):
@@ -893,6 +909,29 @@ def history_request_bars(request_id: str, limit: int = 500) -> dict[str, object]
     except ValueError as error:
         status = 404 if "not found" in str(error) else 409 if "conflicting" in str(error) else 422
         raise HTTPException(status_code=status, detail=str(error)) from error
+    finally:
+        engine.dispose()
+
+
+@app.post("/history/navigation", status_code=202)
+def prepare_history_navigation(request: HistoryNavigationRequest) -> dict[str, object]:
+    account, environment = _import_config(require_token=False)
+    profile = next(p for p in OANDA_UK_LIVE_PROFILES.values()
+                   if p.instrument_id == request.instrument_id)
+    feed = HistoryFeed(
+        instrument_id=request.instrument_id, provider_symbol=profile.provider_symbol,
+        calendar_version=profile.version, environment=cast(Literal["live"], environment),
+        account_fingerprint=sha256(account.encode()).hexdigest(),
+    )
+    engine = create_engine(_database_url())
+    try:
+        with engine.begin() as connection:
+            return plan_history_navigation(
+                connection, feed, request.source_revision_id, request.target, request.timeframe,
+                request.streams, request.intent, at=datetime.now(UTC), end=request.end,
+            )
+    except (ValueError, KeyError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     finally:
         engine.dispose()
 

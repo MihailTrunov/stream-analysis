@@ -507,3 +507,172 @@ def test_old_normalization_import_does_not_block_fetching_the_current_feed(setup
             _bar(0),
             _bar(1),
         )
+
+
+def test_navigation_plans_verified_context_and_fixed_replay_end_without_calling_provider(setup):
+    from market_analysis.application.analysis_sessions import StreamSettings
+    from market_analysis.application.history_navigation import plan_history_navigation
+    from market_analysis.application.history_prices import completed_buckets
+    from market_analysis.application.replay_catalog import demo_detection_config
+
+    engine, store, feed = setup
+    original = _import(engine, feed, 0, 30)
+    _finish(engine, store, original, [_bar(i) for i in range(30)])
+    target, end = START + timedelta(minutes=15), START + timedelta(minutes=30)
+    settings = StreamSettings(
+        config=demo_detection_config("US30").model_copy(update={"timeframe": Timeframe.D1})
+    )
+    with engine.begin() as connection:
+        result = plan_history_navigation(
+            connection,
+            feed,
+            original.revision_id,
+            target,
+            Timeframe.M5,
+            (settings,),
+            "replay",
+            at=NOW,
+            end=end,
+        )
+        first = datetime.fromisoformat(result["start"])
+        assert len(list(completed_buckets(feed.calendar(), Timeframe.D1, first, target))) >= 11
+        assert result["end"] == end.isoformat().replace("+00:00", "Z")
+        assert 1 <= len(result["request_ids"]) <= 32
+        assert connection.scalar(select(func.count()).select_from(import_jobs)) == 1
+        for request_id in result["request_ids"]:
+            row = (
+                connection.execute(
+                    select(history_range_requests).where(
+                        history_range_requests.c.request_id == request_id,
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert row["range_end"] - row["range_start"] <= timedelta(days=31)
+
+
+@pytest.mark.parametrize("mode", ["account", "calendar", "initialization", "budget"])
+def test_navigation_rejects_invalid_feed_dates_or_initialization_before_queueing(setup, mode):
+    from market_analysis.application.analysis_sessions import StreamSettings
+    from market_analysis.application.history_navigation import plan_history_navigation
+    from market_analysis.application.replay_catalog import demo_detection_config
+
+    engine, store, feed = setup
+    original = _import(engine, feed, 0, 2)
+    _finish(engine, store, original, [_bar(0), _bar(1)])
+    selected = (
+        feed.model_copy(update={"account_fingerprint": sha256(b"different").hexdigest()})
+        if mode == "account"
+        else feed
+    )
+    target = {
+        "calendar": datetime(2026, 10, 1, 14, tzinfo=UTC),
+        "initialization": datetime(2023, 9, 27, 22, tzinfo=UTC),
+        "budget": datetime(2023, 10, 2, 14, tzinfo=UTC),
+    }.get(mode, START)
+    with engine.begin() as connection:
+        with pytest.raises(ValueError):
+            plan_history_navigation(
+                connection,
+                selected,
+                original.revision_id,
+                target,
+                Timeframe.M1,
+                (StreamSettings(config=demo_detection_config("US30")),),
+                "replay",
+                at=NOW,
+            )
+        assert connection.scalar(select(func.count()).select_from(history_range_requests)) == 0
+
+
+def test_navigation_api_uses_account_context_without_requiring_provider_token(setup, monkeypatch):
+    from market_analysis.application.replay_catalog import demo_detection_config
+
+    engine, store, feed = setup
+    original = _import(engine, feed, 0, 2)
+    _finish(engine, store, original, [_bar(0), _bar(1)])
+    monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", str(engine.url))
+    monkeypatch.setenv("STREAM_ANALYSIS_DATA_ROOT", str(store.root))
+    monkeypatch.setenv("OANDA_ACCOUNT", ACCOUNT)
+    monkeypatch.setenv("OANDA_ENV", "live")
+    monkeypatch.setenv("OANDA_REGION", "UK")
+    monkeypatch.delenv("OANDA_KEY", raising=False)
+    monkeypatch.delenv("OANDA_TOKEN", raising=False)
+    with TestClient(app) as client:
+        response = client.post(
+            "/history/navigation",
+            json={
+                "source_revision_id": original.revision_id,
+                "instrument_id": "US30",
+                "target": START.isoformat(),
+                "timeframe": "1m",
+                "intent": "move",
+                "streams": [{"config": demo_detection_config("US30").model_dump(mode="json")}],
+            },
+        )
+        assert response.status_code == 202, response.text
+        assert response.json()["request_ids"]
+        assert ACCOUNT not in response.text
+
+
+def test_navigation_acquires_initialization_publishes_and_replays_the_prepared_input(
+    setup, monkeypatch
+):
+    from market_analysis.application.analysis_sessions import (
+        AnalysisRequest,
+        AnalysisSessionManager,
+        StreamSettings,
+    )
+    from market_analysis.application.history_inputs import publish_history_input
+    from market_analysis.application.history_navigation import plan_history_navigation
+    from market_analysis.application.replay_catalog import demo_detection_config
+
+    engine, store, feed = setup
+    original = _import(engine, feed, 0, 5)
+    _finish(engine, store, original, [_bar(i) for i in range(5)])
+    settings = StreamSettings(
+        config=demo_detection_config("US30").model_copy(update={"timeframe": Timeframe.M5})
+    )
+    with engine.begin() as connection:
+        plan = plan_history_navigation(
+            connection,
+            feed,
+            original.revision_id,
+            START,
+            Timeframe.M5,
+            (settings,),
+            "replay",
+            at=NOW,
+            end=START + timedelta(minutes=5),
+        )
+    job = _schedule(engine, store)
+    first = int((job.request.start - START).total_seconds() / 60)
+    last = int((job.request.end - START).total_seconds() / 60)
+    assert first < -55 and last == 0
+    _finish(engine, store, job, [_bar(i) for i in range(first, last)])
+    with engine.begin() as connection:
+        reviewed = {}
+        for request_id in plan["request_ids"]:
+            coverage = history_coverage(connection, store, request_id)
+            assert coverage["status"] == "available"
+            reviewed[request_id] = coverage["source_manifest_hash"]
+        source = publish_history_input(connection, store, reviewed)
+    monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", str(engine.url))
+    monkeypatch.setenv("STREAM_ANALYSIS_DATA_ROOT", str(store.root))
+    manager = AnalysisSessionManager()
+    state = manager.launch(
+        AnalysisRequest(
+            dataset_revision_id=source["dataset_revision_id"],
+            instrument_id="US30",
+            chart_timeframe=Timeframe.M5,
+            selected_start=START,
+            selected_end=START + timedelta(minutes=5),
+            streams=(settings,),
+        )
+    )
+    assert state["status"] == "paused" and state["visible_bars"] == 0
+    stepped = manager.command(state["run_id"], "step", Timeframe.M5)
+    assert stepped["visible_bars"] == 5
+    assert stepped["status"] == "completed"
+    assert stepped["initialization"][0]["processed"] >= 12

@@ -226,6 +226,7 @@ def read_history_input(
     )
     return {
         "dataset_revision_id": revision_id,
+        "source_dataset_id": lineage.source_dataset_id,
         "instrument_id": member.instrument_id,
         "timeframe": Timeframe.M1.value,
         "range_start": stamp(member.range_start),

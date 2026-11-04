@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterator
 from datetime import datetime, timedelta
 
 from sqlalchemy import Connection
@@ -19,19 +20,15 @@ from market_analysis.persistence.dataset_store import DatasetStore
 from .analysis_clock import verify_closed_interval
 
 
-def completed_source_window(
+def completed_buckets(
     calendar: TradingCalendar,
     timeframe: Timeframe,
     start: datetime,
     end: datetime,
-    limit: int,
-) -> tuple[datetime, datetime] | None:
-    """Select the last nonempty completed calendar buckets without reading prices."""
+) -> Iterator[tuple[datetime, datetime]]:
+    """Yield nonempty completed buckets newest first without reading prices."""
     cursor = end
-    first: datetime | None = None
-    last: datetime | None = None
-    count = 0
-    while cursor > start and count < limit:
+    while cursor > start:
         left, right = bucket_bounds(cursor - timedelta(microseconds=1), timeframe, calendar)
         cursor = left
         if left < start:
@@ -43,9 +40,24 @@ def completed_source_window(
             minute += MINUTE
         if minute >= right:
             continue
+        yield left, right
+
+
+def completed_source_window(
+    calendar: TradingCalendar,
+    timeframe: Timeframe,
+    start: datetime,
+    end: datetime,
+    limit: int,
+) -> tuple[datetime, datetime] | None:
+    """Select the last nonempty completed calendar buckets without reading prices."""
+    first: datetime | None = None
+    last: datetime | None = None
+    for count, (left, right) in enumerate(completed_buckets(calendar, timeframe, start, end), 1):
         first = left
         last = last or right
-        count += 1
+        if count == limit:
+            break
     return (first, last) if first is not None and last is not None else None
 
 
