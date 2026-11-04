@@ -33,6 +33,7 @@ from market_analysis.persistence.market_data import load_dataset_revision
 from market_analysis.persistence.runs import RunSnapshotRecord, create_run_snapshot
 
 from .analysis_clock import verify_closed_interval
+from .analysis_coverage import coverage_status
 from .browser_replay import ReplayReviewScope, _store
 from .replay_catalog import (
     PATTERN_DEFINITIONS,
@@ -106,8 +107,13 @@ class DetectorStream:
     frames: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     processed: int = 0
+    valid_from: datetime | None = None
+    available_from: datetime | None = None
 
     def process(self, connection: Connection, candle: AnalyticalCandle) -> None:
+        if self.valid_from is None and self.processed >= required_warmup_bars(self.runtime.config):
+            self.valid_from = candle.bar.timestamp
+            self.available_from = candle.available_at
         result = self.runtime.process_bar(candle.bar)
         self.store(connection, candle.bar, result, self.runtime.binding_fingerprint)
         self.processed += 1
@@ -210,6 +216,26 @@ class AnalysisSession:
         self.index += 1
         self.revealed_at = source.timestamp + MINUTE
 
+    def coverage(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        return [
+            {
+                "run_id": stream.runtime.run_id,
+                "pattern_id": stream.runtime.config.patterns[0].pattern_id,
+                "timeframe": stream.runtime.config.timeframe.value,
+                "status": coverage_status(
+                    start, end, stream.valid_from, stream.available_from, self.watermark
+                ),
+                "valid_from": None if stream.valid_from is None else stamp(stream.valid_from),
+                "available_from": None
+                if stream.available_from is None
+                else stamp(stream.available_from),
+                "valid_to": stamp(self.watermark),
+                "processed": stream.processed,
+                "required": required_warmup_bars(stream.runtime.config),
+            }
+            for stream in self.streams
+        ]
+
     def state(self) -> dict[str, Any]:
         first = self.request.streams[0].config
         visible = [
@@ -246,6 +272,8 @@ class AnalysisSession:
                     "run_id": stream.runtime.run_id,
                     "timeframe": stream.runtime.config.timeframe.value,
                     "processed": stream.processed,
+                    "pattern_id": stream.runtime.config.patterns[0].pattern_id,
+                    "pattern_version": stream.runtime.config.patterns[0].pattern_version,
                     "required": required_warmup_bars(stream.runtime.config),
                 }
                 for stream in self.streams
@@ -467,7 +495,8 @@ class AnalysisSessionManager:
                     previous_index = session.index
                     previous_watermark = session.watermark
                     previous_streams = [
-                        (len(s.frames), len(s.events), s.processed) for s in session.streams
+                        (len(s.frames), len(s.events), s.processed, s.valid_from, s.available_from)
+                        for s in session.streams
                     ]
                     try:
                         current_time = session.bars[
@@ -505,12 +534,14 @@ class AnalysisSessionManager:
                     except Exception as error:
                         session.index = previous_index
                         session.revealed_at = previous_watermark
-                        for stream, (frames, events, processed) in zip(
+                        for stream, (frames, events, processed, valid_from, available_from) in zip(
                             session.streams, previous_streams, strict=True
                         ):
                             del stream.frames[frames:]
                             del stream.events[events:]
                             stream.processed = processed
+                            stream.valid_from = valid_from
+                            stream.available_from = available_from
                         for candles in session.candles.values():
                             candles[:] = [c for c in candles if c.available_at <= session.watermark]
                         session.status = "failed"
@@ -526,7 +557,7 @@ class AnalysisSessionManager:
                 if action == "next-event":
                     emitted = [
                         event
-                        for stream, (_, count, _) in zip(
+                        for stream, (_, count, _, _, _) in zip(
                             session.streams, previous_streams, strict=True
                         )
                         for event in stream.events[count:]
@@ -564,12 +595,29 @@ class AnalysisSessionManager:
             displayed = [
                 c for c in candles if c.bar.timestamp < end and c.available_at <= session.watermark
             ][-limit:]
-            events = [
-                dict(event)
-                for stream in session.streams
-                for event in stream.events
-                if datetime.fromisoformat(event["available_at"]) <= cutoff
-            ]
+            coverage = session.coverage(start, cutoff)
+            events = []
+            for stream in session.streams:
+                if stream.available_from is None or cutoff < stream.available_from:
+                    continue
+                visible = [
+                    event
+                    for event in stream.events
+                    if datetime.fromisoformat(event["available_at"]) <= cutoff
+                ]
+                latest = {event["instance_id"]: event for event in visible}
+                excluded = {
+                    key
+                    for key, event in latest.items()
+                    if event["to_state"]
+                    in PATTERN_DEFINITIONS[
+                        event["pattern_id"], event["pattern_version"]
+                    ].effective_terminal_states
+                    and datetime.fromisoformat(event["available_at"]) < stream.available_from
+                }
+                events.extend(
+                    dict(event) for event in visible if event["instance_id"] not in excluded
+                )
             events.sort(
                 key=lambda event: (
                     event["available_at"],
@@ -605,7 +653,16 @@ class AnalysisSessionManager:
                     frame for frame in observations if frame["timestamp"] in visible_times
                 ],
                 "events": events,
-                "coverage": "calculated",
+                "coverage": (
+                    "not_requested"
+                    if not coverage
+                    else "calculated"
+                    if all(item["status"] == "calculated" for item in coverage)
+                    else "partial"
+                    if any(item["status"] != "initialization_unavailable" for item in coverage)
+                    else "initialization_unavailable"
+                ),
+                "stream_coverage": coverage,
                 "view_start": stamp(start),
                 "view_end": stamp(cutoff),
             }

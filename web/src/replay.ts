@@ -1,3 +1,4 @@
+import type { StreamCoverage } from './analysisCoverage';
 export interface ReplaySource {
   dataset_revision_id: string;
   source_dataset_id: string;
@@ -159,13 +160,15 @@ export interface ReviewPattern {
   name: string;
 }
 export interface ReplayViewResponse extends ReplayBarsResponse {
+  stream_coverage?: StreamCoverage[];
+  coverage?: string;
   timeframe?: Timeframe;
   observations: ReplayObservation[];
   events: ReplayDetectorEvent[];
 }
 
 const instantFields = new Set(['timestamp', 'event_time', 'detection_time', 'cursor_time',
-  'selected_start', 'selected_end', 'available_at', 'interval_start', 'range_start', 'range_end', 'suggested_start', 'suggested_end']);
+  'selected_start', 'selected_end', 'valid_from', 'available_from', 'valid_to', 'available_at', 'interval_start', 'range_start', 'range_end', 'suggested_start', 'suggested_end']);
 
 export function normalizeApiInstants(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeApiInstants);

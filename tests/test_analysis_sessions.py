@@ -341,3 +341,39 @@ def test_clock_never_skips_an_open_source_slot(client, monkeypatch):  # type: ig
     response = client.post("/analysis", json=payload)
     assert response.status_code == 422
     assert "missing expected-open" in response.text
+
+
+def test_history_distinguishes_uninitialized_and_partially_valid_analysis(
+    client: TestClient,
+) -> None:
+    short = launch(
+        client,
+        request(
+            (Timeframe.M15,),
+            mode="history",
+            selected_start="2026-01-05T09:00:00Z",
+            selected_end="2026-01-05T09:05:00Z",
+        ),
+    )
+    view = client.get(
+        f"/analysis/{short['run_id']}/view",
+        params={"start": short["selected_start"], "end": short["selected_end"]},
+    ).json()
+    assert view["coverage"] == "initialization_unavailable"
+    assert view["stream_coverage"][0]["valid_from"] is None
+    assert view["events"] == []
+    partial = launch(client, request(mode="history", selected_start="2026-01-05T09:00:00Z"))
+    view = client.get(
+        f"/analysis/{partial['run_id']}/view",
+        params={"start": partial["selected_start"], "end": partial["selected_end"]},
+    ).json()
+    coverage = view["stream_coverage"][0]
+    assert view["coverage"] == "partial"
+    assert coverage["valid_from"] == "2026-01-05T09:11:00Z"
+    assert coverage["available_from"] == "2026-01-05T09:12:00Z"
+    early = client.get(
+        f"/analysis/{partial['run_id']}/view",
+        params={"start": "2026-01-05T09:00:00Z", "end": "2026-01-05T09:10:00Z"},
+    ).json()
+    assert early["coverage"] == "initialization_unavailable"
+    assert early["events"] == []

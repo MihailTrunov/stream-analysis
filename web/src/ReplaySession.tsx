@@ -280,7 +280,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       <PanelTabs id={tab.id} panel={panel} count={projectOccurrences(events, periodStart ?? '', periodEnd ?? '').length} onChange={setPanel} />
       <div className="panel-body" id={`panel-${tab.id}`} role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
         {panel === 'patterns' ? <>
-          {!state && <p role="status">{historical.busy ? 'Calculating historical detections…' : historical.loaded ? 'Historical detections loaded for this view.' : `Use Detector settings to calculate this view. ${historical.coverage}`}</p>}
+          {!state && <p role="status">{historical.busy ? 'Calculating historical detections…' : historical.loaded ? 'Historical detections loaded for this view.' : historical.status === 'partial' ? 'Partially calculated: earlier candles lack sufficient initialization history.' : historical.status === 'initialization_unavailable' ? 'Insufficient initialization history for this analytical timeframe.' : `Use Detector settings to calculate this view. ${historical.coverage}`}</p>}
           <PatternGroups events={events} start={periodStart ?? ''} end={periodEnd ?? ''} timeframe={chartTimeframe}
             loaded={Boolean(state) || historical.loaded} selected={selectedOrder} annotations={annotations} timezone={tab.timezone}
             onSelect={selectEvent} onInspect={inspect} onDismiss={dismissPreview} />
