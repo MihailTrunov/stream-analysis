@@ -261,7 +261,12 @@ def test_closed_endpoint_flushes_completed_candles_in_history_and_replay(client,
         ),
     )
     monkeypatch.setattr(
-        module, "_store", lambda: SimpleNamespace(load_sequence=lambda *args: sequence)
+        module, "_store", lambda: SimpleNamespace(
+            load_sequence=lambda *args: sequence,
+            iter_verified_range=lambda *args: (
+                bar for bar in bars if args[-2] <= bar.timestamp < args[-1]
+            ),
+        )
     )
     monkeypatch.setattr(module, "resolve_replay_calendar", lambda *args: calendar)
     payload = request(
@@ -461,3 +466,36 @@ def test_history_cache_is_reclaimable_and_does_not_consume_replay_slots(client, 
     )
     assert missed.status_code == 201, missed.text
     assert missed.json()["analysis_lineage"]["analytical_timeframe"] == "5m"
+
+
+def test_history_price_endpoint_streams_only_required_completed_source_buckets(client, monkeypatch):  # type: ignore[no-untyped-def]
+    reads = []
+    original = DatasetStore.iter_verified_range
+
+    def tracked(self, *args):  # type: ignore[no-untyped-def]
+        reads.append(tuple(value.isoformat() for value in args[-2:]))
+        yield from original(self, *args)
+
+    def reject_sequence(*args):  # type: ignore[no-untyped-def]
+        raise AssertionError("price endpoint must not load a complete source sequence")
+
+    monkeypatch.setattr(DatasetStore, "iter_verified_range", tracked)
+    monkeypatch.setattr(DatasetStore, "load_sequence", reject_sequence)
+    response = client.get("/analysis/history/offline-replay-us30-v3", params={
+        "instrument_id": "US30", "timeframe": "5m", "limit": 2,
+        "start": "2026-01-05T09:00:00Z", "end": "2026-01-05T14:00:00Z",
+    })
+    assert response.status_code == 200, response.text
+    assert reads == [("2026-01-05T13:50:00+00:00", "2026-01-05T14:00:00+00:00")]
+    assert [bar["timestamp"] for bar in response.json()["bars"]] == [
+        "2026-01-05T13:50:00Z", "2026-01-05T13:55:00Z",
+    ]
+
+
+def test_history_price_endpoint_never_includes_an_unfinished_chart_candle(client):  # type: ignore[no-untyped-def]
+    response = client.get("/analysis/history/offline-replay-us30-v3", params={
+        "instrument_id": "US30", "timeframe": "5m",
+        "start": "2026-01-05T09:00:00Z", "end": "2026-01-05T10:04:30Z",
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["bars"][-1]["available_at"] == "2026-01-05T10:00:00Z"

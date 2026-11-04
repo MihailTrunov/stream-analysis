@@ -32,7 +32,7 @@ from market_analysis.domain.aggregation import (
 )
 from market_analysis.persistence.analysis_lineage import load_analysis_lineage
 from market_analysis.persistence.analysis_sessions import analysis_session_revisions
-from market_analysis.persistence.market_data import load_dataset_revision
+from market_analysis.persistence.market_data import load_dataset_lineage, load_dataset_revision
 from market_analysis.persistence.pattern_instances import (
     pattern_instance_transitions,
     pattern_instances,
@@ -42,6 +42,7 @@ from market_analysis.persistence.runs import RunSnapshotRecord, create_run_snaps
 from .analysis_clock import verify_closed_interval
 from .analysis_coverage import coverage_status
 from .browser_replay import ReplayReviewScope, _store
+from .history_prices import load_completed_candles
 from .replay_catalog import (
     PATTERN_DEFINITIONS,
     detector_bindings,
@@ -835,9 +836,9 @@ def history_candles(
     engine = analysis_sessions.engine()
     try:
         with engine.connect() as connection:
-            sequence = _store().load_sequence(connection, revision_id, instrument_id, Timeframe.M1)
-            if start < sequence.lineage.requested_start or end > sequence.lineage.requested_end:
-                raise ValueError("history lies outside the retained revision")
+            lineage = load_dataset_lineage(connection, revision_id, instrument_id, Timeframe.M1)
+            if lineage is None:
+                raise ValueError("source lineage not found")
             from .replay_catalog import demo_detection_config
 
             revision = load_dataset_revision(connection, revision_id)
@@ -848,23 +849,15 @@ def history_candles(
                 demo_detection_config(instrument_id).calendar_id,
                 revision.calendar_version,
             )
-            aggregator = CandleAggregator(timeframe, calendar)
-            candles = [
-                c for bar in sequence.bars if bar.timestamp < end for c in aggregator.push(bar)
-            ]
-            last_close = next(
-                (bar.timestamp + MINUTE for bar in reversed(sequence.bars) if bar.timestamp < end),
-                sequence.lineage.requested_start,
+            candles = load_completed_candles(
+                connection, _store(), lineage, calendar, timeframe, start, end, limit,
             )
-            verify_closed_interval(calendar, last_close, end)
-            candles.extend(aggregator.advance(end))
             return {
                 "bars": [
                     {**bar_payload(c.bar), "available_at": stamp(c.available_at)}
                     for c in candles
-                    if c.bar.timestamp >= start
-                ][-limit:],
-                "canonical_checksum": sequence.lineage.canonical_checksum,
+                ],
+                "canonical_checksum": lineage.canonical_checksum,
                 "aggregation_version": AGGREGATION_VERSION,
             }
     finally:
