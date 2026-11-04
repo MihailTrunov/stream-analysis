@@ -1,6 +1,7 @@
 import { isDetectionConfig } from './validation';
 import type { AnalysisStream, DetectionConfig, ReplaySource, Timeframe } from './replay';
 import type { DisplayTimezone } from './time';
+import { isNavigationPlan, type NavigationPlan } from './historyNavigation';
 
 export interface AnalysisTab {
   id: string;
@@ -15,6 +16,9 @@ export interface AnalysisTab {
   streams?: AnalysisStream[];
   appliedStreams?: AnalysisStream[];
   chartTimeframe?: Timeframe;
+  historyEnd?: string;
+  navigationPlan?: NavigationPlan;
+  replayEndExplicit?: boolean;
   viewport?: { from: number; to: number; origin: string };
 }
 export interface Workspace { version: 3; tabs: AnalysisTab[]; activeId: string }
@@ -44,6 +48,9 @@ export function restoreWorkspace(raw: string | null): Workspace {
         streams: validStreams(tab.streams) ? tab.streams : undefined,
         appliedStreams: validStreams(tab.appliedStreams) ? tab.appliedStreams : undefined,
         chartTimeframe: ['1m', '5m', '15m', '30m', '1h', '4h', '1d'].includes(tab.chartTimeframe ?? '') ? tab.chartTimeframe : '1m' as Timeframe,
+        historyEnd: typeof tab.historyEnd === 'string' && Number.isFinite(Date.parse(tab.historyEnd)) ? tab.historyEnd : undefined,
+        navigationPlan: isNavigationPlan(tab.navigationPlan) && tab.navigationPlan.instrument_id === tab.instrument ? tab.navigationPlan : undefined,
+        replayEndExplicit: tab.replayEndExplicit === true,
         viewport: tab.viewport
         && Number.isFinite(tab.viewport.from) && Number.isFinite(tab.viewport.to)
         && Math.abs(tab.viewport.from) < 1_000_000 && Math.abs(tab.viewport.to) < 1_000_000

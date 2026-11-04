@@ -27,12 +27,14 @@ interface Props {
   onRangeChange?: (range: { from: number; to: number }) => void;
   focusVersion?: number;
   onReturnLatest?: () => void;
+  onLoadEarlier?: (automatic?: boolean) => void;
+  earlierDisabled?: boolean;
 }
 
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
   onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays,
   timezone = 'Europe/London', resetKey = '', initialRange = null, onRangeChange,
-  focusVersion = 0, onReturnLatest }: Props) {
+  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -43,15 +45,16 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
   const priorFocus = useRef<string | null>(null);
   const priorFocusVersion = useRef(0);
   const [chartError, setChartError] = useState<string | null>(null);
-  const callbacks = useRef({ onSelectEvent, onSelectBar, onRangeChange });
+  const callbacks = useRef({ onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier });
   const initialViewport = useRef(initialRange);
   initialViewport.current = initialRange;
   const following = useRef(initialRange === null);
+  const userNavigation = useRef(false);
   const [isFollowing, setIsFollowing] = useState(initialRange === null);
   const requestedFocus = useRef({ focusTime, focusVersion });
   requestedFocus.current = { focusTime, focusVersion };
   const timestamps = useRef(new Map<number, string>());
-  callbacks.current = { onSelectEvent, onSelectBar, onRangeChange };
+  callbacks.current = { onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier };
 
   const result = useMemo(() => {
     try {
@@ -111,11 +114,14 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       chart.current = instance;
       candles.current = series;
       markers.current = markerPlugin;
-      priorFocus.current = requestedFocus.current.focusTime;
-      priorFocusVersion.current = requestedFocus.current.focusVersion;
+      priorFocus.current = null;
+      priorFocusVersion.current = requestedFocus.current.focusTime ? -1 : requestedFocus.current.focusVersion;
       const emaSeries = ema.current;
       instance.timeScale().subscribeVisibleLogicalRangeChange((value) => {
-        if (value) callbacks.current.onRangeChange?.({ from: Number(value.from), to: Number(value.to) });
+        if (value) {
+          callbacks.current.onRangeChange?.({ from: Number(value.from), to: Number(value.to) });
+          if (userNavigation.current && !following.current && priorCount.current > 0 && Number(value.from) <= 3) callbacks.current.onLoadEarlier?.(true);
+        }
       });
       return () => {
         markerPlugin.detach();
@@ -198,6 +204,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     if (!instance || !model?.candles.length || (focusTime === priorFocus.current
       && focusVersion === priorFocusVersion.current)) return;
     if (focusTime) {
+      userNavigation.current = false;
       following.current = false;
       setIsFollowing(false);
       const index = model.candles.findIndex((bar) => model.timestamps.get(bar.time) === focusTime);
@@ -215,7 +222,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     priorFocusVersion.current = focusVersion;
   }, [focusTime, focusVersion, result, timezone, resetKey]);
 
-  function navigate() { following.current = false; setIsFollowing(false); }
+  function navigate() { userNavigation.current = true; following.current = false; setIsFollowing(false); }
   function zoom(factor: number) {
     const scale = chart.current?.timeScale();
     if (!scale) return;
@@ -230,8 +237,10 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       <button type="button" aria-label="Zoom in" onClick={() => zoom(1.3)}>＋</button>
       <button type="button" aria-label="Zoom out" onClick={() => zoom(1 / 1.3)}>−</button>
       <button type="button" onClick={() => { navigate(); chart.current?.timeScale().fitContent(); }}>Fit candles</button>
+      {onLoadEarlier && <button type="button" onClick={() => onLoadEarlier()} disabled={earlierDisabled}>Load earlier candles</button>}
       <button type="button" onClick={() => {
         following.current = true; setIsFollowing(true); chart.current?.timeScale().scrollToRealTime();
+        userNavigation.current = false;
         onReturnLatest?.();
       }} disabled={isFollowing && !focusTime}>Return to latest</button>
     </div>

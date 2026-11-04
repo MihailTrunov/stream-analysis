@@ -24,7 +24,7 @@ export function useHistoryWindow(active: boolean, source: ReplaySource | undefin
   useEffect(() => {
     if (!active || !source || !end) return;
     let cancelled = false;
-    if (end <= source.range_start) { setHistory([]); setLoading(false); return; }
+    if (Date.parse(end) <= Date.parse(source.range_start)) { setHistory([]); setLoading(false); return; }
     setLoading(true);
     void readHistoryWindow(source, end, timeframe).then((bars) => { if (!cancelled) setHistory(bars); })
       .catch((error: unknown) => {

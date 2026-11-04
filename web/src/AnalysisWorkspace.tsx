@@ -57,6 +57,11 @@ export function AnalysisWorkspace() {
     });
   }, []);
 
+  const addSource = useCallback((source: ReplaySource) => {
+    setBootstrap((current) => current ? { ...current, sources: [...current.sources.filter(
+      (item) => item.dataset_revision_id !== source.dataset_revision_id), source] } : current);
+  }, []);
+
   const updateRun = useCallback((id: string, state: ReplayState | null) => {
     updateTab(id, { runId: state?.run_id ?? null });
     const previous = workspace.tabs.find((tab) => tab.id === id)?.runId;
@@ -108,7 +113,7 @@ export function AnalysisWorkspace() {
         return { ...current, tabs: current.tabs.map((item) => item.id === tab.id ? replacement : item),
           activeId: current.activeId === tab.id ? replacement.id : current.activeId };
       })}><ReplaySession tab={tab}
-      active={tab.id === workspace.activeId} sources={bootstrap.sources} patterns={bootstrap.patterns}
+      active={tab.id === workspace.activeId} sources={bootstrap.sources} patterns={bootstrap.patterns} onSourceAdded={addSource}
       activeRun={bootstrap.sessions.find((item) => item.run_id === tab.runId) ?? null} onTabChange={updateTab} onRunChange={updateRun} /></SessionBoundary>)}
   </>;
 }
