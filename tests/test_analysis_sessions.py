@@ -370,10 +370,94 @@ def test_history_distinguishes_uninitialized_and_partially_valid_analysis(
     coverage = view["stream_coverage"][0]
     assert view["coverage"] == "partial"
     assert coverage["valid_from"] == "2026-01-05T09:11:00Z"
-    assert coverage["available_from"] == "2026-01-05T09:12:00Z"
+    assert coverage["available_from"] == "2026-01-05T09:11:00Z"
     early = client.get(
         f"/analysis/{partial['run_id']}/view",
         params={"start": "2026-01-05T09:00:00Z", "end": "2026-01-05T09:10:00Z"},
     ).json()
     assert early["coverage"] == "initialization_unavailable"
     assert early["events"] == []
+
+
+@pytest.mark.parametrize("frames", [(Timeframe.M5, Timeframe.M1), (Timeframe.M1, Timeframe.M5)])
+@pytest.mark.parametrize("selected_start", ["2026-01-05T10:00:00Z", "2026-01-05T10:02:00Z"])
+def test_missed_analytical_review_keeps_source_lineage_and_exports(
+    client: TestClient, frames: tuple[Timeframe, ...], selected_start: str
+) -> None:
+    state = launch(client, request(frames, chart_timeframe="5m", selected_start=selected_start))
+    state = client.post(f"/analysis/{state['run_id']}/step").json()
+    target = next(item for item in state["initialization"] if item["timeframe"] == "5m")
+    assert target["review_interval"] == {
+        "start": "2026-01-05T10:00:00Z",
+        "end": "2026-01-05T10:05:00Z",
+    }
+    payload = {
+        "target_kind": "missed_pattern",
+        "interval_start": "2026-01-05T10:00:00Z",
+        "interval_end": "2026-01-05T10:05:00Z",
+        "pattern_id": "RANGE_COMPRESSION_V1",
+        "pattern_version": "1",
+        "label": "missed_pattern",
+        "note": "five minute review",
+    }
+    response = client.post(f"/replay/{target['run_id']}/annotations", json=payload)
+    assert response.status_code == 201, response.text
+    saved = response.json()
+    assert saved["timeframe"] == "5m"
+    assert saved["analysis_lineage"]["source_timeframe"] == "1m"
+    assert saved["analysis_lineage"]["analytical_timeframe"] == "5m"
+    assert saved["analysis_lineage"]["analysis_run_id"] == target["run_id"]
+    exported = client.get(f"/annotations/{saved['annotation_id']}/export").json()
+    assert exported["analysis_lineage"] == saved["analysis_lineage"]
+    invalid = client.post(
+        f"/replay/{target['run_id']}/annotations",
+        json={**payload, "interval_end": "2026-01-05T10:01:00Z"},
+    )
+    assert invalid.status_code == 422
+    assert "analytical candle boundaries" in invalid.text
+
+
+def test_history_cache_is_reclaimable_and_does_not_consume_replay_slots(client, monkeypatch):  # type: ignore[no-untyped-def]
+    from market_analysis.api import analysis
+    from market_analysis.api import app as api
+
+    manager = AnalysisSessionManager(history_capacity=2, replay_capacity=2)
+    monkeypatch.setattr(analysis, "analysis_sessions", manager)
+    monkeypatch.setattr(api, "analysis_sessions", manager)
+    first = launch(client, request((Timeframe.M5, Timeframe.M1), mode="history"))
+    first_view = client.get(
+        f"/analysis/{first['run_id']}/view",
+        params={"start": first["selected_start"], "end": first["selected_end"]},
+    ).json()
+    event = first_view["events"][-1]
+    for _ in range(4):
+        launch(client, request(mode="history"))
+    assert client.get("/analysis/active").json()["sessions"] == []
+    assert client.get(f"/analysis/{first['run_id']}").status_code == 422
+    one, two = launch(client), launch(client)
+    assert client.post("/analysis", json=request()).status_code == 422
+    reset = client.post(f"/analysis/{one['run_id']}/reset")
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["run_id"] != one["run_id"]
+    assert len(client.get("/analysis/active").json()["sessions"]) == 2
+    assert client.get(f"/analysis/{two['run_id']}").status_code == 200
+    # Event and missed reviews remain available after historical runtime eviction.
+    saved = client.post(
+        f"/replay/{event['run_id']}/annotations",
+        json={"target_kind": "event", "event_id": event["event_id"], "label": "correct"},
+    )
+    assert saved.status_code == 201, saved.text
+    target = next(item for item in first["initialization"] if item["timeframe"] == "5m")
+    missed = client.post(
+        f"/replay/{target['run_id']}/annotations",
+        json={
+            "target_kind": "missed_pattern",
+            "interval_start": "2026-01-05T10:00:00Z",
+            "interval_end": "2026-01-05T10:05:00Z",
+            "pattern_id": "RANGE_COMPRESSION_V1",
+            "pattern_version": "1",
+            "label": "missed_pattern",
+        },
+    )
+    assert missed.status_code == 201, missed.text
+    assert missed.json()["analysis_lineage"]["analytical_timeframe"] == "5m"

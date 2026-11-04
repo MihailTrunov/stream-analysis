@@ -16,7 +16,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   identityRef.current = identity;
   useEffect(() => {
     generation.current += 1; setResults({}); setBusy(false); keySessions.current.clear();
-    for (const id of sessionIds.current) void apiJson(`/analysis/${id}/stop`, { method: 'POST' });
+    for (const id of sessionIds.current) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined);
     sessionIds.current.clear();
   }, [identity]);
   const calculate = useCallback(async (targetTimeframe?: string, targetPattern?: string, auto = false) => {
@@ -53,7 +53,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
       for (const previous of sessionIds.current) {
         if (![...keySessions.current.values()].includes(previous)) {
           sessionIds.current.delete(previous);
-          void apiJson(`/analysis/${previous}/stop`, { method: 'POST' });
+          void apiJson(`/analysis/${previous}/stop`, { method: 'POST' }).catch(() => undefined);
         }
       }
       const entries = keys.flatMap((key) => {
@@ -61,7 +61,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
         return bounds ? [[key, { events: result.events.filter((event) => `${event.timeframe}:${event.pattern_id}` === key), bounds, identity: requestIdentity }]] : [];
       });
       setResults((current) => ({ ...current, ...Object.fromEntries(entries) }));
-    } catch (error) { onError(String(error)); if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }); }
+    } catch (error) { onError(String(error)); if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); }
     finally { if (requestGeneration === generation.current) setBusy(false); }
   }, [source, streams, start, end, timeframe, identity, onError]);
   useEffect(() => {
@@ -71,7 +71,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   }, [automatic, calculate]);
   useEffect(() => {
     const ids = sessionIds.current;
-    return () => { generation.current += 1; for (const id of ids) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }); };
+    return () => { generation.current += 1; for (const id of ids) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); };
   }, []);
   const projection = useMemo(() => {
   const covered = Object.entries(results).filter(([, value]) => value.identity === identity && end && containsEnd(value.bounds, end));

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { dateTimeInput, inputInstant, displayTime, type DisplayTimezone } from './time';
-import { apiJson, type ReplayDetectorEvent, type ReviewPattern, type ValidationAnnotation } from './replay';
+import { apiJson, type AnalysisReviewTarget, type ReplayDetectorEvent, type ReviewPattern, type ValidationAnnotation } from './replay';
 
 const REVIEW_LABELS = [
   ['needs_review', 'Needs review'],
@@ -122,6 +122,8 @@ export function EventReview({ runId, event, annotations, onSaved }: ReviewProps)
 }
 
 interface MissedProps {
+  targets?: AnalysisReviewTarget[];
+  chartTimeframe?: string;
   timezone?: DisplayTimezone;
   runId: string;
   cursorTime: string | null;
@@ -131,7 +133,15 @@ interface MissedProps {
   onSaved: (record: ValidationAnnotation) => void;
 }
 
-export function MissedPatternReview({ runId, cursorTime, selectedInterval, patterns, annotations, onSaved, timezone = 'UTC' }: MissedProps) {
+export function MissedPatternReview({ runId: fallbackRunId, cursorTime, selectedInterval, patterns, annotations, onSaved, timezone = 'UTC', targets, chartTimeframe = '1m' }: MissedProps) {
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const target = targets?.find((item) => item.run_id === targetId) ?? targets?.find((item) => item.timeframe === chartTimeframe) ?? targets?.[0];
+  const targetTimeframe = target?.timeframe;
+  const runId = target?.run_id ?? fallbackRunId;
+  const targetInterval = useRef(target?.review_interval);
+  targetInterval.current = target?.review_interval;
+  const targetPattern = useRef(target?.pattern_id ? `${target.pattern_id}@${target.pattern_version}` : '');
+  targetPattern.current = target?.pattern_id ? `${target.pattern_id}@${target.pattern_version}` : '';
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [pattern, setPattern] = useState('');
@@ -144,15 +154,16 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
   const missed = annotations.filter((item) => item.target_kind === 'missed_pattern');
 
   useEffect(() => {
-    setStart(''); setEnd(''); setPattern(''); setNote(''); setEditingId(null); setError(null);
+    setStart(''); setEnd(''); setPattern(targetPattern.current); setNote(''); setEditingId(null); setError(null);
   }, [runId]);
 
   useEffect(() => {
-    if (selectedInterval) {
-      setStart(dateTimeInput(selectedInterval.start, timezone));
-      setEnd(dateTimeInput(selectedInterval.end, timezone));
+    const interval = !targetTimeframe || targetTimeframe === chartTimeframe ? selectedInterval : targetInterval.current;
+    if (interval) {
+      setStart(dateTimeInput(interval.start, timezone));
+      setEnd(dateTimeInput(interval.end, timezone));
     }
-  }, [selectedInterval, timezone]);
+  }, [selectedInterval, timezone, runId, targetTimeframe, chartTimeframe]);
 
   useEffect(() => {
     const previous = previousTimezone.current;
@@ -167,7 +178,11 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
   }, [timezone, selectedInterval, start, end]);
 
   function useCurrentBar() {
-    if (!cursorTime) return;
+    if (target?.review_interval) {
+      setStart(dateTimeInput(target.review_interval.start, timezone));
+      setEnd(dateTimeInput(target.review_interval.end, timezone)); return;
+    }
+    if (target || !cursorTime) return;
     setStart(dateTimeInput(cursorTime, timezone));
     setEnd(dateTimeInput(new Date(Date.parse(cursorTime) + 60_000).toISOString(), timezone));
   }
@@ -217,7 +232,12 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
     </li>)}</ul> : <p>No missed-pattern interval recorded in the visible chart.</p>}
     {error && <p role="alert">{error}</p>}
     {!editingId && <>
-      <button type="button" onClick={useCurrentBar} disabled={!cursorTime}>Use current bar interval</button>
+      {targets && <label>Analytical review target <select aria-label="Analytical review target" value={runId} disabled={saving}
+        onChange={(event) => setTargetId(event.target.value)}>
+        {targets.map((item) => <option key={item.run_id} value={item.run_id}>{item.timeframe} · {item.pattern_id}</option>)}
+      </select></label>}
+      {target && target.timeframe !== chartTimeframe && <p>Use the target's completed candle interval or enter its analytical boundaries.</p>}
+      <button type="button" onClick={useCurrentBar} disabled={target ? !target.review_interval : !cursorTime}>Use current bar interval</button>
       <div className="form-row">
         <label>Missed interval start ({timezone === 'Europe/London' ? 'UK time' : 'UTC'}) <input aria-label={`Missed interval start ${timezone === 'Europe/London' ? 'UK time' : 'UTC'}`} type="datetime-local"
           value={start} onChange={(change) => setStart(change.target.value)} disabled={saving} /></label>
@@ -227,7 +247,7 @@ export function MissedPatternReview({ runId, cursorTime, selectedInterval, patte
       <label>Expected pattern <select aria-label="Expected pattern" value={pattern}
         onChange={(change) => setPattern(change.target.value)} disabled={saving}>
         <option value="">Choose a registered pattern</option>
-        {patterns.map((item) => <option key={`${item.pattern_id}@${item.pattern_version}`}
+        {patterns.filter((item) => !target || item.pattern_id === target.pattern_id && item.pattern_version === target.pattern_version).map((item) => <option key={`${item.pattern_id}@${item.pattern_version}`}
           value={`${item.pattern_id}@${item.pattern_version}`}>{item.name} · {item.pattern_id}@{item.pattern_version}</option>)}
       </select></label>
     </>}

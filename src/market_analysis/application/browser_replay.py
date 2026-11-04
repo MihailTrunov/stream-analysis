@@ -206,6 +206,7 @@ class ReplayReviewScope:
     visible_end: datetime
     event_ids: frozenset[str]
     instance_ids: frozenset[str]
+    analysis_run_id: str | None = None
 
 
 class BrowserReplayManager:

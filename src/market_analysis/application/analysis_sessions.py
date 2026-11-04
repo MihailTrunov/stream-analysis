@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -12,10 +13,11 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Connection, create_engine
+from sqlalchemy import Connection, create_engine, select
 
 from market_analysis.config import (
     DetectionAnalysisConfig,
+    detection_config_hash,
     resolve_detection_config,
 )
 from market_analysis.detection import DetectorRuntime
@@ -28,8 +30,13 @@ from market_analysis.domain.aggregation import (
     CandleAggregator,
     bucket_bounds,
 )
+from market_analysis.persistence.analysis_lineage import load_analysis_lineage
 from market_analysis.persistence.analysis_sessions import analysis_session_revisions
 from market_analysis.persistence.market_data import load_dataset_revision
+from market_analysis.persistence.pattern_instances import (
+    pattern_instance_transitions,
+    pattern_instances,
+)
 from market_analysis.persistence.runs import RunSnapshotRecord, create_run_snapshot
 
 from .analysis_clock import verify_closed_interval
@@ -82,6 +89,24 @@ class AnalysisRequest(BaseModel):
         return self
 
 
+def preview_configuration(config: DetectionAnalysisConfig) -> dict[str, object]:
+    resolved = resolve_detection_config(config, pattern_definitions=PATTERN_DEFINITIONS)
+    executable = resolved.model_copy(
+        update={"patterns": tuple(item for item in resolved.patterns if item.enabled)}
+    )
+    DetectorRuntime(
+        executable,
+        detector_bindings(executable),
+        run_id="configuration-preview",
+        dataset_revision_id="configuration-preview",
+    )
+    return {
+        "detection_config_hash": detection_config_hash(
+            resolved, pattern_definitions=PATTERN_DEFINITIONS
+        )
+    }
+
+
 def automatic_policy(policy: Policy, mode: Literal["live", "history"]) -> bool:
     return policy == "always" or mode == "live" and policy == "live"
 
@@ -111,8 +136,10 @@ class DetectorStream:
     available_from: datetime | None = None
 
     def process(self, connection: Connection, candle: AnalyticalCandle) -> None:
-        if self.valid_from is None and self.processed >= required_warmup_bars(self.runtime.config):
-            self.valid_from = candle.bar.timestamp
+        if self.valid_from is None and self.processed + 1 >= required_warmup_bars(
+            self.runtime.config
+        ):
+            self.valid_from = candle.available_at
             self.available_from = candle.available_at
         result = self.runtime.process_bar(candle.bar)
         self.store(connection, candle.bar, result, self.runtime.binding_fingerprint)
@@ -274,6 +301,20 @@ class AnalysisSession:
                     "processed": stream.processed,
                     "pattern_id": stream.runtime.config.patterns[0].pattern_id,
                     "pattern_version": stream.runtime.config.patterns[0].pattern_version,
+                    "review_interval": (
+                        {
+                            "start": stamp(
+                                self.candles[stream.runtime.config.timeframe][-1].bar.timestamp
+                            ),
+                            "end": stamp(
+                                self.candles[stream.runtime.config.timeframe][-1].available_at
+                            ),
+                        }
+                        if self.candles[stream.runtime.config.timeframe]
+                        and self.candles[stream.runtime.config.timeframe][-1].available_at
+                        > self.request.selected_start
+                        else None
+                    ),
                     "required": required_warmup_bars(stream.runtime.config),
                 }
                 for stream in self.streams
@@ -284,9 +325,14 @@ class AnalysisSession:
 
 
 class AnalysisSessionManager:
-    def __init__(self) -> None:
+    def __init__(self, *, history_capacity: int = 8, replay_capacity: int = 20) -> None:
+        if min(history_capacity, replay_capacity) < 1:
+            raise ValueError("analysis cache capacity must be positive")
         self._lock = RLock()
         self._sessions: dict[str, AnalysisSession] = {}
+        self._history: OrderedDict[str, AnalysisSession] = OrderedDict()
+        self._history_capacity = history_capacity
+        self._replay_capacity = replay_capacity
 
     @staticmethod
     def engine() -> Any:
@@ -297,13 +343,17 @@ class AnalysisSessionManager:
 
     def current(self, session_id: str) -> AnalysisSession:
         session = self._sessions.get(session_id)
+        if session is None and session_id in self._history:
+            self._history.move_to_end(session_id)
+            session = self._history[session_id]
         if session is None:
             raise ValueError("analysis session is unavailable; start a new session")
         return session
 
-    def launch(self, request: AnalysisRequest) -> dict[str, Any]:
+    def launch(self, request: AnalysisRequest, *, replacing: str | None = None) -> dict[str, Any]:
         with self._lock:
-            if len(self._sessions) >= 20:
+            occupied = len(self._sessions) - int(replacing in self._sessions)
+            if request.mode == "replay" and occupied >= self._replay_capacity:
                 raise ValueError("stop an analysis session before opening another")
             engine = self.engine()
             try:
@@ -444,7 +494,12 @@ class AnalysisSessionManager:
                             manifest_hash=manifest_hash,
                         )
                     )
-                self._sessions[session_id] = session
+                if request.mode == "history":
+                    self._history[session_id] = session
+                    while len(self._history) > self._history_capacity:
+                        self._history.popitem(last=False)
+                else:
+                    self._sessions[session_id] = session
                 return session.state()
             finally:
                 engine.dispose()
@@ -469,12 +524,14 @@ class AnalysisSessionManager:
             if action == "stop":
                 session.status = "aborted"
                 result = session.state()
-                del self._sessions[session_id]
+                self._sessions.pop(session_id, None)
+                self._history.pop(session_id, None)
                 return result
             if action == "reset":
                 request = session.request
-                result = self.launch(request)
-                del self._sessions[session_id]
+                result = self.launch(request, replacing=session_id)
+                self._sessions.pop(session_id, None)
+                self._history.pop(session_id, None)
                 return result
             if action == "pause":
                 if session.status == "running":
@@ -596,7 +653,7 @@ class AnalysisSessionManager:
                 c for c in candles if c.bar.timestamp < end and c.available_at <= session.watermark
             ][-limit:]
             coverage = session.coverage(start, cutoff)
-            events = []
+            events: list[dict[str, Any]] = []
             for stream in session.streams:
                 if stream.available_from is None or cutoff < stream.available_from:
                     continue
@@ -671,9 +728,32 @@ class AnalysisSessionManager:
         with self._lock:
             return tuple(stream.runtime.run_id for stream in self.current(session_id).streams)
 
+    def validate_review_interval(self, run_id: str, start: datetime, end: datetime) -> None:
+        scope = self.review_scope(run_id)
+        engine = self.engine()
+        try:
+            with engine.connect() as connection:
+                lineage = load_analysis_lineage(connection, run_id)
+                if lineage is None:
+                    raise ValueError("analytical lineage is unavailable")
+                calendar = resolve_replay_calendar(
+                    scope.instrument_id,
+                    lineage.config.calendar_id,
+                    lineage.snapshot.calendar_version,
+                )
+                if (
+                    bucket_bounds(start, scope.timeframe, calendar)[0] != start
+                    or bucket_bounds(end - MINUTE, scope.timeframe, calendar)[1] != end
+                ):
+                    raise ValueError(
+                        "review interval must follow completed analytical candle boundaries"
+                    )
+        finally:
+            engine.dispose()
+
     def review_scope(self, run_id: str) -> ReplayReviewScope:
         with self._lock:
-            for session in self._sessions.values():
+            for session in (*self._sessions.values(), *self._history.values()):
                 for stream in session.streams:
                     if stream.runtime.run_id != run_id:
                         continue
@@ -682,13 +762,61 @@ class AnalysisSessionManager:
                         session.request.dataset_revision_id,
                         session.request.instrument_id,
                         stream.runtime.config.timeframe,
-                        session.request.selected_start,
+                        bucket_bounds(
+                            session.request.selected_start,
+                            stream.runtime.config.timeframe,
+                            session.calendar,
+                        )[0],
                         session.request.selected_end,
                         session.watermark,
                         frozenset(event["event_id"] for event in stream.events),
                         frozenset(event["instance_id"] for event in stream.events),
+                        analysis_run_id=run_id,
                     )
-            raise ValueError("analysis evidence session is unavailable")
+            engine = self.engine()
+            try:
+                with engine.connect() as connection:
+                    lineage = load_analysis_lineage(connection, run_id)
+                    if lineage is None or lineage.manifest["request"]["mode"] != "history":
+                        raise ValueError("analysis evidence session is unavailable")
+                    request = lineage.manifest["request"]
+                    calendar = resolve_replay_calendar(
+                        lineage.config.instrument_id,
+                        lineage.config.calendar_id,
+                        lineage.snapshot.calendar_version,
+                    )
+                    instances = frozenset(
+                        connection.scalars(
+                            select(pattern_instances.c.instance_id).where(
+                                pattern_instances.c.run_id == run_id
+                            )
+                        )
+                    )
+                    events = frozenset(
+                        connection.scalars(
+                            select(pattern_instance_transitions.c.event_id).where(
+                                pattern_instance_transitions.c.instance_id.in_(instances)
+                            )
+                        )
+                    )
+                    return ReplayReviewScope(
+                        run_id,
+                        lineage.snapshot.dataset_revision_id,
+                        lineage.config.instrument_id,
+                        lineage.config.timeframe,
+                        bucket_bounds(
+                            datetime.fromisoformat(request["selected_start"]),
+                            lineage.config.timeframe,
+                            calendar,
+                        )[0],
+                        datetime.fromisoformat(request["selected_end"]),
+                        datetime.fromisoformat(request["selected_end"]),
+                        events,
+                        instances,
+                        analysis_run_id=run_id,
+                    )
+            finally:
+                engine.dispose()
 
 
 analysis_sessions = AnalysisSessionManager()

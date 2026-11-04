@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,6 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 
 from market_analysis.domain import Timeframe
+from market_analysis.persistence.analysis_lineage import load_analysis_lineage
 from market_analysis.persistence.market_data import dataset_memberships
 from market_analysis.persistence.pattern_instances import (
     pattern_instance_transitions,
@@ -103,6 +105,19 @@ validation_annotation_revisions = Table(
 )
 
 
+analysis_annotation_lineage = Table(
+    "analysis_annotation_lineage",
+    metadata,
+    Column(
+        "annotation_id",
+        String(36),
+        ForeignKey("validation_annotations.annotation_id"),
+        primary_key=True,
+    ),
+    Column("lineage_json", Text, nullable=False),
+)
+
+
 def _utc(value: datetime, name: str) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise AnnotationError(f"{name} must be timezone-aware")
@@ -165,6 +180,7 @@ class ValidationAnnotation:
     interval_end: datetime | None
     created_at: datetime
     history: tuple[AnnotationRevision, ...]
+    analysis_lineage: Mapping[str, object] | None = None
 
     @property
     def current(self) -> AnnotationRevision:
@@ -196,7 +212,13 @@ def load_annotation(connection: Connection, annotation_id: str) -> ValidationAnn
         range(1, len(revisions) + 1)
     ):
         raise AnnotationError("annotation revision history is incomplete")
+    lineage_json = connection.scalar(
+        select(analysis_annotation_lineage.c.lineage_json).where(
+            analysis_annotation_lineage.c.annotation_id == annotation_id
+        )
+    )
     return ValidationAnnotation(
+        analysis_lineage=None if lineage_json is None else json.loads(lineage_json),
         annotation_id=row["annotation_id"],
         target_kind=row["target_kind"],
         event_id=row["event_id"],
@@ -363,6 +385,7 @@ def create_missed_pattern_annotation(
     note: str | None = None,
     reviewer_id: str | None = None,
     at: datetime | None = None,
+    analysis_run_id: str | None = None,
 ) -> ValidationAnnotation:
     revision_id = _text(dataset_revision_id, "dataset_revision_id")
     instrument_id = _text(instrument_id, "instrument_id")
@@ -372,12 +395,29 @@ def create_missed_pattern_annotation(
     end = _utc(interval_end, "interval_end")
     if end <= start:
         raise AnnotationError("interval_end must follow interval_start")
+    lineage = (
+        None if analysis_run_id is None else load_analysis_lineage(connection, analysis_run_id)
+    )
+    if analysis_run_id is not None and (
+        lineage is None
+        or lineage.snapshot.dataset_revision_id != revision_id
+        or lineage.config.instrument_id != instrument_id
+        or lineage.config.timeframe != timeframe
+        or not any(
+            item.pattern_id == pattern_id
+            and item.pattern_version == pattern_version
+            and item.enabled
+            for item in lineage.config.patterns
+        )
+    ):
+        raise AnnotationError("analytical review target differs from pinned lineage")
+    source_timeframe = Timeframe.M1 if lineage is not None else timeframe
     membership = (
         connection.execute(
             select(dataset_memberships).where(
                 dataset_memberships.c.dataset_revision_id == revision_id,
                 dataset_memberships.c.instrument_id == instrument_id,
-                dataset_memberships.c.timeframe == timeframe.value,
+                dataset_memberships.c.timeframe == source_timeframe.value,
             )
         )
         .mappings()
@@ -389,7 +429,7 @@ def create_missed_pattern_annotation(
     range_end = _stored_utc(membership["range_end"])
     if not range_start <= start < end <= range_end:
         raise AnnotationError("annotation interval is outside dataset membership")
-    return _create(
+    created = _create(
         connection,
         target={
             "target_kind": "missed_pattern",
@@ -402,9 +442,11 @@ def create_missed_pattern_annotation(
             "timeframe": timeframe.value,
             "pattern_id": _text(pattern_id, "pattern_id"),
             "pattern_version": _text(pattern_version, "pattern_version"),
-            "detection_config_hash": None,
-            "calendar_version": None,
-            "build_id": None,
+            "detection_config_hash": None
+            if lineage is None
+            else lineage.snapshot.detection_config_hash,
+            "calendar_version": None if lineage is None else lineage.snapshot.calendar_version,
+            "build_id": None if lineage is None else lineage.snapshot.build_id,
             "interval_start": start,
             "interval_end": end,
         },
@@ -413,6 +455,27 @@ def create_missed_pattern_annotation(
         reviewer_id=reviewer_id,
         at=at,
     )
+
+    if lineage is not None:
+        payload = {
+            "analysis_run_id": analysis_run_id,
+            "analysis_session_id": lineage.session_id,
+            "manifest_hash": lineage.manifest_hash,
+            "source_timeframe": "1m",
+            "analytical_timeframe": timeframe.value,
+            "aggregation_version": lineage.manifest["aggregation"],
+            "source_checksum": lineage.manifest["source_checksum"],
+        }
+        connection.execute(
+            analysis_annotation_lineage.insert().values(
+                annotation_id=created.annotation_id,
+                lineage_json=json.dumps(payload, sort_keys=True),
+            )
+        )
+        loaded = load_annotation(connection, created.annotation_id)
+        assert loaded is not None
+        return loaded
+    return created
 
 
 def revise_annotation(
@@ -459,6 +522,11 @@ def revise_annotation(
 def export_annotation(annotation: ValidationAnnotation) -> dict[str, object]:
     """Separate, JSON-serializable research metadata, including all revisions."""
     return {
+        **(
+            {"analysis_lineage": dict(annotation.analysis_lineage)}
+            if annotation.analysis_lineage is not None
+            else {}
+        ),
         "annotation_id": annotation.annotation_id,
         "target_kind": annotation.target_kind,
         "event_id": annotation.event_id,

@@ -183,13 +183,16 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   function selectBar(timestamp: string) {
-    if (!state || timestamp < state.selected_start) return;
+    const selectedCandle = visible.find((bar) => bar.timestamp === timestamp);
+    if (!state || timestamp < state.selected_start && (!state.analysis_session
+      || !selectedCandle?.available_at || Date.parse(selectedCandle.available_at) <= Date.parse(state.selected_start))) return;
     if (!reviewAnchor) {
       setReviewAnchor(timestamp);
-      setReviewInterval({ start: timestamp, end: new Date(Date.parse(timestamp) + 60_000).toISOString() });
+      setReviewInterval({ start: timestamp, end: visible.find((bar) => bar.timestamp === timestamp)?.available_at ?? new Date(Date.parse(timestamp) + 60_000).toISOString() });
     } else {
       setReviewInterval({ start: new Date(Math.min(Date.parse(reviewAnchor), Date.parse(timestamp))).toISOString(),
-        end: new Date(Math.max(Date.parse(reviewAnchor), Date.parse(timestamp)) + 60_000).toISOString() });
+        end: visible.find((bar) => Date.parse(bar.timestamp) === Math.max(Date.parse(reviewAnchor), Date.parse(timestamp)))?.available_at
+          ?? new Date(Math.max(Date.parse(reviewAnchor), Date.parse(timestamp)) + 60_000).toISOString() });
       setReviewAnchor(null);
     }
   }
@@ -290,7 +293,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
             {selectedEvent && <EventReview runId={selectedEvent.run_id} event={selectedEvent} annotations={annotations}
               onSaved={(record) => setAnnotations((current) => [...current.filter((item) => item.annotation_id !== record.annotation_id), record])} />}
             <details className="review-tools"><summary>Record a missed pattern</summary>
-              <MissedPatternReview runId={state.initialization?.[0]?.run_id ?? state.run_id} cursorTime={state.cursor_time} selectedInterval={reviewInterval}
+              <MissedPatternReview targets={state.initialization} chartTimeframe={chartTimeframe} runId={state.run_id} cursorTime={state.cursor_time} selectedInterval={reviewInterval}
                 patterns={patterns} annotations={annotations} timezone={tab.timezone}
                 onSaved={(record) => setAnnotations((current) => [...current.filter((item) => item.annotation_id !== record.annotation_id), record])} />
             </details>

@@ -123,6 +123,10 @@ test('unapplied detector edits remain drafts after reload', async ({ page }) => 
   await expect(launch).toBeDisabled();
   await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
   await expect(launch).toBeEnabled();
+  await expect.poll(async () => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!);
+    return saved.tabs[0].appliedStreams[0].config.patterns[0].enabled;
+  })).toBe(false);
   await page.reload();
   await expect(launch).toBeEnabled();
 });
@@ -317,4 +321,32 @@ test('a migrated configuration can add a registered detector without discarding 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!));
   expect(saved.tabs[0].streams[0].config.components.find((item: { component_id: string }) => item.component_id === 'range_state').parameters)
     .toEqual(legacy.components.find((item: { component_id: string }) => item.component_id === 'range_state').parameters);
+});
+
+test('missed-pattern reviews explicitly target completed five-minute candles', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByRole('tab', { name: 'Detector settings' }).click();
+  await page.getByLabel('Add analytical timeframe').selectOption('5m');
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start replay from', exact: true })).toBeEnabled();
+  await page.getByLabel('Chart timeframe', { exact: true }).selectOption('5m');
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  await expect(page.getByText('5 replay bars revealed', { exact: false })).toBeVisible();
+  await page.getByRole('tab', { name: /^Patterns/ }).click();
+  await page.getByRole('button', { name: 'Select current candle for missed-pattern review' }).click();
+  await page.getByText('Record a missed pattern', { exact: true }).click();
+  const review = page.getByRole('region', { name: 'Missed pattern review' });
+  await expect(review.getByLabel('Analytical review target')).toHaveValue(/.+/);
+  await expect(review.getByLabel('Analytical review target').locator('option:checked')).toContainText('5m');
+  await expect(review.getByLabel('Missed interval start UK time')).toHaveValue('2026-01-05T10:00');
+  await expect(review.getByLabel('Missed interval end UK time')).toHaveValue('2026-01-05T10:05');
+  await review.getByLabel('Missed-pattern note').fill('five minute audit');
+  await review.getByRole('button', { name: 'Add missed pattern' }).click();
+  await expect(review).toContainText('five minute audit');
+  const href = await review.getByRole('link', { name: 'Export review JSON' }).getAttribute('href');
+  const exported = await (await page.request.get(href!)).json();
+  expect(exported.timeframe).toBe('5m');
+  expect(exported.analysis_lineage.source_timeframe).toBe('1m');
 });

@@ -44,11 +44,16 @@ export type DetectorPolicy = 'live' | 'manual' | 'always';
 export interface AnalysisStream { config: DetectionConfig; policies: Record<string, DetectorPolicy> }
 export function sessionPath(state: ReplayState) { return `${state.analysis_session ? '/analysis' : '/replay'}/${state.run_id}`; }
 
+export interface AnalysisReviewTarget {
+  run_id: string; timeframe: string; processed: number; required: number;
+  pattern_id?: string; pattern_version?: string;
+  review_interval?: { start: string; end: string } | null;
+}
 export interface ReplayState {
   analysis_session?: boolean;
   available_at?: string;
   streams?: AnalysisStream[];
-  initialization?: Array<{ run_id: string; timeframe: string; processed: number; required: number }>;
+  initialization?: AnalysisReviewTarget[];
   run_id: string;
   status: 'created' | 'running' | 'paused' | 'completed' | 'failed' | 'aborted';
   dataset_revision_id: string;

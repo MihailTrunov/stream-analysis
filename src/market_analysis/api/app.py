@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 
 from market_analysis import __version__
 from market_analysis.api.analysis import router as analysis_router
-from market_analysis.application.analysis_sessions import analysis_sessions
+from market_analysis.application.analysis_sessions import analysis_sessions, preview_configuration
 from market_analysis.application.browser_replay import (
     BrowserReplayError,
     ReplayReviewScope,
@@ -30,7 +30,6 @@ from market_analysis.application.replay_catalog import (
     DEMO_CONFIG_VERSION,
     PATTERN_DEFINITIONS,
     demo_detection_config,
-    detector_bindings,
     required_warmup_bars,
 )
 from market_analysis.application.replay_pipeline import DetectorEventFilter
@@ -50,7 +49,6 @@ from market_analysis.config.oanda_uk_calendars import (
 )
 from market_analysis.demo.data import load_demo_bars
 from market_analysis.demo.replay_seed import seed_replay_datasets
-from market_analysis.detection import DetectorRuntime
 from market_analysis.domain import SessionCalendarError, Timeframe
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.import_jobs import (
@@ -373,21 +371,7 @@ def browser_replay_default_config(instrument_id: str) -> dict[str, object]:
 def preview_analysis_config(config: DetectionAnalysisConfig) -> dict[str, object]:
     """Validate dependency wiring as well as parameter shape before explicit Apply."""
     try:
-        resolved = resolve_detection_config(config, pattern_definitions=PATTERN_DEFINITIONS)
-        executable = resolved.model_copy(
-            update={"patterns": tuple(item for item in resolved.patterns if item.enabled)}
-        )
-        DetectorRuntime(
-            executable,
-            detector_bindings(executable),
-            run_id="configuration-preview",
-            dataset_revision_id="configuration-preview",
-        )
-        return {
-            "detection_config_hash": detection_config_hash(
-                resolved, pattern_definitions=PATTERN_DEFINITIONS
-            )
-        }
+        return preview_configuration(config)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -699,8 +683,16 @@ def create_replay_annotation(
                     if (request.pattern_id, request.pattern_version) not in PATTERN_DEFINITIONS:
                         raise AnnotationError("expected pattern/version is not registered")
                     assert request.pattern_id is not None and request.pattern_version is not None
+                    if scope.analysis_run_id is not None:
+                        try:
+                            analysis_sessions.validate_review_interval(
+                                scope.analysis_run_id, start, end
+                            )
+                        except ValueError as exc:
+                            raise AnnotationError(str(exc)) from exc
                     created = create_missed_pattern_annotation(
                         connection,
+                        analysis_run_id=scope.analysis_run_id,
                         dataset_revision_id=scope.dataset_revision_id,
                         instrument_id=scope.instrument_id,
                         timeframe=scope.timeframe,
