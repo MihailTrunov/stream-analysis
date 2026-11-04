@@ -178,3 +178,79 @@ def test_empty_revision_and_symlink_refusal(store_and_engine) -> None:
     with engine.connect() as connection:
         with pytest.raises(DatasetStoreError, match="unsafe"):
             store.load_sequence(connection, "rev-1", "US30", Timeframe.M1)
+
+
+def test_range_reads_only_overlapping_row_groups_and_shares_verification(
+    store_and_engine, monkeypatch,
+) -> None:
+    from market_analysis.persistence import dataset_store as module
+
+    store, engine = store_and_engine
+    monkeypatch.setattr(module, "_ROW_GROUP_SIZE", 4)
+    bars = tuple(_bar(minute) for minute in range(12))
+    revision, lineage = _metadata(bars)
+    with engine.begin() as connection:
+        store.publish(connection, revision, lineage, bars)
+    reads = []
+    original = module._bars_from_parquet
+
+    def tracked(path, row_groups=None):
+        reads.append(row_groups)
+        yield from original(path, row_groups)
+
+    monkeypatch.setattr(module, "_bars_from_parquet", tracked)
+    with engine.connect() as connection:
+        result = store.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                                  START, START + timedelta(minutes=9), limit=3)
+        assert result == bars[6:9]
+        assert reads == [None, [2], [1]]  # Full authentication once, then indexed rows.
+        reads.clear()
+        other_tab = DatasetStore(store.root)
+        result = other_tab.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                                      START, START + timedelta(minutes=6), limit=3)
+        assert result == bars[3:6]
+        assert reads == [[1], [0]]
+        reads.clear()
+        # A process restart loses only verification state, not retained data.
+        module._RANGE_VERIFICATIONS.clear()
+        assert other_tab.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                                    START, START + timedelta(minutes=2)) == bars[:2]
+        assert reads == [None, [0]]
+
+
+def test_cached_range_verification_rejects_changed_files_and_lineage(store_and_engine) -> None:
+    import os
+
+    from market_analysis.persistence.market_data import dataset_content_lineage
+
+    store, engine = store_and_engine
+    bars = (_bar(0), _bar(1))
+    revision, lineage = _metadata(bars)
+    with engine.begin() as connection:
+        store.publish(connection, revision, lineage, bars)
+        assert store.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                                START, START + timedelta(minutes=2)) == bars
+        connection.execute(dataset_content_lineage.update().values(canonical_checksum="b" * 64))
+        with pytest.raises(DatasetStoreError, match="manifest differs"):
+            store.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                             START, START + timedelta(minutes=2))
+        connection.execute(dataset_content_lineage.update().values(
+            canonical_checksum=lineage.canonical_checksum,
+        ))
+        path = store.root / "datasets/rev-1/bars.parquet"
+        info = path.stat()
+        content = path.read_bytes()
+        path.write_bytes(b"BAD!" + content[4:])
+        os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns))
+        with pytest.raises(DatasetStoreError, match="checksum differs"):
+            store.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                             START, START + timedelta(minutes=2))
+
+
+@pytest.mark.parametrize("limit", [0, 501, True])
+def test_range_rejects_unbounded_requests(store_and_engine, limit) -> None:
+    store, engine = store_and_engine
+    with engine.connect() as connection:
+        with pytest.raises(DatasetStoreError, match="limit"):
+            store.read_range(connection, "rev-1", "US30", Timeframe.M1,
+                             START, START + timedelta(minutes=2), limit=limit)

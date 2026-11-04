@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 from bisect import bisect_left
-from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -121,9 +120,9 @@ def published_source_bars(
         raise BrowserReplayError("published dataset is unavailable")
     if start < lineage.requested_start or end > lineage.requested_end:
         raise BrowserReplayError("history must lie inside the published dataset")
-    bars = deque((bar for bar in _store().iter_verified_bars(
-        connection, revision_id, instrument_id, Timeframe.M1,
-    ) if start <= bar.timestamp < end), maxlen=limit)
+    bars = _store().read_range(
+        connection, revision_id, instrument_id, Timeframe.M1, start, end, limit=limit,
+    )
     return {
         "dataset_revision_id": revision_id,
         "canonical_checksum": lineage.canonical_checksum,

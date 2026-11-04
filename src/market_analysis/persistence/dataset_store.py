@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +15,7 @@ from decimal import Decimal
 from hashlib import sha256
 from itertools import zip_longest
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 import pyarrow as pa  # type: ignore[import-untyped]
@@ -42,6 +44,8 @@ _MANIFEST_NAME = "manifest.json"
 _PARQUET_NAME = "bars.parquet"
 _SAFE_REVISION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}\Z")
 _ROW_GROUP_SIZE = 16_384
+_RANGE_VERIFICATIONS: OrderedDict[tuple[object, ...], None] = OrderedDict()
+_RANGE_LOCK = RLock()
 _SCHEMA = pa.schema((
     pa.field("instrument_id", pa.string(), nullable=False),
     pa.field("timeframe", pa.string(), nullable=False),
@@ -104,12 +108,12 @@ def _row(bar: Bar) -> dict[str, object]:
     }
 
 
-def _bars_from_parquet(path: Path) -> Iterator[Bar]:
+def _bars_from_parquet(path: Path, row_groups: list[int] | None = None) -> Iterator[Bar]:
     try:
         parquet = pq.ParquetFile(path)
         if parquet.schema_arrow != _SCHEMA:
             raise DatasetStoreError("Parquet bar schema differs from parquet-v1")
-        for batch in parquet.iter_batches(batch_size=_ROW_GROUP_SIZE):
+        for batch in parquet.iter_batches(batch_size=_ROW_GROUP_SIZE, row_groups=row_groups):
             for row in batch.to_pylist():
                 yield Bar(
                     instrument_id=row["instrument_id"],
@@ -311,6 +315,74 @@ class DatasetStore:
             )
         except ValueError as exc:
             raise DatasetStoreError(f"dataset content differs from lineage: {exc}") from exc
+
+    def read_range(
+        self, connection: Connection, revision_id: str, instrument_id: str,
+        timeframe: Timeframe, start: datetime, end: datetime, *, limit: int = 500,
+    ) -> tuple[Bar, ...]:
+        """Read the latest bounded window using persisted Parquet row-group bounds.
+
+        A cold revision receives the same full checksum/content verification as a
+        replay input. Unchanged files reuse that verification across store instances
+        and tabs; no price rows are retained in this bounded process cache.
+        """
+        if (start.tzinfo is None or end.tzinfo is None or start >= end
+                or isinstance(limit, bool) or not 1 <= limit <= 500):
+            raise DatasetStoreError("range needs ordered aware bounds and limit 1..500")
+        revision = load_dataset_revision(connection, revision_id)
+        lineage = load_dataset_lineage(connection, revision_id, instrument_id, timeframe)
+        if revision is None or lineage is None:
+            raise DatasetStoreError("dataset revision or lineage is unavailable")
+        _validate_metadata(revision, lineage)
+        if start < lineage.requested_start or end > lineage.requested_end:
+            raise DatasetStoreError("range lies outside the pinned revision")
+        target = self.root / "datasets" / _safe_revision_id(revision_id)
+        manifest = self._read_manifest(target)
+        expected = _manifest(revision, lineage, str(manifest.get("parquet_sha256", "")))
+        if manifest != expected:
+            raise DatasetStoreError("dataset manifest differs from persisted lineage")
+        path = target / _PARQUET_NAME
+        if path.is_symlink() or not path.is_file():
+            raise DatasetStoreError("dataset Parquet file is unavailable or unsafe")
+
+        def signature() -> tuple[object, ...]:
+            info = path.stat()
+            return (path, info.st_dev, info.st_ino, info.st_size,
+                    info.st_mtime_ns, info.st_ctime_ns, _canonical_json(expected))
+
+        with _RANGE_LOCK:
+            key = signature()
+            if key not in _RANGE_VERIFICATIONS:
+                self.iter_verified_bars(connection, revision_id, instrument_id, timeframe)
+                if signature() != key:
+                    raise DatasetStoreError("dataset changed during verification")
+                _RANGE_VERIFICATIONS[key] = None
+                while len(_RANGE_VERIFICATIONS) > 32:
+                    _RANGE_VERIFICATIONS.popitem(last=False)
+            else:
+                _RANGE_VERIFICATIONS.move_to_end(key)
+        try:
+            parquet = pq.ParquetFile(path)
+            timestamp_column = _SCHEMA.get_field_index("timestamp")
+            chunks: list[tuple[Bar, ...]] = []
+            remaining = limit
+            for index in reversed(range(parquet.num_row_groups)):
+                statistics = parquet.metadata.row_group(index).column(timestamp_column).statistics
+                if statistics is not None and statistics.has_min_max:
+                    if statistics.min >= end or statistics.max < start:
+                        continue
+                matches = tuple(bar for bar in _bars_from_parquet(path, [index])
+                                if start <= bar.timestamp < end)
+                selected = matches[-remaining:]
+                chunks.append(selected)
+                remaining -= len(selected)
+                if remaining == 0:
+                    break
+            if signature() != key:
+                raise DatasetStoreError("dataset changed during range read")
+            return tuple(bar for chunk in reversed(chunks) for bar in chunk)
+        except (OSError, pa.ArrowException) as exc:
+            raise DatasetStoreError(f"cannot read dataset range: {exc}") from exc
 
     def iter_verified_bars(
         self, connection: Connection, revision_id: str, instrument_id: str,
