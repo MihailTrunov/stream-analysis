@@ -254,3 +254,78 @@ def test_range_rejects_unbounded_requests(store_and_engine, limit) -> None:
         with pytest.raises(DatasetStoreError, match="limit"):
             store.read_range(connection, "rev-1", "US30", Timeframe.M1,
                              START, START + timedelta(minutes=2), limit=limit)
+
+
+def test_streamed_range_reads_overlapping_groups_chronologically(store_and_engine, monkeypatch):
+    from market_analysis.persistence import dataset_store as module
+
+    store, engine = store_and_engine
+    monkeypatch.setattr(module, "_ROW_GROUP_SIZE", 4)
+    bars = tuple(_bar(i) for i in range(12))
+    revision, lineage = _metadata(bars)
+    with engine.begin() as connection:
+        store.publish(connection, revision, lineage, bars)
+        store.read_range(connection, "rev-1", "US30", Timeframe.M1, START,
+                         START + timedelta(minutes=12))
+    reads = []
+    original = module._bars_from_parquet
+
+    def tracked(path, row_groups=None):
+        reads.append(row_groups)
+        yield from original(path, row_groups)
+
+    monkeypatch.setattr(module, "_bars_from_parquet", tracked)
+    with engine.connect() as connection:
+        assert tuple(store.iter_verified_range(
+            connection, "rev-1", "US30", Timeframe.M1,
+            START + timedelta(minutes=3), START + timedelta(minutes=7),
+        )) == bars[3:7]
+    assert reads == [[0], [1]]
+
+
+def test_streamed_range_rejects_source_change_before_successful_exhaustion(store_and_engine):
+    store, engine = store_and_engine
+    bars = (_bar(0), _bar(1))
+    revision, lineage = _metadata(bars)
+    with engine.begin() as connection:
+        store.publish(connection, revision, lineage, bars)
+    with engine.connect() as connection:
+        stream = store.iter_verified_range(connection, "rev-1", "US30", Timeframe.M1,
+                                          START, START + timedelta(minutes=2))
+        assert next(stream) == bars[0]
+        with (store.root / "datasets/rev-1/bars.parquet").open("ab") as changed:
+            changed.write(b"changed")
+        with pytest.raises(DatasetStoreError, match="changed during range read"):
+            tuple(stream)
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_simultaneous_directory_publication_reuses_only_authenticated_output(
+    store_and_engine, monkeypatch, corrupt,
+):
+    import errno
+    import shutil
+
+    from market_analysis.persistence import dataset_store as module
+
+    store, engine = store_and_engine
+    bars = (_bar(0), _bar(1))
+    revision, lineage = _metadata(bars)
+
+    def another_publisher_wins(stage, target):
+        shutil.copytree(stage, target)
+        if corrupt:
+            with (target / "bars.parquet").open("ab") as changed:
+                changed.write(b"corrupted competing output")
+        raise OSError(errno.ENOTEMPTY, "another publisher won the rename")
+
+    monkeypatch.setattr(module.os, "rename", another_publisher_wins)
+    with engine.begin() as connection:
+        if corrupt:
+            with pytest.raises(DatasetStoreError, match="checksum differs"):
+                store.publish(connection, revision, lineage, bars)
+            assert load_dataset_revision(connection, revision.dataset_revision_id) is None
+        else:
+            store.publish(connection, revision, lineage, bars)
+            assert store.load_sequence(connection, "rev-1", "US30", Timeframe.M1).bars == bars
+    assert not list((store.root / "datasets").glob(".staging-*"))

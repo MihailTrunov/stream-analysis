@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -90,6 +91,12 @@ def _safe_revision_id(value: str) -> str:
 
 def _relative_manifest_ref(revision_id: str) -> str:
     return f"datasets/{_safe_revision_id(revision_id)}/{_MANIFEST_NAME}"
+
+
+def _range_signature(path: Path, manifest: bytes) -> tuple[object, ...]:
+    info = path.stat()
+    return (path, info.st_dev, info.st_ino, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns, manifest)
 
 
 def _row(bar: Bar) -> dict[str, object]:
@@ -270,7 +277,15 @@ class DatasetStore:
             _write_parquet(parquet_path, lineage, bars)
             expected_manifest = _manifest(revision, lineage, _sha256_file(parquet_path))
             (stage / _MANIFEST_NAME).write_bytes(_canonical_json(expected_manifest))
-            if target.exists() or target.is_symlink():
+            if not (target.exists() or target.is_symlink()):
+                try:
+                    os.rename(stage, target)
+                except OSError as exc:
+                    if exc.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+                        raise
+                    # An equivalent publisher may win the directory rename.
+                    # Authenticate its complete output before reusing it.
+            if stage.exists():
                 existing = self._read_manifest(target)
                 if {
                     key: value for key, value in existing.items() if key != "parquet_sha256"
@@ -287,8 +302,6 @@ class DatasetStore:
                     )
                 ):
                     raise DatasetStoreError("existing revision has different immutable bars")
-            else:
-                os.rename(stage, target)
             with connection.begin_nested():
                 register_dataset_revision(connection, revision)
                 register_dataset_lineage(connection, lineage)
@@ -316,19 +329,12 @@ class DatasetStore:
         except ValueError as exc:
             raise DatasetStoreError(f"dataset content differs from lineage: {exc}") from exc
 
-    def read_range(
+    def _verified_range_path(
         self, connection: Connection, revision_id: str, instrument_id: str,
-        timeframe: Timeframe, start: datetime, end: datetime, *, limit: int = 500,
-    ) -> tuple[Bar, ...]:
-        """Read the latest bounded window using persisted Parquet row-group bounds.
-
-        A cold revision receives the same full checksum/content verification as a
-        replay input. Unchanged files reuse that verification across store instances
-        and tabs; no price rows are retained in this bounded process cache.
-        """
-        if (start.tzinfo is None or end.tzinfo is None or start >= end
-                or isinstance(limit, bool) or not 1 <= limit <= 500):
-            raise DatasetStoreError("range needs ordered aware bounds and limit 1..500")
+        timeframe: Timeframe, start: datetime, end: datetime,
+    ) -> tuple[Path, bytes, tuple[object, ...]]:
+        if start.tzinfo is None or end.tzinfo is None or start >= end:
+            raise DatasetStoreError("range needs ordered aware bounds")
         revision = load_dataset_revision(connection, revision_id)
         lineage = load_dataset_lineage(connection, revision_id, instrument_id, timeframe)
         if revision is None or lineage is None:
@@ -345,22 +351,34 @@ class DatasetStore:
         if path.is_symlink() or not path.is_file():
             raise DatasetStoreError("dataset Parquet file is unavailable or unsafe")
 
-        def signature() -> tuple[object, ...]:
-            info = path.stat()
-            return (path, info.st_dev, info.st_ino, info.st_size,
-                    info.st_mtime_ns, info.st_ctime_ns, _canonical_json(expected))
-
+        manifest_bytes = _canonical_json(expected)
         with _RANGE_LOCK:
-            key = signature()
+            key = _range_signature(path, manifest_bytes)
             if key not in _RANGE_VERIFICATIONS:
                 self.iter_verified_bars(connection, revision_id, instrument_id, timeframe)
-                if signature() != key:
+                if _range_signature(path, manifest_bytes) != key:
                     raise DatasetStoreError("dataset changed during verification")
                 _RANGE_VERIFICATIONS[key] = None
                 while len(_RANGE_VERIFICATIONS) > 32:
                     _RANGE_VERIFICATIONS.popitem(last=False)
             else:
                 _RANGE_VERIFICATIONS.move_to_end(key)
+        return path, manifest_bytes, key
+
+    def read_range(
+        self, connection: Connection, revision_id: str, instrument_id: str,
+        timeframe: Timeframe, start: datetime, end: datetime, *, limit: int = 500,
+    ) -> tuple[Bar, ...]:
+        """Read the latest bounded window using authenticated row-group bounds.
+
+        Cold revisions receive full checksum/content validation. Unchanged files
+        share verification across tabs and store instances without caching prices.
+        """
+        if isinstance(limit, bool) or not 1 <= limit <= 500:
+            raise DatasetStoreError("range needs limit 1..500")
+        path, manifest, key = self._verified_range_path(
+            connection, revision_id, instrument_id, timeframe, start, end,
+        )
         try:
             parquet = pq.ParquetFile(path)
             timestamp_column = _SCHEMA.get_field_index("timestamp")
@@ -378,9 +396,35 @@ class DatasetStore:
                 remaining -= len(selected)
                 if remaining == 0:
                     break
-            if signature() != key:
+            if _range_signature(path, manifest) != key:
                 raise DatasetStoreError("dataset changed during range read")
             return tuple(bar for chunk in reversed(chunks) for bar in chunk)
+        except (OSError, pa.ArrowException) as exc:
+            raise DatasetStoreError(f"cannot read dataset range: {exc}") from exc
+
+    def iter_verified_range(
+        self, connection: Connection, revision_id: str, instrument_id: str,
+        timeframe: Timeframe, start: datetime, end: datetime,
+    ) -> Iterator[Bar]:
+        """Stream an authenticated interval chronologically with bounded price memory."""
+        path, manifest, key = self._verified_range_path(
+            connection, revision_id, instrument_id, timeframe, start, end,
+        )
+        try:
+            parquet = pq.ParquetFile(path)
+            column = _SCHEMA.get_field_index("timestamp")
+            for index in range(parquet.num_row_groups):
+                statistics = parquet.metadata.row_group(index).column(column).statistics
+                if statistics is not None and statistics.has_min_max:
+                    if statistics.max < start or statistics.min >= end:
+                        continue
+                for bar in _bars_from_parquet(path, [index]):
+                    if start <= bar.timestamp < end:
+                        yield bar
+                if _range_signature(path, manifest) != key:
+                    raise DatasetStoreError("dataset changed during range read")
+            if _range_signature(path, manifest) != key:
+                raise DatasetStoreError("dataset changed during range read")
         except (OSError, pa.ArrowException) as exc:
             raise DatasetStoreError(f"cannot read dataset range: {exc}") from exc
 
