@@ -32,6 +32,7 @@ from market_analysis.persistence.analysis_sessions import analysis_session_revis
 from market_analysis.persistence.market_data import load_dataset_revision
 from market_analysis.persistence.runs import RunSnapshotRecord, create_run_snapshot
 
+from .analysis_clock import verify_closed_interval
 from .browser_replay import ReplayReviewScope, _store
 from .replay_catalog import (
     PATTERN_DEFINITIONS,
@@ -180,23 +181,34 @@ class AnalysisSession:
     status: str = "paused"
     failure: str | None = None
     navigation: dict[str, Any] | None = None
+    revealed_at: datetime | None = None
 
     @property
     def watermark(self) -> datetime:
-        return (
-            self.bars[self.index].timestamp + MINUTE if self.index >= 0 else self.bars[0].timestamp
-        )
+        return self.revealed_at or self.bars[0].timestamp
+
+    def dispatch(self, connection: Connection, candles: list[AnalyticalCandle]) -> None:
+        for candle in sorted(
+            candles, key=lambda item: (item.available_at, MINUTES[item.bar.timeframe])
+        ):
+            self.candles[candle.bar.timeframe].append(candle)
+            dispatch_candle(
+                connection, candle, self.streams, self.request.mode, self.request.automatic
+            )
+
+    def advance_closed(self, connection: Connection, target: datetime) -> None:
+        verify_closed_interval(self.calendar, self.watermark, target)
+        closed = [c for aggregator in self.aggregators.values() for c in aggregator.advance(target)]
+        self.dispatch(connection, closed)
+        self.revealed_at = target
 
     def consume(self, connection: Connection) -> None:
+        source = self.bars[self.index + 1]
+        self.advance_closed(connection, source.timestamp)
+        closed = [c for aggregator in self.aggregators.values() for c in aggregator.push(source)]
+        self.dispatch(connection, closed)
         self.index += 1
-        source = self.bars[self.index]
-        for timeframe in sorted(self.aggregators, key=lambda value: MINUTES[value]):
-            closed = self.aggregators[timeframe].push(source)
-            for candle in closed:
-                self.candles[timeframe].append(candle)
-                dispatch_candle(
-                    connection, candle, self.streams, self.request.mode, self.request.automatic
-                )
+        self.revealed_at = source.timestamp + MINUTE
 
     def state(self) -> dict[str, Any]:
         first = self.request.streams[0].config
@@ -382,6 +394,7 @@ class AnalysisSessionManager:
                         and bars[session.index + 1].timestamp < request.selected_start
                     ):
                         session.consume(connection)
+                    session.advance_closed(connection, request.selected_start)
                     if request.mode == "replay":
                         for stream in streams:
                             required = required_warmup_bars(stream.runtime.config)
@@ -394,6 +407,7 @@ class AnalysisSessionManager:
                     else:
                         while session.index + 1 < len(bars):
                             session.consume(connection)
+                        session.advance_closed(connection, request.selected_end)
                         session.status = "completed"
                     connection.execute(
                         analysis_session_revisions.insert().values(
@@ -451,6 +465,7 @@ class AnalysisSessionManager:
             try:
                 with engine.begin() as connection:
                     previous_index = session.index
+                    previous_watermark = session.watermark
                     previous_streams = [
                         (len(s.frames), len(s.events), s.processed) for s in session.streams
                     ]
@@ -458,21 +473,38 @@ class AnalysisSessionManager:
                         current_time = session.bars[
                             min(session.index + 1, len(session.bars) - 1)
                         ].timestamp
-                        target = bucket_bounds(
-                            current_time,
-                            timeframe or session.request.chart_timeframe,
-                            session.calendar,
-                        )[1]
+                        display = timeframe or session.request.chart_timeframe
+                        before_display = len(session.candles[display])
+                        target = (
+                            session.aggregators[display].pending_end
+                            or bucket_bounds(
+                                current_time,
+                                display,
+                                session.calendar,
+                            )[1]
+                        )
                         prior_events = sum(len(item.events) for item in session.streams)
                         while session.index + 1 < len(session.bars):
+                            next_source = session.bars[session.index + 1]
+                            if action != "next-event" and next_source.timestamp >= target:
+                                session.advance_closed(connection, target)
+                                if len(session.candles[display]) > before_display:
+                                    break
+                                target = bucket_bounds(
+                                    next_source.timestamp, display, session.calendar
+                                )[1]
+                                continue
                             session.consume(connection)
                             if action == "next-event":
                                 if sum(len(item.events) for item in session.streams) > prior_events:
                                     break
                             elif session.watermark >= target:
                                 break
+                        if session.index + 1 == len(session.bars):
+                            session.advance_closed(connection, session.request.selected_end)
                     except Exception as error:
                         session.index = previous_index
+                        session.revealed_at = previous_watermark
                         for stream, (frames, events, processed) in zip(
                             session.streams, previous_streams, strict=True
                         ):
@@ -635,6 +667,12 @@ def history_candles(
             candles = [
                 c for bar in sequence.bars if bar.timestamp < end for c in aggregator.push(bar)
             ]
+            last_close = next(
+                (bar.timestamp + MINUTE for bar in reversed(sequence.bars) if bar.timestamp < end),
+                sequence.lineage.requested_start,
+            )
+            verify_closed_interval(calendar, last_close, end)
+            candles.extend(aggregator.advance(end))
             return {
                 "bars": [
                     {**bar_payload(c.bar), "available_at": stamp(c.available_at)}

@@ -222,3 +222,122 @@ def test_apply_preview_validates_component_wiring_without_creating_a_session(
     invalid = client.post("/analysis-config/preview", json=config)
     assert invalid.status_code == 422
     assert client.get("/analysis/active").json()["sessions"] == []
+
+
+def test_closed_endpoint_flushes_completed_candles_in_history_and_replay(client, monkeypatch):  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+    from datetime import UTC, datetime, time, timedelta
+    from types import SimpleNamespace
+
+    from market_analysis.application import analysis_sessions as module
+    from market_analysis.demo.replay_seed import demo_replay_bars
+    from market_analysis.domain import SessionWindow, TradingCalendar
+
+    origin = datetime(2026, 1, 5, 9, tzinfo=UTC)
+    bars = tuple(
+        replace(demo_replay_bars("US30")[0], timestamp=origin + timedelta(minutes=i))
+        for i in range(62)
+    )
+    from market_analysis.config.oanda_uk_calendars import OANDA_UK_LIVE_PROFILES
+
+    profile = next(item for item in OANDA_UK_LIVE_PROFILES.values() if item.instrument_id == "US30")
+    calendar = TradingCalendar(
+        profile.calendar_id,
+        profile.version,
+        "fake",
+        "test",
+        "US30",
+        "UTC",
+        time(0),
+        (SessionWindow("day", time(9), time(10, 2)),),
+    )
+    sequence = SimpleNamespace(
+        bars=bars,
+        lineage=SimpleNamespace(
+            requested_start=origin,
+            requested_end=datetime(2026, 1, 5, 14, tzinfo=UTC),
+            canonical_checksum="test",
+            source_dataset_id="test",
+        ),
+    )
+    monkeypatch.setattr(
+        module, "_store", lambda: SimpleNamespace(load_sequence=lambda *args: sequence)
+    )
+    monkeypatch.setattr(module, "resolve_replay_calendar", lambda *args: calendar)
+    payload = request(
+        (Timeframe.M1, Timeframe.M5), selected_end="2026-01-05T10:05:00Z", chart_timeframe="5m"
+    )
+    history = launch(client, {**payload, "mode": "history"})
+    replay = launch(client, payload)
+    replay = client.post(f"/analysis/{replay['run_id']}/step").json()
+    assert history["available_at"] == replay["available_at"] == "2026-01-05T10:05:00Z"
+    views = [
+        client.get(
+            f"/analysis/{state['run_id']}/view",
+            params={
+                "start": payload["selected_start"],
+                "end": payload["selected_end"],
+                "timeframe": "5m",
+            },
+        ).json()
+        for state in (history, replay)
+    ]
+    assert [item["processed"] for item in history["initialization"]] == [62, 13]
+    assert views[0]["bars"] == views[1]["bars"]
+    assert views[0]["bars"][-1]["timestamp"] == "2026-01-05T10:00:00Z"
+
+    prices = client.get(
+        "/analysis/history/offline-replay-us30-v3",
+        params={
+            "instrument_id": "US30",
+            "timeframe": "5m",
+            "start": payload["selected_start"],
+            "end": payload["selected_end"],
+        },
+    )
+    assert prices.status_code == 200, prices.text
+    assert prices.json()["bars"][-1] == views[0]["bars"][-1]
+
+
+def test_clock_never_skips_an_open_source_slot(client, monkeypatch):  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+    from datetime import UTC, datetime, time, timedelta
+    from types import SimpleNamespace
+
+    from market_analysis.application import analysis_sessions as module
+    from market_analysis.demo.replay_seed import demo_replay_bars
+    from market_analysis.domain import SessionWindow, TradingCalendar
+
+    origin = datetime(2026, 1, 5, 9, tzinfo=UTC)
+    bars = tuple(
+        replace(demo_replay_bars("US30")[0], timestamp=origin + timedelta(minutes=i))
+        for i in range(62)
+    )
+    calendar = TradingCalendar(
+        "test",
+        "1",
+        "fake",
+        "test",
+        "US30",
+        "UTC",
+        time(0),
+        (SessionWindow("day", time(9), time(14)),),
+    )
+    sequence = SimpleNamespace(
+        bars=bars,
+        lineage=SimpleNamespace(
+            requested_start=origin,
+            requested_end=datetime(2026, 1, 5, 14, tzinfo=UTC),
+            canonical_checksum="test",
+            source_dataset_id="test",
+        ),
+    )
+    monkeypatch.setattr(
+        module, "_store", lambda: SimpleNamespace(load_sequence=lambda *args: sequence)
+    )
+    monkeypatch.setattr(module, "resolve_replay_calendar", lambda *args: calendar)
+    payload = request(mode="history", selected_end="2026-01-05T10:05:00Z")
+    payload["streams"][0]["config"]["patterns"][0]["enabled"] = False
+    response = client.post("/analysis", json=payload)
+    assert response.status_code == 422
+    assert "missing expected-open" in response.text

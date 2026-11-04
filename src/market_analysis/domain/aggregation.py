@@ -62,6 +62,10 @@ class CandleAggregator:
         self._pending: dict[tuple[datetime, datetime], list[Bar]] = {}
         self._failed = False
 
+    @property
+    def pending_end(self) -> datetime | None:
+        return min((end for _, end in self._pending), default=None)
+
     def push(self, bar: Bar) -> tuple[AnalyticalCandle, ...]:
         if self._failed:
             raise AggregationError("aggregation failed; reinitialize from pinned inputs")
