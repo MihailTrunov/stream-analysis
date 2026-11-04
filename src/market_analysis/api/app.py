@@ -24,6 +24,11 @@ from market_analysis.application.browser_replay import (
     replay_sources,
 )
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
+from market_analysis.application.history_inputs import (
+    HistoryInputConflict,
+    publish_history_input,
+    read_history_input,
+)
 from market_analysis.application.history_ranges import (
     HistoryFeed,
     history_coverage,
@@ -112,6 +117,12 @@ class HistoryCreateRequest(BaseModel):
     instrument_id: Literal["US30", "DAX"]
     start: datetime
     end: datetime
+
+
+class HistoryInputRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    requests: dict[str, str] = Field(min_length=1, max_length=32)
 
 
 class ImportResponse(BaseModel):
@@ -882,6 +893,38 @@ def history_request_bars(request_id: str, limit: int = 500) -> dict[str, object]
     except ValueError as error:
         status = 404 if "not found" in str(error) else 409 if "conflicting" in str(error) else 422
         raise HTTPException(status_code=status, detail=str(error)) from error
+    finally:
+        engine.dispose()
+
+
+@app.post("/history/inputs", status_code=201)
+def create_history_input(request: HistoryInputRequest) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.begin() as connection:
+            store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
+            return publish_history_input(connection, store, request.requests)
+    except HistoryInputConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404 if "not found" in str(error) else 422, detail=str(error)
+        ) from error
+    finally:
+        engine.dispose()
+
+
+@app.get("/history/inputs/{revision_id}")
+def history_input_metadata(revision_id: str) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
+            return read_history_input(connection, store, revision_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404 if "not found" in str(error) else 422, detail=str(error)
+        ) from error
     finally:
         engine.dispose()
 

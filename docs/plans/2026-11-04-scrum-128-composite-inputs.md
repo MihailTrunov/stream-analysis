@@ -1,0 +1,31 @@
+# SCRUM-128 — immutable composite analysis inputs
+
+Publish a normal `parquet-v1` M1 dataset revision from one to 32 fully available history requests belonging to the same feed. This reuses the existing staging, checksum, metadata publication, catalog and replay boundaries. A virtual concatenation would make existing runs depend on the continuing availability of parent files; a separately materialized immutable revision makes the pinned input self-contained.
+
+The caller supplies each request ID and the source-manifest hash it reviewed. Re-resolve coverage and reject incomplete/conflicting/stale inputs. Normalize overlapping request spans into one chronological source plan; do not count a minute twice. Uncovered expected-open minutes fail validation, including between individually complete requests. Verified scheduled closures may separate source spans without fabricated records.
+
+The versioned composition manifest pins request IDs/hashes, selected bounds, feed identity and each parent revision's canonical/source checksums and checksum/format versions. Its hash determines the new revision identity. Request creation timestamps provide a stable logical creation time, as import-job creation timestamps do for imported revisions; acquisition time comes from the parents. This keeps retries and recovery after a database rollback deterministic even when published files remain unreferenced.
+
+Stream source ranges using authenticated Parquet row groups, validate against the calendar, compute the canonical checksum and publish through `DatasetStore`. No whole-source concatenation is required in memory. Use provider `history-composite` to keep materialized inputs out of acquisition coverage and prevent them competing with their own parents. Their original provider/account/price/calendar/normalization lineage remains in the composition manifest.
+
+Expose explicit publication and immutable-input metadata APIs. Existing source catalog and analysis/replay launch APIs accept the resulting revision unchanged. Subsequent corrections may change acquisition coverage, but cannot alter a published composite input or an existing run. Composition adds no provider request and no database migration.
+
+Verify overlap/deduplication, chronological order, mixed-feed/stale/incomplete rejection, missing-open and scheduled-closure behavior, parent corruption, deterministic retry/restart/rollback, preserved lineage, credential-free reads, and detector replay across a parent boundary. Chart integration and the higher-timeframe bounded-price path remain the next work after this publication boundary.
+
+## Delivered interface and semantics
+
+`POST /history/inputs` accepts `{"requests": {"<request_id>": "<reviewed source_manifest_hash>"}}`. Up to 32 requests may contribute. It returns the published `dataset_revision_id`, selected bounds, candle count, canonical checksum and the versioned composition manifest/hash. Equivalent calls with the same reviewed request set return the same input; dictionary order does not affect identity. Incomplete or changed coverage returns HTTP 409, mixed feeds or closed-only inputs return 422, and unknown requests return 404.
+
+`GET /history/inputs/{revision_id}` reads the frozen publication, authenticating its own manifest and data. It does not re-resolve acquisition coverage or require the parents' price files. Both operations work without provider credentials. The revision appears in the existing source catalog and can be passed directly to the existing `/analysis` or `/replay` launch contract. Callers still need to include enough preceding source history for detector initialization; composition does not relax warm-up requirements.
+
+The composition's `source_checksum` is the SHA-256 of its canonical versioned composition manifest. That manifest preserves each parent's original source checksum, canonical checksum, source identity, provider, normalization/calendar versions and checksum/format versions. The canonical checksum of the resulting M1 bars remains independent. The selected source plan is checked again while publishing, so parent lineage changes between checksum calculation and publication fail rather than changing attribution silently.
+
+Source prices stream chronologically through authenticated row groups. A first pass validates every expected-open minute and computes count/bounds/checksum; staged publication streams the plan again and verifies the resulting Parquet content before registration. Overlapping requests selecting the same source are merged. An explicitly repaired source gap may form a complete validated input; a gap between otherwise complete requests still blocks publication. Closed intervals produce no artificial candles.
+
+The dataset publication path also handles an equivalent competing directory publication: the caller authenticates the winner's immutable manifest, file checksum and prices before reusing it. Corrupt competing output is rejected. Database registration remains in the caller's transaction; a rollback can leave unreferenced files, and a matching retry reuses them with the same identity and metadata. This does not claim PostgreSQL multi-process concurrency acceptance beyond those tested boundaries.
+
+## Verification
+
+Focused composition/storage/range regressions cover detector replay across an acquisition boundary, overlapping request deduplication, source cropping without loading full parent sequences, scheduled breaks, missing/stale/mixed-feed inputs, explicit gap repair, source corruption and mid-publication lineage changes, persisted snapshots after corrections, credential-free APIs, restart reads after parent-file removal, rollback/retry, chronological row-group streaming and competing directory publication with valid/corrupt output.
+
+Final verification: **891 Python tests passed, 10 skipped**; **25 browser cases passed**; **55 focused composition/storage/range tests passed**. Targeted Ruff/mypy and `git diff --check` passed. The skipped external integration tests remain outside this SQLite/fake-ingress validation. No schema migration is introduced; the preceding shared-request service still requires migration `20261104_13`. No live provider connection or new verified-calendar coverage is claimed.
