@@ -26,7 +26,11 @@ Local implementation checkpoint: the [multi-timeframe session increment](../plan
 implements the versioned aggregation engine and tab-local replay/history controllers.
 It reuses the existing detector runtime and persisted evidence boundary; session
 orchestration manifests are stored separately from per-stream run snapshots.
-Provider live and continuous retained-range integration remain follow-up work.
+Shared retained-range acquisition and immutable composition are implemented under
+SCRUM-128. The [shared live-ingress increment](../plans/2026-11-05-scrum-137-shared-live-ingress.md)
+adds provider-confirmed completed candles, separate forming updates and explicit
+feed subscriptions. Live analytical input lineage, detector/tab integration and
+current-date calendar verification remain follow-up work under SCRUM-137.
 
 - Keep provider ingress, analysis processing and DOM/chart rendering separate.
   Share each feed's acquisition/persistence across tabs; retain independent
