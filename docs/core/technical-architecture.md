@@ -44,7 +44,11 @@ Provider live and continuous retained-range integration remain follow-up work.
   initial policy; expose recent durable records before packaging. Atomic
   publication/recovery must avoid acknowledged-data loss and pinned-input mutation.
   Adapt existing durable ingestion machinery rather than introducing a separate
-  untracked per-tab store. Exact staging/read-through mechanics need a design.
+  untracked per-tab store. The [SCRUM-136 retention design](../plans/2026-11-05-scrum-136-live-candle-retention.md)
+  uses a transactional PostgreSQL completed-minute journal, bounded recent reads
+  and immutable hourly Parquet publication. Acknowledgment follows database commit;
+  packaging failure retains journaled data. The portable PostgreSQL dump includes
+  recent records as well as metadata; the shared data root contains published files.
 - Source minutes remain canonical. Versioned aggregation creates 5m/15m/30m/1h/
   4h/1D analytical bars, not only chart display aggregates. Each analytical stream
   drives the same market-state/detector runtime on its completed bars; display
