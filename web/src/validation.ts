@@ -27,13 +27,14 @@ export function validateReplayState(value: unknown): ReplayState {
 }
 export function validateReplayView(value: unknown): ReplayViewResponse {
   if (!isRecord(value) || !text(value.run_id) || !Number.isInteger(value.cursor_index)
+    || ['available_at', 'view_end', 'history_start'].some((key) => value[key] !== undefined && value[key] !== null && !instant(value[key]))
     || !(value.cursor_time === null || instant(value.cursor_time))
     || !Array.isArray(value.bars) || !value.bars.every((bar: unknown) => isRecord(bar)
-      && instant(bar.timestamp) && ['open', 'high', 'low', 'close'].every((key) => typeof bar[key] === 'string' && Number.isFinite(Number(bar[key]))))
+      && instant(bar.timestamp) && (bar.available_at === undefined || instant(bar.available_at)) && ['open', 'high', 'low', 'close'].every((key) => typeof bar[key] === 'string' && Number.isFinite(Number(bar[key]))))
     || !Array.isArray(value.observations) || !value.observations.every((frame: unknown) => isRecord(frame)
       && instant(frame.timestamp) && isRecord(frame.availability) && isRecord(frame.components) && Array.isArray(frame.market_events))
     || !Array.isArray(value.events) || !value.events.every((event: unknown) => isRecord(event)
-      && text(event.event_id) && instant(event.detection_time) && Number.isInteger(event.emission_order))) {
+      && text(event.event_id) && instant(event.detection_time) && (event.available_at === undefined || instant(event.available_at)) && Number.isInteger(event.emission_order))) {
     throw new Error('The API returned an invalid chart snapshot.');
   }
   return value as unknown as ReplayViewResponse;

@@ -165,6 +165,9 @@ export interface ReviewPattern {
   name: string;
 }
 export interface ReplayViewResponse extends ReplayBarsResponse {
+  available_at?: string;
+  view_end?: string;
+  history_start?: string | null;
   stream_coverage?: StreamCoverage[];
   coverage?: string;
   timeframe?: Timeframe;
@@ -173,6 +176,7 @@ export interface ReplayViewResponse extends ReplayBarsResponse {
 }
 
 const instantFields = new Set(['timestamp', 'event_time', 'detection_time', 'cursor_time',
+  'view_start', 'view_end', 'history_start',
   'selected_start', 'selected_end', 'valid_from', 'available_from', 'valid_to', 'available_at', 'interval_start', 'range_start', 'range_end', 'suggested_start', 'suggested_end']);
 
 export function normalizeApiInstants(value: unknown): unknown {

@@ -50,6 +50,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const [endExplicit, setEndExplicit] = useState(tab.replayEndExplicit ?? false);
   const [navigationNote, setNavigationNote] = useState<string | null>(null);
   const edgeAttempts = useRef(new Set<string>());
+  const focusedReplayWindow = useRef<string | null>(null);
   const [viewedPeriod, setViewedPeriod] = useState<{ start: string; end: string } | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [focusTime, setFocusTime] = useState<string | null>(null);
@@ -74,10 +75,19 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const viewport = useRef<AnalysisTab['viewport'] | null>(tab.viewport ?? null);
   const saveViewport = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replay = useReplayController(initialRun, active, speed, chartTimeframe,
-    (next) => onRunChange(tab.id, next), (stop) => {
-      if (stop) setHistory(visible);
+    (next) => onRunChange(tab.id, next), (stop, snapshot) => {
+      if (stop) {
+        const prices = visible.length ? visible : snapshot?.bars ?? [];
+        const last = prices.at(-1);
+        const retainedEnd = snapshot?.view_end ?? last?.available_at
+          ?? (last ? new Date(Date.parse(last.timestamp) + 60_000).toISOString() : state?.selected_start);
+        setHistory(prices); setHistoryEnd(retainedEnd); setError(null); setNavigationNote(null);
+        edgeAttempts.current.clear();
+        if (saveViewport.current) clearTimeout(saveViewport.current);
+        onTabChange(tab.id, { historyEnd: retainedEnd, viewport: viewport.current ?? undefined, replayWindow: undefined });
+      }
       clearRunView(!stop);
-    }, setError);
+    }, setError, selected?.range_start, tab.replayWindow);
   const { state, stateRef, setState, control, annotations, setAnnotations } = replay;
   const chartBars = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.bars ?? emptyBars : emptyBars;
   const observations = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.observations ?? emptyObservations : emptyObservations;
@@ -102,7 +112,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const working = busy || replay.busy || settings.busy || navigation.busy;
   const visibleHistory = useMemo(() => state ? history.filter((bar) => bar.timestamp < state.selected_start) : history,
     [history, state]);
-  const visible = useMemo(() => state ? state.analysis_session ? chartBars : [...visibleHistory, ...chartBars] : history, [state, visibleHistory, chartBars, history]);
+  const visible = useMemo(() => state ? state.analysis_session ? chartBars : [...visibleHistory, ...chartBars].slice(-500) : history, [state, visibleHistory, chartBars, history]);
   const cursor = state ? (state.analysis_session ? chartBars.at(-1)?.timestamp : replay.snapshot?.cursor_time) ?? visibleHistory.at(-1)?.timestamp ?? null : history.at(-1)?.timestamp ?? null;
 
   const periodStart = viewedPeriod?.start ?? visible[0]?.timestamp ?? null;
@@ -124,14 +134,28 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     if (!selected) return;
     onTabChange(tab.id, { sourceId: selectedId, instrument: selected.instrument_id, start, end,
       streams: settings.drafts.length ? settings.drafts : undefined, appliedStreams: settings.applied ?? undefined, chartTimeframe,
-      historyEnd, replayEndExplicit: endExplicit });
-  }, [selectedId, start, end, settings.drafts, settings.applied, chartTimeframe, historyEnd, endExplicit, onTabChange, tab.id, selected]);
+      historyEnd, replayEndExplicit: endExplicit, replayWindow: state ? replay.window ?? undefined : undefined });
+  }, [selectedId, start, end, settings.drafts, settings.applied, chartTimeframe, historyEnd, endExplicit, replay.window, state, onTabChange, tab.id, selected]);
+
+  useEffect(() => {
+    if (!state || !replay.window) { focusedReplayWindow.current = null; return; }
+    if (!replay.ready) return;
+    const selectedWindow = replay.window;
+    const key = `${selectedWindow.run_id}:${selectedWindow.target}:${selectedWindow.end}:${chartTimeframe}`;
+    if (focusedReplayWindow.current === key) return;
+    const candle = candleAt(chartBars, selectedWindow.target)
+      ?? [...chartBars].reverse().find((bar) => Date.parse(bar.timestamp) <= Date.parse(selectedWindow.target));
+    if (!candle) { setError('No completed candle is available at this point in the recorded replay.'); return; }
+    focusedReplayWindow.current = key;
+    setFocusTime(candle.timestamp); setFocusVersion((version) => version + 1);
+    setNavigationNote(candleAt(chartBars, selectedWindow.target) ? null : 'Showing the preceding completed replay candle.');
+  }, [state, replay.window, replay.ready, chartBars, chartTimeframe]);
 
   function clearRunView(resetViewport = true) {
     replay.clearSnapshot();
     setSelectedEventId(null); setFocusTime(null); setReviewAnchor(null); setReviewInterval(null);
     setDetails(null); setPinned(false);
-    if (resetViewport) viewport.current = null;
+    if (resetViewport) { viewport.current = null; onTabChange(tab.id, { viewport: undefined }); }
   }
 
   useEffect(() => () => {
@@ -175,7 +199,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       const instant = inputInstant(start, tab.timezone);
       const candle = candleAt(visible, instant);
       if (!candle) {
-        if (state) throw new Error('Choose a candle already revealed by this replay.');
+        if (state) {
+          replay.browse(instant); setFocusTime(null); setNavigationNote(null); setError(null); return;
+        }
         if (!selected) throw new Error('Choose a published source for this instrument.');
         setError(null); setNavigationNote(null);
         await navigation.begin({ source: selected, target: instant, timeframe: chartTimeframe,
@@ -184,6 +210,13 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       }
       setError(null); setNavigationNote(null); setFocusTime(candle.timestamp); setFocusVersion((version) => version + 1);
     } catch (reason) { setError(errorMessage(reason)); }
+  }
+
+  function returnToCursor() {
+    if (saveViewport.current) clearTimeout(saveViewport.current);
+    viewport.current = null; onTabChange(tab.id, { viewport: undefined });
+    setFocusTime(null); setFocusVersion((version) => version + 1);
+    setNavigationNote(null); setError(null); replay.returnToCursor();
   }
 
   function chooseSource(id: string) {
@@ -199,11 +232,18 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   function loadEarlier(automatic = false) {
-    if (state || !selected || working || loadingHistory || !history.length) return;
-    const first = history[0].timestamp;
+    if (!selected || working || loadingHistory || !visible.length || state && !replay.ready) return;
+    const first = visible[0].timestamp;
     const key = `${selectedId}:${chartTimeframe}:${first}`;
     if (automatic && edgeAttempts.current.has(key)) return;
     edgeAttempts.current.add(key);
+    if (state) {
+      try {
+        replay.browse(new Date(Date.parse(first) - 60_000).toISOString());
+        setFocusTime(null); setNavigationNote(null); setError(null);
+      } catch (reason) { setNavigationNote(errorMessage(reason)); }
+      return;
+    }
     if (selected.non_research_grade && Date.parse(first) <= Date.parse(selected.range_start)) {
       setNavigationNote('Reached the beginning of this synthetic dataset.'); return;
     }
@@ -296,6 +336,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         cursorTime={cursor} focusTime={focusTime} overlays={layers} timezone={tab.timezone}
         focusVersion={focusVersion} onReturnLatest={() => {
           setFocusTime(null);
+          if (state) returnToCursor();
           if (!state) {
             navigation.cancel(); setHistoryEnd(undefined); setViewedPeriod(null); setNavigationNote(null);
             const latest = preferredSource(sources, selected?.instrument_id ?? tab.instrument);
@@ -303,7 +344,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
               setHistory([]); viewport.current = null; setSelectedId(latest.dataset_revision_id);
             }
           }
-        }} onLoadEarlier={state ? undefined : loadEarlier} earlierDisabled={working || loadingHistory || !history.length}
+        }} onLoadEarlier={loadEarlier} earlierDisabled={working || loadingHistory || !visible.length || Boolean(state && !replay.ready)}
+        canReturnLatest={state ? Boolean(replay.window) : Boolean(historyEnd && selected && Date.parse(historyEnd) < Date.parse(selected.range_end))}
         initialRange={viewport.current?.origin === visible[0]?.timestamp ? viewport.current : null}
         onRangeChange={(value) => {
           if (!visible.length) return;
@@ -342,12 +384,17 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           <div className="secondary-actions"><button type="button" onClick={() => void control('next-event')} disabled={working || !replay.ready || !state.has_next || state.status === 'running'}>Next detector event</button>
             <button type="button" onClick={() => void control('reset')} disabled={working}>Reset replay</button></div></>}
         {focusTime && <div className="focus-notice">Viewing {displayTime(focusTime, tab.timezone)}
-          <button type="button" onClick={() => setFocusTime(null)}>{state ? 'Return to replay cursor' : 'Clear chart focus'}</button></div>}
+          <button type="button" onClick={() => {
+            if (state) returnToCursor(); else { setFocusTime(null); setNavigationNote(null); }
+          }}>{state ? 'Return to replay cursor' : 'Clear chart focus'}</button></div>}
         {navigation.message && <p role="status">{navigation.message}</p>}
         {navigation.busy && <button type="button" onClick={navigation.cancel}>Cancel navigation</button>}
         {navigation.failed && <button type="button" onClick={() => { setError(null); void navigation.retry(); }}>Retry navigation</button>}
         {navigationNote && <p role="status">{navigationNote}</p>}
-        {state && !replay.ready && <p role="status">Updating chart to replay position…</p>}
+        {state && !replay.ready && <p role="status">{replay.window ? 'Loading recorded replay history…' : 'Updating chart to replay position…'}</p>}
+        {state && replay.window && !focusTime && <button type="button" onClick={returnToCursor}>Return to replay cursor</button>}
+        {state && replay.window && replay.ready && <p role="status">Browsing recorded history independently of the replay cursor.</p>}
+        {state && replay.snapshot?.coverage === 'initialization_unavailable' && <p role="status">This context precedes detector initialization.</p>}
         {replay.readError && <p role="alert">Chart update failed: {replay.readError} <button type="button" onClick={replay.retrySnapshot}>Retry chart update</button></p>}
         {error && <p role="alert" className="inline-error">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button></p>}
       </div>

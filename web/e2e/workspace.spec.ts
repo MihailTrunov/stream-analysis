@@ -43,7 +43,7 @@ test('chart dominates the initial workspace, zooms, and discards cached future c
   await expect(chart).toHaveAccessibleName(/61 visible bars/);
   await page.getByRole('button', { name: 'Stop replay', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Historical exploration' })).toBeVisible();
-  await expect(chart).toHaveAccessibleName(/300 visible bars/);
+  await expect(chart).toHaveAccessibleName(/61 visible bars/);
 });
 
 test('tab switching pauses replay, renders only the focused chart, and restores instruments after reload', async ({ page }) => {

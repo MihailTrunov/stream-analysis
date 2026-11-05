@@ -30,3 +30,5 @@ Final verification: **921 Python tests passed, 10 skipped**; **38 browser cases 
 ## Jira and next boundary
 
 SCRUM-128 is ready for In Review for shared range loading, immutable publication and chart-history integration, rather than Done. SCRUM-133 remains In Progress: pagination of older already-revealed replay windows, remaining Stop/viewport edge acceptance and later live-follow behavior are not completed by this increment. Current replay Move to stays within loaded, already-revealed candles and never invokes provider acquisition. Full API-restart cursor recovery and verified-calendar extension remain their existing separate boundaries.
+
+Follow-up: [the 2026-11-05 replay navigation increment](2026-11-05-scrum-133-revealed-replay-navigation.md) completes older revealed-window paging and Stop/viewport preservation. SCRUM-133 remains In Progress for its outstanding live-follow behavior; the verification counts above describe this earlier increment.

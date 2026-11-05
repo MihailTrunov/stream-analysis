@@ -2,6 +2,7 @@ import { isDetectionConfig } from './validation';
 import type { AnalysisStream, DetectionConfig, ReplaySource, Timeframe } from './replay';
 import type { DisplayTimezone } from './time';
 import { isNavigationPlan, type NavigationPlan } from './historyNavigation';
+import { isReplayWindow, type ReplayWindow } from './replayWindow';
 
 export interface AnalysisTab {
   id: string;
@@ -19,6 +20,7 @@ export interface AnalysisTab {
   historyEnd?: string;
   navigationPlan?: NavigationPlan;
   replayEndExplicit?: boolean;
+  replayWindow?: ReplayWindow;
   viewport?: { from: number; to: number; origin: string };
 }
 export interface Workspace { version: 3; tabs: AnalysisTab[]; activeId: string }
@@ -51,6 +53,7 @@ export function restoreWorkspace(raw: string | null): Workspace {
         historyEnd: typeof tab.historyEnd === 'string' && Number.isFinite(Date.parse(tab.historyEnd)) ? tab.historyEnd : undefined,
         navigationPlan: isNavigationPlan(tab.navigationPlan) && tab.navigationPlan.instrument_id === tab.instrument ? tab.navigationPlan : undefined,
         replayEndExplicit: tab.replayEndExplicit === true,
+        replayWindow: isReplayWindow(tab.replayWindow) && tab.replayWindow.run_id === tab.runId ? tab.replayWindow : undefined,
         viewport: tab.viewport
         && Number.isFinite(tab.viewport.from) && Number.isFinite(tab.viewport.to)
         && Math.abs(tab.viewport.from) < 1_000_000 && Math.abs(tab.viewport.to) < 1_000_000

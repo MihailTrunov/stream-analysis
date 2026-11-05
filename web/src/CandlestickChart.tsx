@@ -29,12 +29,13 @@ interface Props {
   onReturnLatest?: () => void;
   onLoadEarlier?: (automatic?: boolean) => void;
   earlierDisabled?: boolean;
+  canReturnLatest?: boolean;
 }
 
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
   onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays,
   timezone = 'Europe/London', resetKey = '', initialRange = null, onRangeChange,
-  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false }: Props) {
+  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -185,6 +186,9 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       }
       if (model.candles.length && (priorCount.current === 0
         || model.candles.length < priorCount.current)) {
+        if (priorCount.current === 0 && initialViewport.current) {
+          following.current = false; setIsFollowing(false);
+        }
         instance.timeScale().setVisibleLogicalRange(initialViewport.current ?? {
           from: model.candles.length - 90, to: model.candles.length + 4,
         });
@@ -242,7 +246,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         following.current = true; setIsFollowing(true); chart.current?.timeScale().scrollToRealTime();
         userNavigation.current = false;
         onReturnLatest?.();
-      }} disabled={isFollowing && !focusTime}>Return to latest</button>
+      }} disabled={isFollowing && !focusTime && !canReturnLatest}>Return to latest</button>
     </div>
     <p className="chart-caption">
       {bars.length
