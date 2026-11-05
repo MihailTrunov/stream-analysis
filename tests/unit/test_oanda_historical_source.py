@@ -118,6 +118,53 @@ def test_empty_range_and_missing_mapping_do_not_contact_provider() -> None:
     assert calls == 0
 
 
+def test_live_poll_uses_provider_completed_candles_and_separate_forming_midpoint() -> None:
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = parse_qs(request.url.query.decode())
+        calls.append(query)
+        return httpx.Response(200, json=body(
+            candle(1), candle(2, complete=False),
+        ) if "count" in query else body(candle(0), candle(1), candle(2, complete=False)))
+
+    adapter = source(httpx.MockTransport(handler))
+    result = adapter.poll_live(selected(minutes=2), at=START + timedelta(minutes=2, seconds=30))
+    assert [bar.timestamp for bar in result.completed.bars] == [START, START + timedelta(minutes=1)]
+    assert result.forming and result.forming.timestamp == START + timedelta(minutes=2)
+    assert result.forming.is_complete is False
+    assert calls[1]["count"] == ["2"]
+    assert calls[1]["price"] == ["M"]
+    assert calls[1]["smooth"] == ["false"]
+
+
+@pytest.mark.parametrize("latest", [
+    body(candle(3, complete=False)),
+    body(candle(2, complete=False), candle(2, complete=False)),
+    body(candle(2, complete=False), symbol="DE30_EUR"),
+    body({**candle(2, complete=False), "volume": True}),
+])
+def test_live_poll_rejects_future_duplicate_mismatched_and_invalid_forming_data(latest) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json=latest if "count" in request.url.params else body(candle(0)),
+        )
+
+    adapter = source(httpx.MockTransport(handler))
+    with pytest.raises(ProviderError):
+        adapter.poll_live(selected(minutes=2), at=START + timedelta(minutes=2, seconds=30))
+
+
+def test_live_poll_does_not_invent_a_close_for_an_elapsed_incomplete_provider_candle() -> None:
+    adapter = source(httpx.MockTransport(lambda _: httpx.Response(
+        200, json=body(candle(0, complete=False), candle(1)),
+    )))
+    result = adapter.poll_live(selected(minutes=2), at=START + timedelta(minutes=2, seconds=30))
+    assert len(result.completed.bars) == 1
+    assert result.completed.bars[0].timestamp == START + timedelta(minutes=1)
+    assert result.forming is None
+
+
 def test_unaligned_start_filters_provider_candle_covering_from() -> None:
     adapter = source(
         httpx.MockTransport(lambda _: httpx.Response(200, json=body(candle(0), candle(1))))

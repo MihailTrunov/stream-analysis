@@ -15,6 +15,7 @@ from sqlalchemy import create_engine
 
 from market_analysis import __version__
 from market_analysis.api.analysis import router as analysis_router
+from market_analysis.api.live import router as live_router
 from market_analysis.application.analysis_sessions import (
     StreamSettings,
     analysis_sessions,
@@ -40,6 +41,7 @@ from market_analysis.application.history_ranges import (
     history_prices,
     request_history,
 )
+from market_analysis.application.live_ingress import live_ingress
 from market_analysis.application.live_retention import read_live_history
 from market_analysis.application.logging import configure_logging, research_logger
 from market_analysis.application.replay_catalog import (
@@ -313,11 +315,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        live_ingress.close()
         logger.info("API stopped")
 
 
 app = FastAPI(title="Stream Analysis", version=__version__, lifespan=lifespan)
 app.include_router(analysis_router)
+app.include_router(live_router)
 
 
 @app.get("/health")

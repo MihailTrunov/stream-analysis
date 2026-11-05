@@ -23,6 +23,7 @@ from market_analysis.domain.historical_data import (
     MappingUnavailableError,
     ProviderError,
 )
+from market_analysis.domain.live_data import LiveCandleUpdate
 from market_analysis.domain.market_data import Bar, DomainValidationError, Timeframe
 
 _GRANULARITY: Mapping[Timeframe, tuple[str, timedelta]] = {
@@ -218,6 +219,48 @@ class OandaHistoricalDataSource:
             "includeFirst": "true",
         }
         return self._request_json(url, params)
+
+    def poll_live(self, request: HistoricalDataRequest, *, at: datetime) -> LiveCandleUpdate:
+        """Use provider completion flags, never quote-stream inferred OHLC, for analysis."""
+        if (request.timeframe is not Timeframe.M1 or request.page_token is not None
+            or at.tzinfo is None or request.end > at.replace(second=0, microsecond=0)
+            or request.end - request.start > timedelta(hours=1)):
+            raise ProviderError("live polling requires at most one elapsed canonical M1 hour")
+        completed = self.get_bars(request)
+        symbol = request.instrument.provider_symbol("oanda", environment=self.environment)
+        url = (
+            f"{_BASE_URLS[self.environment]}/v3/accounts/{quote(self.account_id, safe='')}"
+            f"/instruments/{quote(symbol, safe='')}/candles"
+        )
+        payload = self._request_json(url, {
+            "price": "M", "granularity": "M1", "count": "2", "smooth": "false",
+        })
+        records = payload.get("candles")
+        if (payload.get("instrument") != symbol or payload.get("granularity") != "M1"
+            or not isinstance(records, list) or len(records) > 2):
+            raise ProviderError("invalid OANDA forming-candle envelope")
+        forming = None
+        for record in records:
+            if not isinstance(record, dict) or type(record.get("complete")) is not bool:
+                raise ProviderError("invalid OANDA forming-candle record")
+            timestamp = _timestamp(record.get("time"))
+            if record["complete"] or timestamp < at.replace(second=0, microsecond=0):
+                continue
+            if forming is not None:
+                raise ProviderError("duplicate OANDA forming candle")
+            mid, volume = record.get("mid"), record.get("volume")
+            if not isinstance(mid, dict) or type(volume) is not int or volume < 0:
+                raise ProviderError("invalid OANDA forming-candle prices")
+            try:
+                forming = Bar(request.instrument.instrument_id, Timeframe.M1, timestamp,
+                              mid["o"], mid["h"], mid["l"], mid["c"], Decimal(volume),
+                              source_id=SOURCE_ID, is_complete=False)
+            except (KeyError, DomainValidationError) as error:
+                raise ProviderError("invalid OANDA forming-candle prices") from error
+        try:
+            return LiveCandleUpdate(completed, at, forming)
+        except DomainValidationError as error:
+            raise ProviderError("invalid OANDA live-candle availability") from error
 
     def verify_account_instrument(self, symbol: str) -> None:
         """Check the exact account-scoped symbol and pinned UK/live index precision."""
