@@ -207,6 +207,12 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     const model = result.model;
     if (!instance || !model?.candles.length || (focusTime === priorFocus.current
       && focusVersion === priorFocusVersion.current)) return;
+    // Version zero describes restored focus metadata, not a new navigation.
+    // Keep a matching restored viewport until an explicit focus action occurs.
+    if (focusTime && focusVersion === 0 && initialViewport.current) {
+      priorFocus.current = focusTime; priorFocusVersion.current = focusVersion;
+      return;
+    }
     if (focusTime) {
       userNavigation.current = false;
       following.current = false;

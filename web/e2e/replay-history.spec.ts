@@ -32,6 +32,49 @@ async function browseOld(page: Page) {
   await expect(page.locator('.focus-notice')).toContainText('09:10');
 }
 
+test('active replay restores manually zoomed geometry without refocusing its saved target', async ({ page }) => {
+  await smallRecordedViewport(page);
+  await browseOld(page);
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  const savedViewport = () => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport);
+  await expect.poll(async () => (await savedViewport())?.from).toBeGreaterThan(1);
+  const before = await savedViewport();
+  const run = await current(page);
+  await page.reload();
+  await expect(page.getByRole('img', { name: /36 visible bars/ })).toBeVisible();
+  await expect(page.locator('.focus-notice')).toContainText('09:10');
+  await page.waitForTimeout(300);
+  const after = await savedViewport();
+  expect(after.origin).toBe(before.origin);
+  expect(after.from).toBeCloseTo(before.from, 1);
+  expect(after.to).toBeCloseTo(before.to, 1);
+  expect(await current(page)).toEqual(run);
+  // An explicit new navigation must still override the restored viewport.
+  await page.getByLabel('Chart date and time').fill('2026-01-05T09:05');
+  await page.getByRole('button', { name: 'Move to', exact: true }).click();
+  await expect(page.locator('.focus-notice')).toContainText('09:05');
+  await expect.poll(async () => (await savedViewport()).from).toBeLessThan(1);
+});
+
+test('latest loaded Move to target survives timeframe changes and reload without another price read', async ({ page }) => {
+  const fixture = await smallRecordedViewport(page);
+  await browseOld(page);
+  const reads = fixture.reads();
+  const run = await current(page);
+  await page.getByLabel('Chart date and time').fill('2026-01-05T09:30');
+  await page.getByRole('button', { name: 'Move to', exact: true }).click();
+  await expect(page.locator('.focus-notice')).toContainText('09:30');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].replayWindow?.target)).toBe('2026-01-05T09:30:00.000Z');
+  expect(fixture.reads()).toBe(reads);
+  await page.getByLabel('Chart timeframe').selectOption('5m');
+  await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
+  await expect(page.locator('.focus-notice')).toContainText('09:30');
+  await page.reload();
+  await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
+  await expect(page.locator('.focus-notice')).toContainText('09:30');
+  expect(await current(page)).toEqual(run);
+});
+
 test('older revealed context loads without advancing the run and restores with its tab', async ({ page }) => {
   await smallRecordedViewport(page);
   let acquisitions = 0;

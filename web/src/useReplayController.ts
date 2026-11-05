@@ -50,6 +50,13 @@ export function useReplayController(initial: ReplayState | null, active: boolean
     if (!current) return;
     changeWindow(revealedWindow(current, timeframe, target, historyStart.current ?? sourceStart ?? current.selected_start));
   }, [changeWindow, timeframe, sourceStart]);
+  const focusLoaded = useCallback((target: string) => {
+    const selected = windowRef.current;
+    if (!selected || selected.run_id !== stateRef.current?.run_id) return;
+    // Only the navigation target changes; keep the coherent price window/read.
+    const next = { ...selected, target };
+    windowRef.current = next; setWindow(next);
+  }, []);
   const control = useCallback((action: ReplayAction) => {
     setPending((count) => count + 1);
     queue.current = queue.current.then(async () => {
@@ -138,5 +145,5 @@ export function useReplayController(initial: ReplayState | null, active: boolean
   }
   return { state, stateRef, setState, snapshot, annotations, setAnnotations, control,
     clearSnapshot, busy: pending > 0, ready, readError: readError ?? commandError, retrySnapshot,
-    browse, returnToCursor: () => changeWindow(null), window };
+    browse, focusLoaded, returnToCursor: () => changeWindow(null), window };
 }

@@ -88,6 +88,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       }
       clearRunView(!stop);
     }, setError, selected?.range_start, tab.replayWindow);
+  const restoredReplayWindow = useRef(replay.window);
   const { state, stateRef, setState, control, annotations, setAnnotations } = replay;
   const chartBars = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.bars ?? emptyBars : emptyBars;
   const observations = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.observations ?? emptyObservations : emptyObservations;
@@ -147,7 +148,11 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       ?? [...chartBars].reverse().find((bar) => Date.parse(bar.timestamp) <= Date.parse(selectedWindow.target));
     if (!candle) { setError('No completed candle is available at this point in the recorded replay.'); return; }
     focusedReplayWindow.current = key;
-    setFocusTime(candle.timestamp); setFocusVersion((version) => version + 1);
+    const preserveViewport = restoredReplayWindow.current === selectedWindow
+      && restored.current.chartTimeframe === chartTimeframe && viewport.current?.origin === chartBars[0]?.timestamp;
+    restoredReplayWindow.current = null;
+    setFocusTime(candle.timestamp);
+    if (!preserveViewport) setFocusVersion((version) => version + 1);
     setNavigationNote(candleAt(chartBars, selectedWindow.target) ? null : 'Showing the preceding completed replay candle.');
   }, [state, replay.window, replay.ready, chartBars, chartTimeframe]);
 
@@ -208,6 +213,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           streams: settings.applied ?? [], intent: 'move' });
         return;
       }
+      if (state) replay.focusLoaded(instant);
       setError(null); setNavigationNote(null); setFocusTime(candle.timestamp); setFocusVersion((version) => version + 1);
     } catch (reason) { setError(errorMessage(reason)); }
   }
