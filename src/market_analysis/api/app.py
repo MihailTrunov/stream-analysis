@@ -40,6 +40,7 @@ from market_analysis.application.history_ranges import (
     history_prices,
     request_history,
 )
+from market_analysis.application.live_retention import read_live_history
 from market_analysis.application.logging import configure_logging, research_logger
 from market_analysis.application.replay_catalog import (
     DEMO_CONFIG_ID,
@@ -879,6 +880,21 @@ def create_history_request(request: HistoryCreateRequest) -> dict[str, object]:
             )
             store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
             return history_coverage(connection, store, selected.request_id)
+    except (ValueError, SessionCalendarError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    finally:
+        engine.dispose()
+
+
+@app.get("/history/live/{feed_key}/bars")
+def retained_live_bars(
+    feed_key: str, start: datetime, end: datetime, limit: int = 500,
+) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            return read_live_history(connection, feed_key, start, end,
+                                     at=datetime.now(UTC), limit=limit)
     except (ValueError, SessionCalendarError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     finally:

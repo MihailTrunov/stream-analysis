@@ -15,6 +15,7 @@ from sqlalchemy import Engine, create_engine
 from market_analysis.application.diagnostics import write_worker_heartbeat
 from market_analysis.application.historical_import import advance_import
 from market_analysis.application.history_ranges import schedule_history_import
+from market_analysis.application.live_retention import package_pending_live_hours
 from market_analysis.application.logging import configure_logging, research_logger
 from market_analysis.config.oanda_uk_calendars import build_oanda_uk_calendar
 from market_analysis.domain.historical_data import ProviderError
@@ -106,6 +107,10 @@ def _run_import_job(
                     job.job_id,
                     calendar,
                 )
+                try:
+                    package_pending_live_hours(engine, dataset_store, at=_clock())
+                except Exception:
+                    logger.exception("live packaging failed between import pages")
                 if job.status is ImportStatus.COMPLETED:
                     logger.info("import completed", extra={"bar_count": job.bar_count})
                     return
@@ -135,6 +140,10 @@ def _run_import_worker(data_root: Path, should_stop: Callable[[], bool]) -> None
             interrupt_running_imports(connection, at=_clock())
         while not should_stop():
             write_worker_heartbeat(data_root, "import")
+            try:
+                package_pending_live_hours(engine, DatasetStore(data_root), at=_clock())
+            except Exception:
+                research_logger(component="import-worker").exception("live packaging failed")
             credentials = _import_credentials()
             if credentials is None:
                 time.sleep(1.0)

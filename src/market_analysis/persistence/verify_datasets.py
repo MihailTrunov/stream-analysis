@@ -7,6 +7,8 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, select
 
+from market_analysis.application.live_retention import verify_live_retention
+
 from .dataset_store import DatasetStore
 from .import_batches import ImportBatchStore
 from .import_jobs import import_jobs, list_import_batches
@@ -37,6 +39,9 @@ def main() -> None:
                         ImportBatchStore(root).read_batch(batch)
                         staged_count += 1
                 print(f"Verified {staged_count} staged import batch(es).")
+            if inspect(connection).has_table("live_candles"):
+                live_count = verify_live_retention(connection)
+                print(f"Verified {live_count} completed live minute(s).")
     finally:
         engine.dispose()
 
