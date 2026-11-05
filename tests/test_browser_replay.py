@@ -694,3 +694,26 @@ def test_local_browser_can_reattach_without_replaying_or_changing_run_id(client:
     assert attached["run_id"] == launched["run_id"]
     assert attached["cursor_index"] == stepped["cursor_index"]
     assert attached["visible_bars"] == 1
+
+
+def test_legacy_replay_supports_explicit_as_of_windows_without_changing_default_timeline(
+    client: TestClient,
+):
+    run_id = client.post("/replay", json=_launch()).json()["run_id"]
+    for _ in range(3):
+        client.post(f"/replay/{run_id}/step")
+    before = client.get(f"/replay/{run_id}").json()
+    cutoff = DEMO_SELECTED_START + timedelta(minutes=1, seconds=30)
+    params = {"start": DEMO_SELECTED_START.isoformat(), "end": cutoff.isoformat()}
+    old = client.get(f"/replay/{run_id}/view", params=params).json()
+    as_of = client.get(f"/replay/{run_id}/view", params={**params, "as_of_end": True}).json()
+    assert len(as_of["bars"]) == 1
+    assert len(as_of["events"]) < len(old["events"])
+    assert all(
+        datetime.fromisoformat(event["detection_time"]) + timedelta(minutes=1) <= cutoff
+        for event in as_of["events"]
+    )
+    assert as_of["cursor_index"] == before["cursor_index"]
+    assert client.get(f"/replay/{run_id}").json() == before
+    prices = client.get(f"/replay/{run_id}/bars", params=params).json()
+    assert len(prices["bars"]) == 1

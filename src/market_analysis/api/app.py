@@ -598,9 +598,10 @@ def browser_replay_view(
     start: datetime,
     end: datetime,
     limit: int = 100,
+    as_of_end: bool = False,
 ) -> dict[str, object]:
     try:
-        return browser_replay.visible_view(run_id, start, end, limit)
+        return browser_replay.visible_view(run_id, start, end, limit, as_of_end=as_of_end)
     except BrowserReplayError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

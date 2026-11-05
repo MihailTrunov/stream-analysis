@@ -651,7 +651,7 @@ class AnalysisSessionManager:
             cutoff = min(end, session.watermark)
             candles = session.candles[timeframe]
             displayed = [
-                c for c in candles if c.bar.timestamp < end and c.available_at <= session.watermark
+                c for c in candles if c.available_at <= cutoff
             ][-limit:]
             coverage = session.coverage(start, cutoff)
             events: list[dict[str, Any]] = []
@@ -702,6 +702,7 @@ class AnalysisSessionManager:
                 "cursor_time": session.state()["cursor_time"],
                 "limit": limit,
                 "available_at": stamp(session.watermark),
+                "history_start": stamp(candles[0].bar.timestamp) if candles else None,
                 "timeframe": timeframe.value,
                 "bars": [
                     {**bar_payload(item.bar), "available_at": stamp(item.available_at)}

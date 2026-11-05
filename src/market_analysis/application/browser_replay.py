@@ -610,7 +610,8 @@ class BrowserReplayManager:
             visible = [
                 step.view.current_bar
                 for step in session.pipeline.steps
-                if step.is_visible and start <= step.view.timestamp < end
+                if step.is_visible and start <= step.view.timestamp
+                and step.view.timestamp + timedelta(minutes=1) <= end
             ][-limit:]
             return {
                 "run_id": run_id,
@@ -637,6 +638,8 @@ class BrowserReplayManager:
         start: datetime,
         end: datetime,
         limit: int,
+        *,
+        as_of_end: bool = False,
     ) -> dict[str, object]:
         """One coherent, causal chart and event snapshot from committed steps."""
         if start.tzinfo is None or end.tzinfo is None or end <= start or not 1 <= limit <= 500:
@@ -646,7 +649,8 @@ class BrowserReplayManager:
             if start < session.selected_start or end > session.selected_end:
                 raise BrowserReplayError("viewport must lie inside the selected interval")
             steps = tuple(step for step in session.pipeline.steps if step.is_visible)
-            viewport = tuple(step for step in steps if start <= step.view.timestamp < end)[-limit:]
+            viewport = tuple(step for step in steps if start <= step.view.timestamp
+                             and step.view.timestamp + timedelta(minutes=1) <= end)[-limit:]
             observations = []
             for step in viewport:
                 frame = json.loads(step.result.frame.debug_json())
@@ -660,6 +664,8 @@ class BrowserReplayManager:
                 )
             events: list[dict[str, object]] = []
             for step in steps:
+                if as_of_end and step.view.timestamp + timedelta(minutes=1) > end:
+                    continue
                 for event in step.result.events:
                     event_id, stored_instance_id = session.event_store.identity(event)
                     definition = PATTERN_DEFINITIONS.get((event.pattern_id, event.pattern_version))
@@ -686,6 +692,11 @@ class BrowserReplayManager:
                 "run_id": run_id,
                 "cursor_index": session.pipeline.cursor_index,
                 "cursor_time": steps[-1].view.timestamp if steps else None,
+                "available_at": steps[-1].view.timestamp + timedelta(minutes=1)
+                if steps else session.selected_start,
+                "history_start": session.selected_start,
+                "view_end": min(end, steps[-1].view.timestamp + timedelta(minutes=1))
+                if steps else min(end, session.selected_start),
                 "bars": [
                     {
                         "timestamp": step.view.timestamp,

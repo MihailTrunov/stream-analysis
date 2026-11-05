@@ -499,3 +499,29 @@ def test_history_price_endpoint_never_includes_an_unfinished_chart_candle(client
     })
     assert response.status_code == 200, response.text
     assert response.json()["bars"][-1]["available_at"] == "2026-01-05T10:00:00Z"
+
+
+def test_recorded_replay_windows_cap_close_availability_and_do_not_advance_analysis(client):  # type: ignore[no-untyped-def]
+    from datetime import datetime, timedelta
+
+    session = launch(client, request((Timeframe.M5,)))
+    advanced = client.post(f"/analysis/{session['run_id']}/step?timeframe=4h")
+    assert advanced.status_code == 200, advanced.text
+    before = client.get(f"/analysis/{session['run_id']}").json()
+    full = client.get(f"/analysis/{session['run_id']}/view", params={
+        "start": "2026-01-05T09:00:00Z", "end": "2026-01-05T14:00:00Z", "timeframe": "5m",
+    }).json()
+    assert full["events"]
+    cutoff = datetime.fromisoformat(full["events"][0]["available_at"]) - timedelta(seconds=30)
+    response = client.get(f"/analysis/{session['run_id']}/view", params={
+        "start": "2026-01-05T09:00:00Z", "end": cutoff.isoformat(), "timeframe": "5m", "limit": 3,
+    })
+    assert response.status_code == 200, response.text
+    past = response.json()
+    assert past["history_start"] == "2026-01-05T09:00:00Z"
+    assert len(past["bars"]) <= 3
+    assert all(datetime.fromisoformat(bar["available_at"]) <= cutoff for bar in past["bars"])
+    assert all(datetime.fromisoformat(event["available_at"]) <= cutoff for event in past["events"])
+    assert len(past["events"]) < len(full["events"])
+    assert past["cursor_index"] == before["cursor_index"]
+    assert client.get(f"/analysis/{session['run_id']}").json() == before
