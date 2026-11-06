@@ -46,3 +46,7 @@ Focused tests cover shared subscribers, completed-versus-forming separation, bac
 Final verification: **970 Python tests passed, 11 skipped**; **45 focused ingress/provider tests passed**, with the strengthened bounded catch-up scenario also rerun successfully. Ruff, full backend mypy (88 source files) and `git diff --check` passed. Browser code is unchanged and browser suites were not rerun for this backend increment. These tests do not establish live detector parity, tab/DOM behavior, multiple API-process ownership or actual provider/calendar acceptance; those remain explicit follow-up work.
 
 No schema migration beyond the existing SCRUM-136 prerequisite `20261105_14` is needed. Existing installation state is not migrated or connected by this task.
+
+## Follow-up delivery — 2026-11-06
+
+[Live analytical sessions and chart integration](2026-11-06-scrum-137-live-analysis-workspace.md) now implements the input lineage, detector/tab attachment and live-follow work described above. This document preserves the earlier increment and its test evidence. Current-date calendar/provider verification remains outstanding.

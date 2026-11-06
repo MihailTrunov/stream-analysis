@@ -29,8 +29,11 @@ orchestration manifests are stored separately from per-stream run snapshots.
 Shared retained-range acquisition and immutable composition are implemented under
 SCRUM-128. The [shared live-ingress increment](../plans/2026-11-05-scrum-137-shared-live-ingress.md)
 adds provider-confirmed completed candles, separate forming updates and explicit
-feed subscriptions. Live analytical input lineage, detector/tab integration and
-current-date calendar verification remain follow-up work under SCRUM-137.
+feed subscriptions. The [live analytical workspace increment](../plans/2026-11-06-scrum-137-live-analysis-workspace.md)
+adds pinned live-input manifests/receipts, ordinary detector-session attachment,
+lazy tab restoration, suspended hidden rendering and independent historical calculation.
+Current-date calendar verification and account/provider acceptance remain outstanding
+under SCRUM-137; the existing finite verified calendar is not extrapolated.
 
 - Keep provider ingress, analysis processing and DOM/chart rendering separate.
   Share each feed's acquisition/persistence across tabs; retain independent

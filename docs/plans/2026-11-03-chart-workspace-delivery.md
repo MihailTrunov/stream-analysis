@@ -1,6 +1,17 @@
 # Chart workspace delivery and Jira reconciliation
 
-## Implementation checkpoint — 2026-11-03
+## Implementation checkpoint — 2026-11-06
+
+[SCRUM-137 live analytical sessions and chart integration](2026-11-06-scrum-137-live-analysis-workspace.md)
+now adds feed-shared acquisition with independent detectors, immutable live input
+lineage/receipts, focused-only reconnection/rendering, live follow/navigation and
+separate historical calculations. Astra reviewed both Python and web changes;
+findings and verification are recorded in the linked delivery/review documents.
+Current-date account/provider acceptance and verified calendar extension remain
+outstanding. SCRUM-137 is not declared Done. The earlier checkpoint/backlog below
+is preserved as the historical planning baseline.
+
+## Earlier implementation checkpoint — 2026-11-03
 
 The owner directed merging to `master` and continuing without feature branches.
 The initial chart UI and review fixes are merged and pushed. The recommended
