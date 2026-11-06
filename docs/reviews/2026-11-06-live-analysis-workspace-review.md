@@ -30,3 +30,9 @@ Full Python: **986 passed, 12 skipped**. Complete browser suite: **56 passed**. 
 ## Deployment boundary
 
 The finite verified OANDA UK calendar still ends on 2026-09-28. Current-date operation fails closed. No application installation was migrated and no real provider credentials were read, logged or committed. SCRUM-137 remains open for server configuration and reviewed calendar/provider acceptance, following the approved calendar verification procedure.
+
+## Calendar/provider acceptance follow-up
+
+The [acceptance delivery](../plans/2026-11-06-scrum-137-provider-acceptance.md) supersedes the original deployment-boundary blocker above. Astra high independently verified all original legacy profile fields and all 33,901 newly recorded completed-minute intervals. It reviewed pinned replay/import resolution, unchanged fixed demo identities and acquisition under a separate current-calendar feed key, finding no actionable defect. The parent additionally verified actual account instruments and real import/live/captured-replay parity in isolated storage. Finite coverage ends on analytical date 2026-11-06; no unverified future extension or installed migration is claimed.
+
+Final follow-up regression results: **991 Python passed, 12 skipped; 56 browser passed**. Ruff, mypy (91 source files) and diff checks passed. Authenticated acceptance verified both inputs after disconnect and all six captured live minutes.

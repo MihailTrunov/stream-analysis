@@ -49,4 +49,4 @@ No schema migration beyond the existing SCRUM-136 prerequisite `20261105_14` is 
 
 ## Follow-up delivery — 2026-11-06
 
-[Live analytical sessions and chart integration](2026-11-06-scrum-137-live-analysis-workspace.md) now implements the input lineage, detector/tab attachment and live-follow work described above. This document preserves the earlier increment and its test evidence. Current-date calendar/provider verification remains outstanding.
+[Live analytical sessions and chart integration](2026-11-06-scrum-137-live-analysis-workspace.md) now implements the input lineage, detector/tab attachment and live-follow work described above. This document preserves the earlier increment and its test evidence. The subsequent [provider/calendar acceptance](2026-11-06-scrum-137-provider-acceptance.md) verifies real US30/DAX processing and a new finite calendar through 2026-11-06.

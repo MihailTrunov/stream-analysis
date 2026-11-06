@@ -1,0 +1,31 @@
+{
+  "verified_at": "2026-11-06T10:15:05.433719+00:00",
+  "calendar_version": "oanda-uk-live-m1-2026-11-06-v1",
+  "scope": "real read-only OANDA data through isolated import, live analysis, frozen capture and ordinary replay; no installed data changed",
+  "instruments": [
+    {
+      "symbol": "US30_USD",
+      "bootstrap_minutes": 180,
+      "captured_minutes": 3,
+      "confirmed_through": "2026-11-06T10:15:00Z",
+      "forming_display_separate": true,
+      "duplicate_poll_idempotent": true,
+      "captured_replay_parity": true,
+      "durable_input_verified_after_disconnect": true,
+      "detector_streams": 1
+    },
+    {
+      "symbol": "DE30_EUR",
+      "bootstrap_minutes": 180,
+      "captured_minutes": 3,
+      "confirmed_through": "2026-11-06T10:15:00Z",
+      "forming_display_separate": true,
+      "duplicate_poll_idempotent": true,
+      "captured_replay_parity": true,
+      "durable_input_verified_after_disconnect": true,
+      "detector_streams": 1
+    }
+  ],
+  "verified_inputs": 2,
+  "journal_verification": 6
+}

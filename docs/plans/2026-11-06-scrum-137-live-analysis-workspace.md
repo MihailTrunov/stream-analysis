@@ -1,6 +1,6 @@
 # SCRUM-137 — live analytical sessions and chart integration
 
-This delivery completes the software integration following the [shared-ingress increment](2026-11-05-scrum-137-shared-live-ingress.md). Current-date provider acceptance remains pending: the account-scoped UK calendars are verified only through 2026-09-28, and this session has no configured server account/token or running application containers. No calendar extrapolation, installation migration or real-account test is claimed.
+This delivery completes the software integration following the [shared-ingress increment](2026-11-05-scrum-137-shared-live-ingress.md). The subsequent [provider/calendar acceptance](2026-11-06-scrum-137-provider-acceptance.md) located the documented server configuration, verified real US30/DAX ingestion and replay parity, and added a new finite calendar version through 2026-11-06 while retaining the previous version. No installation migration or unverified future-calendar extrapolation is claimed.
 
 ## Implemented behavior
 
@@ -28,6 +28,6 @@ Final verification: **986 Python tests passed, 12 skipped**; **56 browser tests 
 
 The [Astra Python/web review](../reviews/2026-11-06-live-analysis-workspace-review.md) records findings, fixes and final verification results. Actual provider/current-calendar acceptance is separate from these deterministic tests.
 
-## Remaining acceptance boundary
+## Provider acceptance follow-up
 
-Before current-date live operation, make the existing server-side OANDA configuration available and follow the [calendar verification/extension procedure](2026-09-28-oanda-uk-session-calendar-design.md). Verify account/instrument context, current hours/notices and representative completed M1 intervals, including DST mismatch and holiday boundaries; publish a new calendar version and preserve existing versions. Credentials must stay server-side and must not be pasted into chat or committed. Keep SCRUM-137 open until that evidence is recorded.
+The [2026-11-06 acceptance record](2026-11-06-scrum-137-provider-acceptance.md) supersedes the earlier configuration/calendar blocker. Real account-scoped read-only checks and isolated live/replay parity passed. The schedule remains finite through analytical date 2026-11-06; repeat the approved verification/versioning procedure before sessions outside that range. The installed application was not started or migrated by this verification.

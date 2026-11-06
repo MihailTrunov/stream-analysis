@@ -32,8 +32,9 @@ adds provider-confirmed completed candles, separate forming updates and explicit
 feed subscriptions. The [live analytical workspace increment](../plans/2026-11-06-scrum-137-live-analysis-workspace.md)
 adds pinned live-input manifests/receipts, ordinary detector-session attachment,
 lazy tab restoration, suspended hidden rendering and independent historical calculation.
-Current-date calendar verification and account/provider acceptance remain outstanding
-under SCRUM-137; the existing finite verified calendar is not extrapolated.
+The [provider acceptance follow-up](../plans/2026-11-06-scrum-137-provider-acceptance.md)
+verifies real US30/DAX ingestion and adds a finite calendar through 2026-11-06.
+Old calendar versions remain resolvable; future sessions require reviewed extensions.
 
 - Keep provider ingress, analysis processing and DOM/chart rendering separate.
   Share each feed's acquisition/persistence across tabs; retain independent
