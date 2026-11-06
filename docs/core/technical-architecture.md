@@ -35,6 +35,10 @@ lazy tab restoration, suspended hidden rendering and independent historical calc
 The [provider acceptance follow-up](../plans/2026-11-06-scrum-137-provider-acceptance.md)
 verifies real US30/DAX ingestion and adds a finite calendar through 2026-11-06.
 Old calendar versions remain resolvable; future sessions require reviewed extensions.
+The [SCRUM-110 parity foundation](../plans/2026-11-06-scrum-110-parity-suite-design.md)
+checks the existing replay/history/captured-live drivers and fixes run-dependent
+market-event references. EvaluationRun and event-time context snapshot coverage
+remain gated by SCRUM-96/119; historical calculation is not autonomous evaluation.
 
 - Keep provider ingress, analysis processing and DOM/chart rendering separate.
   Share each feed's acquisition/persistence across tabs; retain independent
