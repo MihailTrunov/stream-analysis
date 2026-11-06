@@ -1,5 +1,7 @@
 # SCRUM-119: immutable detection-time context
 
+Follow-up: SCRUM-96 now uses this capture boundary in production autonomous execution, and SCRUM-110 compares its SQL snapshots with all three chart modes. Earlier references below to autonomous outcome execution as a parity prerequisite were too broad: these stories require outcome-plan-only invariance of X, while production outcome calculation remains downstream and outside SCRUM-96/110.
+
 ## Capture boundary
 
 `DetectionTimeContextSnapshot` is the canonical X-side observation for a persisted DetectorEvent. `ReplayEventStore` captures it in the event's SQL transaction from the actual immutable `DetectorRuntimeResult.frame` and an event-aligned PatternInstance observation. No later instance lookup reconstructs analytical values. The persisted source event is independently checked against the supplied event, occurrence and pinned RunSnapshot.
@@ -30,12 +32,12 @@ Migration `20261106_16` adds `detection_context_snapshots` with source event/run
 
 `GET /detector-events/{event_id}/context` reads durable context independently of an active session. Existing events without snapshots return 404. Normal production migration is required before the new capture path runs; implementation tests do not migrate an installed database.
 
-EvaluationPlanHash and downstream outcome/segment/export settings are excluded from X. A pinned evaluation plan may select the supported context schema; unsupported selections fail capture. Outcome-only plan changes are tested through separately driven shared-runtime executions and SQL capture. Actual OutcomeObservation evaluation remains SCRUM-96 work.
+EvaluationPlanHash and downstream outcome/segment/export settings are excluded from X. A pinned evaluation plan may select the supported context schema; unsupported selections fail capture. Outcome-only plan changes are tested through separately driven shared-runtime executions and SQL capture, and subsequently through the production autonomous driver. Actual OutcomeObservation evaluation remains downstream outcome work, outside SCRUM-96's detector-execution scope.
 
 ## Acceptance evidence
 
 Fixtures cover exact minimal values, real continuation phases/references, deliberately different same-bar intermediate contexts, future component/context/evidence values, optional components, schema/type/source validation, plan-only invariance, deterministic semantic capture, future-bar stability, SQL round-trip, corruption, idempotency/conflicts and durable API retrieval. Migration tests exercise used/unused SQLite downgrade and update/delete guards; a disposable PostgreSQL test covers capture, durable retrieval and identical immutability/retention guards.
 
-The SCRUM-110 matrix compares persisted snapshots against a separate causal driver at every emitted event for replay, historical calculation and captured-live execution, including actual higher-timeframe availability. Full SCRUM-110 still awaits autonomous EvaluationRun and its outcome execution checks.
+The SCRUM-110 matrix compares persisted snapshots against a separate causal driver at every emitted event for replay, historical calculation and captured-live execution, including actual higher-timeframe availability. The subsequent SCRUM-96/110 increment adds production autonomous execution and actual outcome-plan-only invariance.
 
 Final verification: **1,037 Python passed (13 skipped), 56 browser passed**, plus the separate real PostgreSQL integration test and the final 14-test schema/context hardening check. Ruff, mypy (99 source files) and diff checks passed.

@@ -12,3 +12,5 @@ Existing `m1-aggregation-v1` fixes UTC intraday/instrument-day boundaries and cl
 Detection completion and all-stage completion are distinct. A run with requested downstream stages is not reported COMPLETED merely because detector execution ended. Metric/outcome calculation and full queue scheduling remain their explicitly separate contracts; their absence must stay visible in status and documentation.
 
 Each logical increment includes meaningful contract/SQL tests, documented evidence, Jira status reconciliation and a separate descriptive commit. Installed databases and provider services are not changed by implementation tests.
+
+Delivery checkpoint: SCRUM-120 and SCRUM-95 are committed on master. SCRUM-96 now supplies real explicit-worker execution, and SCRUM-110 includes its actual adapter plus executed outcome-plan-only invariance. See the individual implementation/review records for final verification. Production formulas and full queue scheduling retain their separate scope.

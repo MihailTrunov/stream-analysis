@@ -8,7 +8,7 @@ The snapshot stores selected observable state rather than serializing the whole 
 
 Migration guards were exercised on SQLite and disposable PostgreSQL. Capture and source events share a transaction. The SQL reader verifies payload identity and content hash before returning data; the API does not require an active chart session. Existing events are not retrospectively reconstructed from their latest occurrence context.
 
-Remaining integration boundary: SCRUM-95/96 must implement autonomous evaluation/EventSet execution and use this same capture path. SCRUM-110 remains In Progress until that real driver and post-detection outcome-only invariance participate. Custom multi-transition detectors must supply intermediate contexts to avoid explicit UNAVAILABLE context; this does not affect the three current MVP detectors.
+Follow-up: SCRUM-95/96 now provide the immutable evaluation/EventSet model and production executor using this same capture path. SCRUM-110 includes that driver and actual outcome-plan-only invariance. Production outcome calculations remain outside these detector/runtime parity stories. Custom multi-transition detectors must supply intermediate contexts to avoid explicit UNAVAILABLE context; this does not affect the three current MVP detectors.
 
 Verification: **1,037 Python tests passed, 13 skipped; 56 browser tests passed.** The separate real PostgreSQL context integration test passed against a disposable PostgreSQL 16 container. A final 14-test context/curated-detector run passed after restricting serializable dataclasses to the approved market evidence types. Ruff, mypy (99 source files) and diff checks passed. Other skipped PostgreSQL checks are not claimed executed.
 

@@ -35,10 +35,11 @@ lazy tab restoration, suspended hidden rendering and independent historical calc
 The [provider acceptance follow-up](../plans/2026-11-06-scrum-137-provider-acceptance.md)
 verifies real US30/DAX ingestion and adds a finite calendar through 2026-11-06.
 Old calendar versions remain resolvable; future sessions require reviewed extensions.
-The [SCRUM-110 parity foundation](../plans/2026-11-06-scrum-110-parity-suite-design.md)
-checks the existing replay/history/captured-live drivers and fixes run-dependent
-market-event references. EvaluationRun and event-time context snapshot coverage
-remain gated by SCRUM-96/119; historical calculation is not autonomous evaluation.
+The [SCRUM-110 parity suite](../plans/2026-11-06-scrum-110-parity-suite-design.md)
+checks replay, historical exploration, captured-live and real autonomous evaluation,
+including persisted event-time snapshots and outcome-plan-only invariance. It also
+protects run-independent market-event references. Historical calculation remains
+a distinct driver.
 
 - Keep provider ingress, analysis processing and DOM/chart rendering separate.
   Share each feed's acquisition/persistence across tabs; retain independent
@@ -325,7 +326,7 @@ EvaluationRun invokes the same bar-by-bar detector pipeline under the same Detec
 
 SCRUM-95 supplies immutable multi-stream evaluation inputs and primary EventSet membership. `evaluation-plan-v2` adds typed observable-field predicates while existing v1 canonical hashes remain unchanged. CREATED/RUNNING/DETECTION_COMPLETED/COMPLETED/FAILED/CANCELLED distinguish detector completion from completion of all requested stages. Per-stream progress and required outcome records gate completion; models do not imply a working queue scheduler. See the [EvaluationRun contract](../plans/2026-11-06-scrum-95-evaluation-models.md).
 
-Batch processing should initially run in-process. Multiprocessing/distributed execution is deferred until correctness is established.
+SCRUM-96 supplies a [dedicated explicit-run executor](../plans/2026-11-06-scrum-96-autonomous-execution.md) over the shared SimulationClock/aggregation/runtime/store path. It commits bounded chunks with owned durable progress and preserves incomplete output on cancellation/failure. Detector-only completion and pending-outcome status are distinct. The no-ID evaluation service remains a heartbeat process; full queue claiming/reordering/crash recovery is SCRUM-123, and outcome formulas remain SCRUM-97–100. Distributed execution is deferred.
 
 ## Cross-Run Identity and Parity Semantics
 

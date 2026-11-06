@@ -10,15 +10,24 @@ from datetime import datetime
 from parity_support import Trace
 from sqlalchemy import create_engine
 
+from market_analysis.application.autonomous_evaluation import execute_evaluation
 from market_analysis.application.context_capture import load_detection_context
+from market_analysis.application.evaluation_runs import create_evaluation_run
 from market_analysis.application.replay_catalog import PATTERN_DEFINITIONS, detector_bindings
-from market_analysis.config import detection_config_hash, resolve_detection_config
+from market_analysis.config import (
+    DetectionAnalysisConfig,
+    EvaluationPlan,
+    detection_config_hash,
+    resolve_detection_config,
+)
 from market_analysis.detection import DetectorEvent, DetectorRuntime, json_value
 from market_analysis.detection.context_snapshots import CONTEXT_SCHEMA_VERSION, capture_values
 from market_analysis.domain import Timeframe
 from market_analysis.domain.aggregation import AGGREGATION_VERSION, MINUTES, CandleAggregator
 from market_analysis.domain.dataset_lineage import canonical_bar_checksum_ordered
+from market_analysis.domain.evaluation import EvaluationRequest, RequestedEvaluationStream
 from market_analysis.patterns.instance_context import instance_semantic_key
+from market_analysis.persistence.pattern_instances import load_pattern_instance
 
 
 def stamp(value):
@@ -96,7 +105,7 @@ def invariants(bars, calendar, configs, start, end):
                     "definition": PATTERN_DEFINITIONS[
                         (config.patterns[0].pattern_id, config.patterns[0].pattern_version)
                     ].semantic_fingerprint(),
-                    "components": [item.model_dump(mode="json") for item in config.components],
+                    "components": config.canonical_dict()["components"],
                 }
                 for config in configs
             ],
@@ -160,10 +169,14 @@ def reference_trace(bars, calendar, configs, start, end, input_id):
                         {
                             "context_schema_version": CONTEXT_SCHEMA_VERSION,
                             "available_at": stamp(candle.available_at),
-                            "values": json_value(capture_values(
-                                result.frame, event, instance,
-                                PATTERN_DEFINITIONS[(event.pattern_id, event.pattern_version)],
-                            )),
+                            "values": json_value(
+                                capture_values(
+                                    result.frame,
+                                    event,
+                                    instance,
+                                    PATTERN_DEFINITIONS[(event.pattern_id, event.pattern_version)],
+                                )
+                            ),
                         }
                         for event, instance in zip(
                             result.events, result.event_instances, strict=True
@@ -208,7 +221,8 @@ def session_trace(session, configs, start):
         with engine.connect() as connection:
             snapshots = {
                 event["event_id"]: load_detection_context(connection, event["event_id"])
-                for stream in session.streams for event in stream.events
+                for stream in session.streams
+                for event in stream.events
             }
     finally:
         engine.dispose()
@@ -284,3 +298,142 @@ def single_configs(settings):
             if pattern.enabled
         )
     return result
+
+
+def autonomous_trace(
+    engine,
+    store,
+    revision,
+    bars,
+    calendar,
+    settings,
+    start,
+    end,
+    *,
+    outcomes=(),
+    definitions=None,
+    chunk_size=128,
+):
+    """Execute the production worker driver; compare SQL records, not simulated UI output."""
+    with engine.begin() as connection:
+        record = create_evaluation_run(
+            connection,
+            EvaluationRequest(
+                dataset_revision_id=revision,
+                instrument_id=bars[0].instrument_id,
+                selected_start=start,
+                selected_end=end,
+                streams=tuple(
+                    RequestedEvaluationStream(
+                        config=item.config,
+                        plan=EvaluationPlan(
+                            detection_config_hash=detection_config_hash(
+                                item.config,
+                                pattern_definitions=PATTERN_DEFINITIONS,
+                            ),
+                            context_schema_version=CONTEXT_SCHEMA_VERSION,
+                            outcomes=outcomes,
+                        ),
+                    )
+                    for item in settings
+                ),
+            ),
+            store,
+            build_id=os.environ["STREAM_ANALYSIS_BUILD_ID"],
+            created_at=end,
+            calendar=calendar,
+            outcome_definitions=definitions or {},
+        )
+    observed = defaultdict(list)
+
+    def frame(stream, candle, result, persisted):
+        observed[stream.run_id].append((candle, result, persisted))
+
+    final = execute_evaluation(
+        engine,
+        store,
+        str(record.inputs.evaluation_id),
+        chunk_size=chunk_size,
+        on_frame=frame,
+    )
+    points, occurrences = [], []
+    with engine.connect() as connection:
+        for stream in final.inputs.streams:
+            results = observed[stream.run_id]
+            events = [
+                event.to_canonical_dict() for _, result, _ in results for event in result.events
+            ]
+            keys = occurrence_keys(events)
+            instances = {}
+            for candle, result, persisted in results:
+                raw = json.loads(result.frame.debug_json())
+                snapshots = [
+                    load_detection_context(connection, event.event_id) for event in persisted
+                ]
+                points.append(
+                    {
+                        "available_at": stamp(candle.available_at),
+                        "timeframe": stream.timeframe.value,
+                        "pattern": stream.pattern_id,
+                        "bar": dict(candle.bar.to_canonical_dict()),
+                        "frame": without_run_lineage(
+                            {
+                                key: raw[key]
+                                for key in ("availability", "components", "market_events_this_bar")
+                            }
+                        ),
+                        "events": [
+                            {**normalized, "within_bar_ordinal": stored.within_bar_ordinal}
+                            for normalized, stored in zip(
+                                detector_events(
+                                    [event.to_canonical_dict() for event in result.events],
+                                    keys,
+                                ),
+                                persisted,
+                                strict=True,
+                            )
+                        ],
+                        "contexts": [
+                            {
+                                "context_schema_version": snapshot.context_schema_version,
+                                "available_at": stamp(snapshot.available_at),
+                                "values": json_value(snapshot.values),
+                            }
+                            for snapshot in snapshots
+                        ],
+                    }
+                )
+                for event, stored in zip(result.events, persisted, strict=True):
+                    instances[event.instance_id] = stored.instance_id
+            definition = PATTERN_DEFINITIONS[(stream.pattern_id, stream.pattern_version)]
+            for runtime_id, instance_id in instances.items():
+                stored = load_pattern_instance(connection, instance_id, definition)
+                assert stored is not None
+                occurrences.append(
+                    {
+                        "occurrence": keys[runtime_id],
+                        "state": stored.state,
+                        "context": json_value(stored.context),
+                        "instance_semantic_key": stored.instance_semantic_key,
+                    }
+                )
+    return Trace(
+        invariants(
+            bars,
+            calendar,
+            [
+                DetectionAnalysisConfig.from_canonical_json(stream.config_json)
+                for stream in final.inputs.streams
+            ],
+            start,
+            end,
+        ),
+        ordered(points),
+        occurrences,
+        execution={
+            "run_id": str(final.inputs.evaluation_id),
+            "input_id": revision,
+            "status": final.status.value,
+            "plan_hashes": [stream.evaluation_plan_hash for stream in final.inputs.streams],
+        },
+    )

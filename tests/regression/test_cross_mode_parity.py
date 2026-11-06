@@ -1,8 +1,4 @@
-"""Real replay/history/captured-live paths against an independent causal driver.
-
-Detection-time context is compared at every emitted event. EvaluationRun is
-still a separate execution dependency and is not mocked by these chart modes.
-"""
+"""Four production modes against an independent causal driver, including SQL X snapshots."""
 
 import json
 from dataclasses import replace
@@ -13,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from cross_mode_support import reference_trace, session_trace, single_configs
+from cross_mode_support import autonomous_trace, reference_trace, session_trace, single_configs
 from parity_support import assert_parity
 from sqlalchemy import create_engine
 
@@ -28,12 +24,13 @@ from market_analysis.application.live_analysis import LiveAnalysisManager, LiveA
 from market_analysis.application.live_ingress import LiveIngress
 from market_analysis.application.live_inputs import read_live_input
 from market_analysis.application.live_retention import feed_key
-from market_analysis.application.replay_catalog import demo_detection_config
+from market_analysis.application.replay_catalog import PATTERN_DEFINITIONS, demo_detection_config
 from market_analysis.config import (
     ComponentSelection,
     ConfigParameter,
     DetectionAnalysisConfig,
     PatternSelection,
+    resolve_detection_config,
 )
 from market_analysis.config.oanda_uk_calendars import (
     build_oanda_uk_calendar,
@@ -67,6 +64,10 @@ def storage(tmp_path, monkeypatch):
     url = f"sqlite:///{tmp_path / 'parity.sqlite'}"
     monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
     monkeypatch.setenv("STREAM_ANALYSIS_DATA_ROOT", str(tmp_path / "data"))
+    # Explicit synthetic clean build identity shared by all four fixture modes.
+    monkeypatch.setenv("STREAM_ANALYSIS_BUILD_ID", "parity-fixture")
+    monkeypatch.setenv("STREAM_ANALYSIS_GIT_COMMIT", "a" * 40)
+    monkeypatch.setenv("STREAM_ANALYSIS_GIT_DIRTY", "false")
     engine = create_engine(url)
     metadata.create_all(engine)
     yield engine, DatasetStore(tmp_path / "data")
@@ -138,6 +139,16 @@ def publish(storage, bars, feed, end):
 def exercise_modes(storage, bars, config, end, display=Timeframe.M1):
     engine, store = storage
     configurations = (config,) if isinstance(config, DetectionAnalysisConfig) else tuple(config)
+    # Feed the same fully resolved, serialized settings to every production mode.
+    # Decimal display scales/order are not preserved by canonical config storage.
+    configurations = tuple(
+        DetectionAnalysisConfig.from_canonical_json(
+            resolve_detection_config(
+                item, pattern_definitions=PATTERN_DEFINITIONS,
+            ).canonical_json()
+        )
+        for item in configurations
+    )
     instrument = configurations[0].instrument_id
     symbol = "US30_USD" if instrument == "US30" else "DE30_EUR"
     calendar = build_oanda_uk_calendar(
@@ -182,6 +193,19 @@ def exercise_modes(storage, bars, config, end, display=Timeframe.M1):
         assert_parity(expected, actual)
         traces.append(actual)
     assert_parity(traces[0], traces[1])
+    autonomous = autonomous_trace(
+        engine,
+        store,
+        revision,
+        bars,
+        calendar,
+        settings,
+        start,
+        end,
+    )
+    assert autonomous.execution["status"] == "COMPLETED"
+    assert_parity(traces[0], autonomous)
+    traces.append(autonomous)
 
     class Source:
         def poll_live(self, request, *, at):
