@@ -6,8 +6,10 @@ time. Detector-specific tests retain the compact threshold/precedence cases.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from decimal import Decimal
+from hashlib import sha256
 from typing import Any
 
 import pytest
@@ -377,12 +379,39 @@ def _runtime(case: dict[str, Any]) -> DetectorRuntime:
     )
 
 
+def _authored_v1_ref(frame, event):
+    # Preserve all original golden hashes. Rebuild the documented v1 envelope
+    # independently from debug evidence; map v2 identities back to that envelope
+    # so the authored fixtures still guard every original evidence field.
+    raw = json.loads(frame.debug_json())["market_events_this_bar"][event.ordinal]
+    payload = {
+        "dataset_revision_id": frame.dataset_revision_id,
+        "detection_config_hash": frame.detection_config_hash,
+        "instrument_id": frame.bar.instrument_id,
+        "timeframe": frame.bar.timeframe.value,
+        **{
+            key: raw[key]
+            for key in (
+                "event_type",
+                "event_time",
+                "detection_time",
+                "ordinal",
+                "source_instance_id",
+                "evidence",
+            )
+        },
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return sha256(f"market-event-ref-v1\n{encoded}".encode()).hexdigest()
+
+
 def _assert_event(
     case: dict[str, Any],
     actual: Any,
     expected: dict[str, object],
     index: int,
     market_refs: set[str],
+    authored_refs: dict[str, str],
 ) -> None:
     label = f"{case['name']}/bar-{index}/event-{expected['sequence']}"
     assert actual.pattern_id == case["definition"].pattern_id, label
@@ -397,7 +426,10 @@ def _assert_event(
         expected["to"],
     ), label
     assert actual.event_time == actual.detection_time == bar(index).timestamp, label
-    assert actual.rationale["source_market_event_refs"] == expected["source_refs"], label
+    assert (
+        tuple(authored_refs.get(ref, ref) for ref in actual.rationale["source_market_event_refs"])
+        == expected["source_refs"]
+    ), label
     assert set(actual.rationale["source_market_event_refs"]) <= market_refs, label
     features = actual.rationale["items"][0]["features"]
     for key, value in expected["features"].items():
@@ -419,8 +451,17 @@ def test_authored_canonical_event_envelope_and_replay(case: dict[str, Any]) -> N
         == 60
     )
 
+    authored_refs = {}
     for index, item in enumerate(series):
         result = runtime.process_bar(item)
+        authored_refs.update(
+            {
+                market_event_semantic_ref(result.frame, event): _authored_v1_ref(
+                    result.frame, event
+                )
+                for event in result.frame.market_events_this_bar
+            }
+        )
         label = f"{case['name']}/bar-{index}"
         expected_market = (
             ENTRY_MARKET_EVENTS
@@ -443,11 +484,15 @@ def test_authored_canonical_event_envelope_and_replay(case: dict[str, Any]) -> N
         assert result.instances[0].instance_id == case["definition"].pattern_id, label
         for key, value in (case["entry_context"] if index == 14 else case["exit_context"]).items():
             actual = result.instances[0].context[key]
+            if isinstance(actual, str):
+                actual = authored_refs.get(actual, actual)
             assert (str(actual) if isinstance(actual, Decimal) else actual) == value, (
                 f"{label}/context/{key}"
             )
         for key, value in case["frozen_context"].items():
             actual = result.instances[0].context[key]
+            if isinstance(actual, str):
+                actual = authored_refs.get(actual, actual)
             assert (str(actual) if isinstance(actual, Decimal) else actual) == value, (
                 f"{label}/frozen-context/{key}"
             )
@@ -459,7 +504,7 @@ def test_authored_canonical_event_envelope_and_replay(case: dict[str, Any]) -> N
             for event in result.frame.market_events_this_bar
         }
         for actual, expected in zip(result.events, expected_events, strict=True):
-            _assert_event(case, actual, expected, index, market_refs)
+            _assert_event(case, actual, expected, index, market_refs, authored_refs)
 
     assert len(runtime.occurrences) == 1, case["name"]
     baseline = runtime.debug_json()
@@ -677,13 +722,17 @@ def test_competing_reversal_and_continuation_candidates_share_canonical_cross() 
     }
     for index, item in enumerate(series):
         result = runtime.process_bar(item)
+        authored_refs = {
+            market_event_semantic_ref(result.frame, event): _authored_v1_ref(result.frame, event)
+            for event in result.frame.market_events_this_bar
+        }
         assert [
             (
                 event.pattern_id,
                 event.sequence,
                 event.trigger_id,
                 event.to_state,
-                event.rationale["source_market_event_refs"][0],
+                authored_refs[event.rationale["source_market_event_refs"][0]],
             )
             for event in result.events
         ] == list(expected.get(index, ())), f"competing/bar-{index}"

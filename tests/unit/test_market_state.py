@@ -758,3 +758,24 @@ def test_down_direction_leg_events_flow_through_the_aggregator() -> None:
     assert cast(StructureBreak, break_event.evidence).threshold == Decimal("153.10")
     assert cast(TrendLegTransition, ended.evidence).leg.break_threshold == Decimal("153.10")
     assert cast(TrendLegTransition, ended.evidence).breaking_close == Decimal("153.11")
+
+
+def test_real_market_event_references_exclude_nested_run_lineage() -> None:
+    from market_analysis.indicators import market_event_semantic_ref
+
+    left = MarketStateAggregator(
+        config(), run_id="first-execution", dataset_revision_id="same-source",
+    )
+    right = MarketStateAggregator(
+        config(), run_id="second-execution", dataset_revision_id="same-source",
+    )
+    checked = set()
+    for item in chain_series():
+        first, second = left.update(item), right.update(item)
+        for one, two in zip(
+            first.market_events_this_bar, second.market_events_this_bar, strict=True,
+        ):
+            assert market_event_semantic_ref(first, one) == market_event_semantic_ref(second, two)
+            checked.add(one.event_type)
+    assert MarketEventType.EMA_CROSS in checked
+    assert MarketEventType.TREND_LEG_STARTED in checked

@@ -79,6 +79,7 @@ from .swing_point import SwingPoint, SwingPointState
 from .swing_structure import (
     StructureBreak,
     StructureBreakType,
+    StructureLineage,
     SwingClassification,
     SwingStructureState,
 )
@@ -220,6 +221,10 @@ class MarketStateFrame:
 def market_event_semantic_ref(frame: MarketStateFrame, event: MarketEvent) -> str:
     """Stable reference to an actually emitted event, independent of run UUID.
 
+    V2 excludes execution run IDs from typed structural lineage throughout
+    nested evidence. Debug/audit serialization retains those IDs, and existing
+    persisted v1 digests are never rewritten.
+
     Compute this while the source event's frame is available and persist the
     digest in a detector's versioned context. The full evidence payload is
     included so equal-type events with different frozen facts do not collide.
@@ -238,10 +243,10 @@ def market_event_semantic_ref(frame: MarketStateFrame, event: MarketEvent) -> st
         "detection_time": _json_value(event.detection_time),
         "ordinal": event.ordinal,
         "source_instance_id": event.source_instance_id,
-        "evidence": _json_value(event.evidence),
+        "evidence": _json_value(event.evidence, semantic=True),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return sha256(f"market-event-ref-v1\n{canonical}".encode()).hexdigest()
+    return sha256(f"market-event-ref-v2\n{canonical}".encode()).hexdigest()
 
 
 class MarketStateAggregator:
@@ -687,19 +692,21 @@ def _range_availability(values: Mapping[str, object]) -> str:
     return AVAILABLE
 
 
-def _json_value(value: object) -> object:
+def _json_value(value: object, *, semantic: bool = False) -> object:
     if is_dataclass(value) and not isinstance(value, type):
         result: dict[str, object] = {
-            field.name: _json_value(getattr(value, field.name)) for field in fields(value)
+            field.name: _json_value(getattr(value, field.name), semantic=semantic)
+            for field in fields(value)
+            if not (semantic and isinstance(value, StructureLineage) and field.name == "run_id")
         }
         for name in ("event_time", "detection_time"):
             if name not in result and hasattr(value, name):
-                result[name] = _json_value(getattr(value, name))
+                result[name] = _json_value(getattr(value, name), semantic=semantic)
         return result
     if isinstance(value, Mapping):
-        return {key: _json_value(item) for key, item in value.items()}
+        return {key: _json_value(item, semantic=semantic) for key, item in value.items()}
     if isinstance(value, tuple):
-        return [_json_value(item) for item in value]
+        return [_json_value(item, semantic=semantic) for item in value]
     if isinstance(value, datetime):
         if value.tzinfo is None or value.utcoffset() is None:
             raise MarketStateError("event datetime must be timezone-aware")
