@@ -54,6 +54,8 @@ def engine():
 
 def drive(
     connection, *, outcome=None, through_confirmation=True, schema=CONTEXT_SCHEMA_VERSION,
+    outcome_specs=(),
+    outcome_values=(),
 ):
     definition = CONTINUATION_V1
     definitions = {definition.identity: definition}
@@ -62,13 +64,14 @@ def drive(
     plan = None if outcome is None else EvaluationPlan(
         detection_config_hash=detection_config_hash(config, pattern_definitions=definitions),
         context_schema_version=schema,
-        outcomes=(OutcomeSelection(outcome_id=outcome, outcome_version="1"),),
+        outcomes=(OutcomeSelection(outcome_id=outcome, outcome_version="1",
+                                   parameters=outcome_values),),
     )
     create_run_snapshot(
         connection, run_id=run_id, dataset_revision_id="context-fixture",
         calendar_version="demo-v1", build_id="test-build", detection_config=config,
         evaluation_plan=plan, pattern_definitions=definitions,
-        outcome_parameters=None if outcome is None else {(outcome, "1"): ()},
+        outcome_parameters=None if outcome is None else {(outcome, "1"): outcome_specs},
     )
     runtime = DetectorRuntime(
         config, [DetectorBinding(definition, ContinuationDetector(), reentrant=True)],

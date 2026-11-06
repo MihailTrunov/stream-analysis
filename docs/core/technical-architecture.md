@@ -389,6 +389,8 @@ Missing or unavailable results are represented with explicit statuses such as AV
 
 Semantic identity for an OutcomeObservation is derived from the source event semantic key plus outcome_id, outcome_version, and normalized outcome configuration, not from database UUID equality.
 
+SCRUM-120 implements the common typed outcome framework and append-only observations. Its v1 windows count completed canonical M1 bars after source-close availability and enforce the pinned same-trading-day policy, including for higher-timeframe sources. `evaluate_outcome` is the downstream application entry point; production metric formulas retain their separate stories. See the [outcome framework contract](../plans/2026-11-06-scrum-120-outcome-framework.md).
+
 ## Outcome Result Types and Ambiguity Semantics
 
 Numeric outcomes include forward return, MFE, MAE, bars-to-threshold, ATR-normalized excursion, or other scalar measurements.

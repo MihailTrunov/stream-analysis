@@ -303,6 +303,23 @@ class EvaluationPlan(ImmutableModel):
     def canonical_json(self) -> str:
         return _canonical_json(self.canonical_dict())
 
+    @classmethod
+    def from_canonical_json(cls, source: str) -> EvaluationPlan:
+        try:
+            raw = json.loads(source)
+            for kind in ("outcomes", "segments"):
+                raw[kind] = [
+                    {**item, "parameters": [_parse_canonical_parameter(parameter)
+                                            for parameter in item["parameters"]]}
+                    for item in raw[kind]
+                ]
+            raw["export_settings"] = [
+                _parse_canonical_parameter(item) for item in raw["export_settings"]
+            ]
+            return cls.model_validate(raw)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ConfigurationError("invalid canonical evaluation JSON") from exc
+
 
 class ConfigurationPresetRevision(ImmutableModel):
     preset_id: Identifier

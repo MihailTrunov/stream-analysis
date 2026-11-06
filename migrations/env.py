@@ -13,6 +13,7 @@ from market_analysis.persistence import (
     live_analysis,  # noqa: F401
     live_candles,  # noqa: F401
     market_data,  # noqa: F401
+    outcomes,  # noqa: F401
     pattern_instances,  # noqa: F401
     replay_runs,  # noqa: F401
     validation_annotations,  # noqa: F401
@@ -28,7 +29,11 @@ def run_migrations_online() -> None:
         raise RuntimeError("STREAM_ANALYSIS_DATABASE_URL is required for migrations")
     engine = create_engine(database_url)
     try:
-        with engine.connect() as connection:
+        with engine.begin() as connection:
+            if connection.dialect.name == "sqlite":
+                # sqlite3 legacy transaction control otherwise auto-commits DDL
+                # before Alembic's version update starts a DBAPI transaction.
+                connection.exec_driver_sql("BEGIN")
             context.configure(connection=connection, target_metadata=target_metadata)
             with context.begin_transaction():
                 context.run_migrations()
