@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import UUID
 
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Connection, Engine, select
 
 from market_analysis.application.analysis_clock import verify_closed_interval
 from market_analysis.application.analytical_step import process_detector_candle
@@ -32,6 +33,7 @@ from market_analysis.domain.evaluation import (
     EvaluationStreamInput,
 )
 from market_analysis.persistence.dataset_store import DatasetStore
+from market_analysis.persistence.evaluation_jobs import evaluation_jobs
 from market_analysis.persistence.evaluations import (
     EvaluationRunRecord,
     advance_evaluation,
@@ -74,6 +76,7 @@ def execute_evaluation(
     evaluation_id: str,
     *,
     chunk_size: int = 128,
+    owner_token: str | None = None,
     should_stop: Callable[[], bool] = lambda: False,
     revision_provider: Callable[[str], CodeVersion] = capture_code_version,
     on_source_step: Callable[[ObservableBars], None] | None = None,
@@ -88,11 +91,23 @@ def execute_evaluation(
     """
     if type(chunk_size) is not int or not 1 <= chunk_size <= 2000:
         raise EvaluationError("evaluation chunk_size must be 1..2000 source minutes")
+    evaluation_id = str(UUID(evaluation_id))
     with atomic_transaction(engine) as connection:
         record = read_evaluation_run(connection, evaluation_id)
         if record is None:
             raise EvaluationError("evaluation run not found")
-        token = claim_evaluation(connection, evaluation_id, datetime.now(UTC))
+        if owner_token is None:
+            token = claim_evaluation(connection, evaluation_id, datetime.now(UTC))
+            if connection.scalar(
+                select(evaluation_jobs.c.job_id).where(
+                    evaluation_jobs.c.evaluation_id == evaluation_id,
+                )
+            ):
+                raise EvaluationError("queued evaluations require scheduler ownership")
+        elif record.status is EvaluationStatus.RUNNING and record.owner_token == owner_token:
+            token = owner_token
+        else:
+            raise EvaluationError("evaluation is not owned by the supplied scheduler token")
     inputs = record.inputs
     logger = research_logger(
         run_id=evaluation_id,

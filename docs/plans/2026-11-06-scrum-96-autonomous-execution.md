@@ -1,5 +1,7 @@
 # SCRUM-96: autonomous detector execution
 
+Follow-up: [SCRUM-123](2026-11-06-scrum-123-evaluation-scheduler.md) now supplies the real default queue consumer and queue controls. References below to a no-ID heartbeat service describe the original SCRUM-96 delivery. Standalone explicit runs remain supported, while queued runs require scheduler ownership.
+
 `execute_evaluation` executes a fresh immutable EvaluationRun through SimulationClock, CandleAggregator, DetectorRuntime and ReplayEventStore. Chart sessions and the executor call the same completed-candle processing/persistence function. There is no separate detector algorithm or UI pacing loop.
 
 The executor authenticates the physical source and pinned clean build, detector definition/binding and context schema before producing output. It starts at the pinned source initialization origin, carries warm-up state forward, processes canonical M1 minutes once, and derives every selected analytical timeframe from that source. Scheduled closures finalize candles through the ordinary aggregator; unexpected open-slot gaps fail execution. Dispatch order is actual close availability, timeframe duration, detector identity and the native within-bar ordinal. Browsing Live/Manual/Always-on policies do not suppress selected evaluation detectors.

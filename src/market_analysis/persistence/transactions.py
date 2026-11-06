@@ -14,5 +14,5 @@ def atomic_transaction(engine: Engine) -> Iterator[Connection]:
             "in_transaction",
             False,
         ):
-            connection.exec_driver_sql("BEGIN")
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
         yield connection

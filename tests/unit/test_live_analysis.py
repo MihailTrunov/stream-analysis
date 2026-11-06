@@ -519,7 +519,7 @@ def test_live_input_migration_preserves_lineage_and_refuses_destructive_downgrad
                         "SELECT version_num FROM alembic_version",
                     )
                 )
-                == "20261106_18"
+                == "20261106_19"
             )
             assert read_live_input(connection, store, state["input_id"])["source_minutes"] == 5
     finally:

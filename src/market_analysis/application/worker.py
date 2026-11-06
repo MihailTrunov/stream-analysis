@@ -14,6 +14,7 @@ from sqlalchemy import Engine, create_engine
 
 from market_analysis.application.autonomous_evaluation import execute_evaluation
 from market_analysis.application.diagnostics import write_worker_heartbeat
+from market_analysis.application.evaluation_scheduler import run_scheduler_once, set_automatic
 from market_analysis.application.historical_import import advance_import
 from market_analysis.application.history_ranges import schedule_history_import
 from market_analysis.application.live_retention import package_pending_live_hours
@@ -32,6 +33,7 @@ from market_analysis.persistence.import_jobs import (
     interrupt_running_imports,
     touch_import_heartbeat,
 )
+from market_analysis.persistence.transactions import atomic_transaction
 from market_analysis.providers.oanda import OandaHistoricalDataSource
 
 
@@ -164,7 +166,9 @@ def _run_import_worker(data_root: Path, should_stop: Callable[[], bool]) -> None
         engine.dispose()
 
 
-def run_worker(kind: str, *, run_id: str | None = None, chunk_size: int = 128) -> None:
+def run_worker(
+    kind: str, *, run_id: str | None = None, chunk_size: int = 128, once: bool = False,
+) -> None:
     if kind not in {"evaluation", "import"}:
         raise ValueError(f"unsupported worker kind: {kind}")
     data_root = Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data"))
@@ -208,9 +212,32 @@ def run_worker(kind: str, *, run_id: str | None = None, chunk_size: int = 128) -
         _run_import_worker(data_root, lambda: stopped)
         logger.info("worker stopped")
         return
-    while not stopped:
-        write_worker_heartbeat(data_root, kind)
-        time.sleep(1.0)
+    url = os.getenv("STREAM_ANALYSIS_DATABASE_URL")
+    if not url:
+        raise ValueError("database is not configured")
+    if hasattr(os, "nice"):
+        try:
+            os.nice(5)
+        except OSError:
+            logger.warning("evaluation process priority could not be lowered")
+    engine = create_engine(url)
+    try:
+        while not stopped:
+            write_worker_heartbeat(data_root, kind)
+            job_result = run_scheduler_once(
+                engine, DatasetStore(data_root), chunk_size=chunk_size,
+                should_stop=lambda: stopped,
+                on_heartbeat=lambda: write_worker_heartbeat(data_root, kind),
+            )
+            if once:
+                break
+            if job_result is None:
+                time.sleep(1.0)
+        if stopped:
+            with atomic_transaction(engine) as connection:
+                set_automatic(connection, False)
+    finally:
+        engine.dispose()
     logger.info("worker stopped")
 
 
@@ -218,11 +245,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("kind", choices=("evaluation", "import"))
     parser.add_argument(
-        "--run-id", help="execute one frozen evaluation; queue scheduling is separate",
+        "--run-id", help="execute one frozen evaluation directly instead of consuming the queue",
     )
     parser.add_argument("--chunk-size", type=int, default=128)
+    parser.add_argument("--once", action="store_true", help="poll the evaluation queue once")
     args = parser.parse_args()
-    run_worker(args.kind, run_id=args.run_id, chunk_size=args.chunk_size)
+    run_worker(args.kind, run_id=args.run_id, chunk_size=args.chunk_size, once=args.once)
 
 
 if __name__ == "__main__":
