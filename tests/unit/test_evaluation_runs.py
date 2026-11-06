@@ -97,8 +97,7 @@ def fixture_outcome():
     )
 
 
-@pytest.fixture
-def storage(tmp_path, monkeypatch):
+def evaluation_storage(tmp_path, monkeypatch):
     url = f"sqlite:///{tmp_path / 'evaluations.sqlite'}"
     root = tmp_path / "data"
     monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
@@ -110,6 +109,11 @@ def storage(tmp_path, monkeypatch):
         seed_replay_datasets(connection, store)
     yield engine, store
     engine.dispose()
+
+
+@pytest.fixture
+def storage(tmp_path, monkeypatch):
+    yield from evaluation_storage(tmp_path, monkeypatch)
 
 
 def request(*, predicates=(), outcomes=(), timeframe=Timeframe.M1, multihour=False):

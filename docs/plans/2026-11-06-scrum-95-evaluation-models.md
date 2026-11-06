@@ -1,5 +1,7 @@
 # SCRUM-95: immutable EvaluationRun and primary EventSet
 
+Follow-up: [SCRUM-96](2026-11-06-scrum-96-autonomous-execution.md) now provides the production explicit-run executor. Statements below about its being next describe the original model-delivery boundary. Full queue scheduling remains SCRUM-123.
+
 ## Copied analytical inputs
 
 `evaluation-run-v1` pins authenticated immutable M1 source revision/checksums, selected interval, source initialization origin, aggregation/calendar identity, clean committed build identity and copied detector/timeframe settings. Later tab/preset edits cannot change these rows. One requested setting per timeframe expands into per-detector streams exactly as the chart workspace does: resolve the complete selected component set, retain it, then pin one enabled detector per child RunSnapshot with its own DetectionConfigHash and EvaluationPlanHash. Browsing policies are not evaluation inputs.

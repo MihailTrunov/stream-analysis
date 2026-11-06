@@ -44,6 +44,7 @@ from market_analysis.persistence.runs import RunSnapshotRecord, create_run_snaps
 
 from .analysis_clock import verify_closed_interval
 from .analysis_coverage import coverage_status
+from .analytical_step import process_detector_candle
 from .browser_replay import ReplayReviewScope, _store
 from .history_prices import load_completed_candles
 from .history_ranges import HistoryFeed
@@ -147,11 +148,7 @@ class DetectorStream:
         ):
             self.valid_from = candle.available_at
             self.available_from = candle.available_at
-        result = self.runtime.process_bar(candle.bar)
-        self.store(
-            connection, candle.bar, result, self.runtime.binding_fingerprint,
-            available_at=candle.available_at,
-        )
+        result = process_detector_candle(connection, candle, self.runtime, self.store)
         self.processed += 1
         frame = json.loads(result.frame.debug_json())
         self.frames.append(

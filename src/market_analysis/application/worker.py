@@ -12,6 +12,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
 
+from market_analysis.application.autonomous_evaluation import execute_evaluation
 from market_analysis.application.diagnostics import write_worker_heartbeat
 from market_analysis.application.historical_import import advance_import
 from market_analysis.application.history_ranges import schedule_history_import
@@ -163,7 +164,7 @@ def _run_import_worker(data_root: Path, should_stop: Callable[[], bool]) -> None
         engine.dispose()
 
 
-def run_worker(kind: str) -> None:
+def run_worker(kind: str, *, run_id: str | None = None, chunk_size: int = 128) -> None:
     if kind not in {"evaluation", "import"}:
         raise ValueError(f"unsupported worker kind: {kind}")
     data_root = Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data"))
@@ -178,6 +179,31 @@ def run_worker(kind: str) -> None:
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    if run_id is not None:
+        if kind != "evaluation":
+            raise ValueError("explicit evaluation run IDs are not import-worker inputs")
+        url = os.getenv("STREAM_ANALYSIS_DATABASE_URL")
+        if not url:
+            raise ValueError("database is not configured")
+        if hasattr(os, "nice"):
+            try:
+                os.nice(5)
+            except OSError:
+                logger.warning("evaluation process priority could not be lowered")
+        engine = create_engine(url)
+        try:
+            write_worker_heartbeat(data_root, kind)
+            result = execute_evaluation(
+                engine, DatasetStore(data_root), run_id, chunk_size=chunk_size,
+                should_stop=lambda: stopped,
+                on_commit=lambda: write_worker_heartbeat(data_root, kind),
+            )
+            logger.info("explicit evaluation worker finished", extra={
+                "run_id": run_id, "status": result.status.value,
+            })
+        finally:
+            engine.dispose()
+        return
     if kind == "import":
         _run_import_worker(data_root, lambda: stopped)
         logger.info("worker stopped")
@@ -191,8 +217,12 @@ def run_worker(kind: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("kind", choices=("evaluation", "import"))
+    parser.add_argument(
+        "--run-id", help="execute one frozen evaluation; queue scheduling is separate",
+    )
+    parser.add_argument("--chunk-size", type=int, default=128)
     args = parser.parse_args()
-    run_worker(args.kind)
+    run_worker(args.kind, run_id=args.run_id, chunk_size=args.chunk_size)
 
 
 if __name__ == "__main__":

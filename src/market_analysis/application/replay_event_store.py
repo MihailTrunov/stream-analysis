@@ -16,6 +16,7 @@ from market_analysis.patterns import PatternDefinition
 from market_analysis.persistence.pattern_instances import (
     LifecycleStep,
     PatternInstanceRecord,
+    PersistedDetectorEvent,
     advance_pattern_instance,
     create_pattern_instance,
 )
@@ -47,6 +48,17 @@ class ReplayEventStore:
             return self._event_ids[(*self._key(event), event.sequence)]
         except KeyError as exc:
             raise ReplayEvidenceError("detector event was not persisted") from exc
+
+    def persisted_event(self, event: DetectorEvent) -> PersistedDetectorEvent:
+        """Read the persisted projection without exposing the bridge's mutable cache."""
+        identity = self.identity(event)
+        try:
+            stored = self._instances[self._key(event)].detector_events[event.sequence]
+        except (KeyError, IndexError) as exc:
+            raise ReplayEvidenceError("detector event projection is unavailable") from exc
+        if (stored.event_id, stored.instance_id) != identity:
+            raise ReplayEvidenceError("detector event projection identity differs")
+        return stored
 
     def __call__(
         self,

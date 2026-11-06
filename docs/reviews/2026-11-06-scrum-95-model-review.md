@@ -1,5 +1,7 @@
 # SCRUM-95 implementation review
 
+Follow-up: the [SCRUM-96 implementation review](2026-11-06-scrum-96-execution-review.md) records production execution, explicit worker subprocess checks and real PostgreSQL success/partial-failure checks. The earlier model-specific evidence below remains unchanged.
+
 This is an implementation/self-review, not an independent Astra review.
 
 The review traced physical-source preflight, copied per-timeframe/per-detector normalization, clean build identity, v1 hash compatibility, v2 typed filters, immutable manifest/child links, source-event/context validation and durable API reads. EventSet identity remains independent of outcome horizons, while EvaluationPlanHash and full run input identity change.
