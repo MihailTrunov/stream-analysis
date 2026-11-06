@@ -266,7 +266,7 @@ def test_migration_guards_audit_history_against_raw_mutation(
     command.upgrade(Config("alembic.ini"), "head")
     engine = create_engine(url)
     with engine.begin() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261105_14"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261105_15"
         event = _event(connection)
         annotation = create_event_annotation(
             connection,

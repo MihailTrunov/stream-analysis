@@ -45,7 +45,7 @@ def _preceding(
 def plan_history_navigation(
     connection: Connection,
     feed: HistoryFeed,
-    source_revision_id: str,
+    source_revision_id: str | None,
     target: datetime,
     timeframe: Timeframe,
     streams: tuple[StreamSettings, ...],
@@ -57,32 +57,32 @@ def plan_history_navigation(
     if target.tzinfo is None or target.second or target.microsecond:
         raise ValueError("navigation target must be an aware completed minute")
     target = target.astimezone(UTC)
-    revision = load_dataset_revision(connection, source_revision_id)
-    lineage = load_dataset_lineage(connection, source_revision_id, feed.instrument_id, Timeframe.M1)
-    if revision is None or lineage is None:
-        raise ValueError("selected source not found")
-    provenance = json.loads(lineage.provider_request_json)
-    if revision.provider == "history-composite":
-        selected_feed = HistoryFeed.model_validate(provenance["feed"])
-    elif revision.provider == "oanda":
-        selected_feed = HistoryFeed(
-            instrument_id=feed.instrument_id,
-            calendar_version=revision.calendar_version,
-            normalization_version=revision.normalization_version,
-            provider=provenance["provider"],
-            environment=provenance["environment"],
-            provider_symbol=provenance["symbol"],
-            source_id=provenance["source_id"],
-            price_component=provenance["price_component"],
-            smooth=provenance["smooth"],
-            account_fingerprint=provenance["account_fingerprint"],
+    if source_revision_id is not None:
+        revision = load_dataset_revision(connection, source_revision_id)
+        lineage = load_dataset_lineage(
+            connection, source_revision_id, feed.instrument_id, Timeframe.M1,
         )
-    else:
-        raise ValueError("synthetic or unsupported sources cannot acquire provider history")
-    if selected_feed != feed:
-        raise ValueError(
-            "selected source differs from the configured provider/account/calendar feed"
-        )
+        if revision is None or lineage is None:
+            raise ValueError("selected source not found")
+        provenance = json.loads(lineage.provider_request_json)
+        if revision.provider in {"history-composite", "live-capture"}:
+            selected_feed = HistoryFeed.model_validate(provenance["feed"])
+        elif revision.provider == "oanda":
+            selected_feed = HistoryFeed(
+                instrument_id=feed.instrument_id,
+                calendar_version=revision.calendar_version,
+                normalization_version=revision.normalization_version,
+                provider=provenance["provider"], environment=provenance["environment"],
+                provider_symbol=provenance["symbol"], source_id=provenance["source_id"],
+                price_component=provenance["price_component"], smooth=provenance["smooth"],
+                account_fingerprint=provenance["account_fingerprint"],
+            )
+        else:
+            raise ValueError("synthetic or unsupported sources cannot acquire provider history")
+        if selected_feed != feed:
+            raise ValueError(
+                "selected source differs from the configured provider/account/calendar feed"
+            )
     calendar = feed.calendar()
     calendar.derive(target)
     profile = OANDA_UK_LIVE_PROFILES[feed.provider_symbol]

@@ -21,6 +21,7 @@ from sqlalchemy import (
     Table,
     Text,
     and_,
+    func,
     or_,
     select,
 )
@@ -28,6 +29,7 @@ from sqlalchemy.exc import IntegrityError
 
 from market_analysis.domain import Timeframe
 from market_analysis.persistence.analysis_lineage import load_analysis_lineage
+from market_analysis.persistence.live_analysis import live_analysis_advances, live_analysis_inputs
 from market_analysis.persistence.market_data import dataset_memberships
 from market_analysis.persistence.pattern_instances import (
     pattern_instance_transitions,
@@ -59,6 +61,7 @@ validation_annotations = Table(
         String(200),
         ForeignKey("dataset_revisions.dataset_revision_id"),
     ),
+    Column("missed_live_input_id", String(200), ForeignKey("live_analysis_inputs.input_id")),
     Column("instrument_id", String(200), nullable=False),
     Column("timeframe", String(10), nullable=False),
     Column("pattern_id", String(200), nullable=False),
@@ -72,12 +75,16 @@ validation_annotations = Table(
     CheckConstraint(
         "(target_kind = 'event' AND event_id IS NOT NULL AND instance_id IS NOT NULL "
         "AND run_id IS NOT NULL AND missed_dataset_revision_id IS NULL "
-        "AND interval_start IS NULL AND interval_end IS NULL) OR "
+        "AND missed_live_input_id IS NULL AND interval_start IS NULL AND interval_end IS NULL) OR "
         "(target_kind = 'instance' AND event_id IS NULL AND instance_id IS NOT NULL "
         "AND run_id IS NOT NULL AND missed_dataset_revision_id IS NULL "
-        "AND interval_start IS NULL AND interval_end IS NULL) OR "
+        "AND missed_live_input_id IS NULL AND interval_start IS NULL AND interval_end IS NULL) OR "
         "(target_kind = 'missed_pattern' AND event_id IS NULL AND instance_id IS NULL "
-        "AND run_id IS NULL AND missed_dataset_revision_id = dataset_revision_id "
+        "AND run_id IS NULL AND ((missed_dataset_revision_id IS NOT NULL "
+        "AND missed_dataset_revision_id = dataset_revision_id "
+        "AND missed_live_input_id IS NULL) OR (missed_live_input_id IS NOT NULL "
+        "AND missed_live_input_id = dataset_revision_id "
+        "AND missed_dataset_revision_id IS NULL)) "
         "AND interval_start IS NOT NULL AND interval_end IS NOT NULL "
         "AND interval_end > interval_start)",
         name="ck_validation_annotation_target",
@@ -423,10 +430,37 @@ def create_missed_pattern_annotation(
         .mappings()
         .one_or_none()
     )
-    if membership is None:
+    live_input = (
+        None
+        if lineage is None
+        else connection.execute(
+            select(live_analysis_inputs).where(
+                live_analysis_inputs.c.input_id == revision_id,
+                live_analysis_inputs.c.session_id == lineage.session_id,
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if membership is None and live_input is None:
         raise AnnotationError("target dataset revision/instrument/timeframe does not exist")
-    range_start = _stored_utc(membership["range_start"])
-    range_end = _stored_utc(membership["range_end"])
+    if live_input is not None:
+        manifest = json.loads(live_input["manifest_json"])
+        range_start = datetime.fromisoformat(manifest["initialization_origin"])
+        latest = connection.scalar(
+            select(func.max(live_analysis_advances.c.available_at)).where(
+                live_analysis_advances.c.input_id == revision_id,
+            )
+        )
+        range_end = (
+            _stored_utc(latest)
+            if latest is not None
+            else datetime.fromisoformat(manifest["live_start"])
+        )
+    else:
+        assert membership is not None
+        range_start = _stored_utc(membership["range_start"])
+        range_end = _stored_utc(membership["range_end"])
     if not range_start <= start < end <= range_end:
         raise AnnotationError("annotation interval is outside dataset membership")
     created = _create(
@@ -437,7 +471,8 @@ def create_missed_pattern_annotation(
             "instance_id": None,
             "run_id": None,
             "dataset_revision_id": revision_id,
-            "missed_dataset_revision_id": revision_id,
+            "missed_dataset_revision_id": None if live_input is not None else revision_id,
+            "missed_live_input_id": revision_id if live_input is not None else None,
             "instrument_id": instrument_id,
             "timeframe": timeframe.value,
             "pattern_id": _text(pattern_id, "pattern_id"),

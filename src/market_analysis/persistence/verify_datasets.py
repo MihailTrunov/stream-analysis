@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, select
 
+from market_analysis.application.live_inputs import verify_live_inputs
 from market_analysis.application.live_retention import verify_live_retention
 
 from .dataset_store import DatasetStore
@@ -42,6 +43,9 @@ def main() -> None:
             if inspect(connection).has_table("live_candles"):
                 live_count = verify_live_retention(connection)
                 print(f"Verified {live_count} completed live minute(s).")
+            if inspect(connection).has_table("live_analysis_inputs"):
+                input_count = verify_live_inputs(connection, DatasetStore(root))
+                print(f"Verified {input_count} live analytical input(s).")
     finally:
         engine.dispose()
 

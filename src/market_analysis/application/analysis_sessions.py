@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -32,6 +33,8 @@ from market_analysis.domain.aggregation import (
 )
 from market_analysis.persistence.analysis_lineage import load_analysis_lineage
 from market_analysis.persistence.analysis_sessions import analysis_session_revisions
+from market_analysis.persistence.live_analysis import live_analysis_inputs
+from market_analysis.persistence.live_candles import live_candles
 from market_analysis.persistence.market_data import load_dataset_lineage, load_dataset_revision
 from market_analysis.persistence.pattern_instances import (
     pattern_instance_transitions,
@@ -43,6 +46,8 @@ from .analysis_clock import verify_closed_interval
 from .analysis_coverage import coverage_status
 from .browser_replay import ReplayReviewScope, _store
 from .history_prices import load_completed_candles
+from .history_ranges import HistoryFeed
+from .live_retention import _decode, _lock_feed
 from .replay_catalog import (
     PATTERN_DEFINITIONS,
     detector_bindings,
@@ -203,7 +208,7 @@ def dispatch_candle(
 class AnalysisSession:
     session_id: str
     request: AnalysisRequest
-    bars: tuple[Bar, ...]
+    bars: Sequence[Bar]
     calendar: TradingCalendar
     checksum: str
     source_id: str
@@ -221,19 +226,31 @@ class AnalysisSession:
     def watermark(self) -> datetime:
         return self.revealed_at or self.bars[0].timestamp
 
-    def dispatch(self, connection: Connection, candles: list[AnalyticalCandle]) -> None:
+    def dispatch(
+        self,
+        connection: Connection,
+        candles: list[AnalyticalCandle],
+        *,
+        mode: Literal["replay", "live", "history"] | None = None,
+    ) -> None:
         for candle in sorted(
             candles, key=lambda item: (item.available_at, MINUTES[item.bar.timeframe])
         ):
             self.candles[candle.bar.timeframe].append(candle)
             dispatch_candle(
-                connection, candle, self.streams, self.request.mode, self.request.automatic
+                connection, candle, self.streams, mode or self.request.mode, self.request.automatic
             )
 
-    def advance_closed(self, connection: Connection, target: datetime) -> None:
+    def advance_closed(
+        self,
+        connection: Connection,
+        target: datetime,
+        *,
+        mode: Literal["replay", "live", "history"] | None = None,
+    ) -> None:
         verify_closed_interval(self.calendar, self.watermark, target)
         closed = [c for aggregator in self.aggregators.values() for c in aggregator.advance(target)]
-        self.dispatch(connection, closed)
+        self.dispatch(connection, closed, mode=mode)
         self.revealed_at = target
 
     def consume(self, connection: Connection) -> None:
@@ -351,7 +368,16 @@ class AnalysisSessionManager:
             raise ValueError("analysis session is unavailable; start a new session")
         return session
 
-    def launch(self, request: AnalysisRequest, *, replacing: str | None = None) -> dict[str, Any]:
+    def launch(
+        self,
+        request: AnalysisRequest,
+        *,
+        replacing: str | None = None,
+        source_input_id: str | None = None,
+        source_input_manifest: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if (source_input_id is None) != (source_input_manifest is None):
+            raise ValueError("live input identity requires its complete manifest")
         with self._lock:
             occupied = len(self._sessions) - int(replacing in self._sessions)
             if request.mode == "replay" and occupied >= self._replay_capacity:
@@ -370,6 +396,22 @@ class AnalysisSessionManager:
                     bars = tuple(
                         bar for bar in sequence.bars if bar.timestamp < request.selected_end
                     )
+                    if source_input_manifest is not None:
+                        feed = HistoryFeed.model_validate(source_input_manifest["feed"])
+                        # The same row lock used by acquisition holds through publication
+                        # of the initialized run and manifest, including detector warmup.
+                        key = _lock_feed(connection, feed)
+                        pinned = {bar.timestamp: bar for bar in bars}
+                        for row in connection.execute(
+                            select(live_candles).where(
+                                live_candles.c.feed_key == key,
+                                live_candles.c.timestamp >= sequence.lineage.requested_start,
+                                live_candles.c.timestamp < sequence.lineage.requested_end,
+                            )
+                        ).mappings():
+                            retained = _decode(row)
+                            if pinned.get(retained.timestamp) != retained:
+                                raise ValueError("live bootstrap conflicts with retained feed")
                     if not bars or not any(bar.timestamp >= request.selected_start for bar in bars):
                         raise ValueError("analysis interval has no source candles")
                     revision = load_dataset_revision(connection, request.dataset_revision_id)
@@ -398,7 +440,7 @@ class AnalysisSessionManager:
                             snapshot = create_run_snapshot(
                                 connection,
                                 run_id=uuid4(),
-                                dataset_revision_id=request.dataset_revision_id,
+                                dataset_revision_id=source_input_id or request.dataset_revision_id,
                                 calendar_version=calendar.version,
                                 build_id=os.getenv("STREAM_ANALYSIS_BUILD_ID", "development"),
                                 detection_config=config,
@@ -408,7 +450,7 @@ class AnalysisSessionManager:
                                 config,
                                 detector_bindings(config),
                                 run_id=snapshot.run_id,
-                                dataset_revision_id=request.dataset_revision_id,
+                                dataset_revision_id=source_input_id or request.dataset_revision_id,
                                 calendar=calendar,
                                 pinned_calendar_version=calendar.version,
                                 pinned_config_hash=snapshot.detection_config_hash,
@@ -423,6 +465,7 @@ class AnalysisSessionManager:
                         "version": "analysis-session-v1",
                         "request": request.model_dump(mode="json"),
                         "source_checksum": sequence.lineage.canonical_checksum,
+                        **({"source_input_id": source_input_id} if source_input_id else {}),
                         "initialization_origin": stamp(bars[0].timestamp),
                         "aggregation": AGGREGATION_VERSION,
                         "calendar_version": calendar.version,
@@ -475,6 +518,10 @@ class AnalysisSessionManager:
                         session.consume(connection)
                     session.advance_closed(connection, request.selected_start)
                     if request.mode == "replay":
+                        if source_input_id is not None:
+                            while session.index + 1 < len(bars):
+                                session.consume(connection)
+                            session.advance_closed(connection, request.selected_end)
                         for stream in streams:
                             required = required_warmup_bars(stream.runtime.config)
                             if stream.processed < required:
@@ -495,6 +542,18 @@ class AnalysisSessionManager:
                             manifest_hash=manifest_hash,
                         )
                     )
+                    if source_input_manifest is not None:
+                        input_json = json.dumps(
+                            source_input_manifest, sort_keys=True, separators=(",", ":")
+                        )
+                        connection.execute(
+                            live_analysis_inputs.insert().values(
+                                input_id=source_input_id,
+                                session_id=session_id,
+                                manifest_json=input_json,
+                                manifest_hash=sha256(input_json.encode()).hexdigest(),
+                            )
+                        )
                 if request.mode == "history":
                     self._history[session_id] = session
                     while len(self._history) > self._history_capacity:
@@ -650,9 +709,7 @@ class AnalysisSessionManager:
                 raise ValueError("view requires aware ordered bounds and limit 1..500")
             cutoff = min(end, session.watermark)
             candles = session.candles[timeframe]
-            displayed = [
-                c for c in candles if c.available_at <= cutoff
-            ][-limit:]
+            displayed = [c for c in candles if c.available_at <= cutoff][-limit:]
             coverage = session.coverage(start, cutoff)
             events: list[dict[str, Any]] = []
             for stream in session.streams:
@@ -696,10 +753,14 @@ class AnalysisSessionManager:
                 [],
             )
             visible_times = {stamp(item.bar.timestamp) for item in displayed}
+            latest_source = session.bars[session.index] if session.index >= 0 else None
             return {
                 "run_id": session_id,
                 "cursor_index": session.index,
-                "cursor_time": session.state()["cursor_time"],
+                "cursor_time": latest_source.timestamp
+                if latest_source is not None
+                and latest_source.timestamp >= session.request.selected_start
+                else None,
                 "limit": limit,
                 "available_at": stamp(session.watermark),
                 "history_start": stamp(candles[0].bar.timestamp) if candles else None,
@@ -728,7 +789,34 @@ class AnalysisSessionManager:
 
     def evidence_run_ids(self, session_id: str) -> tuple[str, ...]:
         with self._lock:
-            return tuple(stream.runtime.run_id for stream in self.current(session_id).streams)
+            session = self._sessions.get(session_id) or self._history.get(session_id)
+            if session is not None:
+                return tuple(stream.runtime.run_id for stream in session.streams)
+            engine = self.engine()
+            try:
+                with engine.connect() as connection:
+                    row = (
+                        connection.execute(
+                            select(analysis_session_revisions).where(
+                                analysis_session_revisions.c.session_id == session_id,
+                            )
+                        )
+                        .mappings()
+                        .one_or_none()
+                    )
+                    if (
+                        row is None
+                        or sha256(row["manifest_json"].encode()).hexdigest() != row["manifest_hash"]
+                    ):
+                        raise ValueError("analysis evidence session is unavailable")
+                    manifest = json.loads(row["manifest_json"])
+                    if manifest["request"]["mode"] != "history" and not manifest.get(
+                        "source_input_id"
+                    ):
+                        raise ValueError("analysis evidence session is unavailable")
+                    return tuple(stream["run_id"] for stream in manifest["streams"])
+            finally:
+                engine.dispose()
 
     def validate_review_interval(self, run_id: str, start: datetime, end: datetime) -> None:
         scope = self.review_scope(run_id)
@@ -761,7 +849,7 @@ class AnalysisSessionManager:
                         continue
                     return ReplayReviewScope(
                         run_id,
-                        session.request.dataset_revision_id,
+                        stream.runtime.dataset_revision_id,
                         session.request.instrument_id,
                         stream.runtime.config.timeframe,
                         bucket_bounds(
@@ -779,9 +867,24 @@ class AnalysisSessionManager:
             try:
                 with engine.connect() as connection:
                     lineage = load_analysis_lineage(connection, run_id)
-                    if lineage is None or lineage.manifest["request"]["mode"] != "history":
+                    if lineage is None or (
+                        lineage.manifest["request"]["mode"] != "history"
+                        and not lineage.manifest.get("source_input_id")
+                    ):
                         raise ValueError("analysis evidence session is unavailable")
                     request = lineage.manifest["request"]
+                    selected_start = datetime.fromisoformat(request["selected_start"])
+                    visible_end = datetime.fromisoformat(request["selected_end"])
+                    if lineage.manifest.get("source_input_id"):
+                        from .live_inputs import read_live_input
+
+                        live = read_live_input(
+                            connection, _store(), lineage.snapshot.dataset_revision_id
+                        )
+                        selected_start = datetime.fromisoformat(
+                            live["manifest"]["initialization_origin"]
+                        )
+                        visible_end = datetime.fromisoformat(live["available_at"])
                     calendar = resolve_replay_calendar(
                         lineage.config.instrument_id,
                         lineage.config.calendar_id,
@@ -807,12 +910,12 @@ class AnalysisSessionManager:
                         lineage.config.instrument_id,
                         lineage.config.timeframe,
                         bucket_bounds(
-                            datetime.fromisoformat(request["selected_start"]),
+                            selected_start,
                             lineage.config.timeframe,
                             calendar,
                         )[0],
-                        datetime.fromisoformat(request["selected_end"]),
-                        datetime.fromisoformat(request["selected_end"]),
+                        visible_end,
+                        visible_end,
                         events,
                         instances,
                         analysis_run_id=run_id,
@@ -851,12 +954,18 @@ def history_candles(
                 revision.calendar_version,
             )
             candles = load_completed_candles(
-                connection, _store(), lineage, calendar, timeframe, start, end, limit,
+                connection,
+                _store(),
+                lineage,
+                calendar,
+                timeframe,
+                start,
+                end,
+                limit,
             )
             return {
                 "bars": [
-                    {**bar_payload(c.bar), "available_at": stamp(c.available_at)}
-                    for c in candles
+                    {**bar_payload(c.bar), "available_at": stamp(c.available_at)} for c in candles
                 ],
                 "canonical_checksum": lineage.canonical_checksum,
                 "aggregation_version": AGGREGATION_VERSION,

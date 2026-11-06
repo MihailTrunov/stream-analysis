@@ -85,6 +85,16 @@ class LiveIngress:
         self._lock = RLock()
         self._feeds: dict[str, FeedChannel] = {}
         self._clients: dict[str, tuple[str, datetime]] = {}
+        self._listeners: dict[str, Callable[[], None]] = {}
+
+    def listen(self, client_id: str, callback: Callable[[], None]) -> None:
+        with self._lock:
+            if client_id not in self._clients:
+                raise ValueError("live subscription is disconnected")
+            self._listeners[client_id] = callback
+
+    def now(self) -> datetime:
+        return self._clock().astimezone(UTC)
 
     @staticmethod
     def _publish(channel: FeedChannel, **values: Any) -> None:
@@ -211,6 +221,11 @@ class LiveIngress:
                 if channel.source is not None:
                     channel.source.close()
                     channel.source = None
+        with self._lock:
+            callbacks = [self._listeners[client] for client in channel.subscribers
+                         if client in self._listeners]
+        for callback in callbacks:
+            callback()
 
     def state(self, client_id: str) -> dict[str, Any]:
         with self._lock:
@@ -256,6 +271,7 @@ class LiveIngress:
     def unsubscribe(self, client_id: str) -> None:
         with self._lock:
             client = self._clients.pop(client_id, None)
+            self._listeners.pop(client_id, None)
             if client is None:
                 return
             key, _ = client
@@ -271,6 +287,7 @@ class LiveIngress:
         with self._lock:
             channels = list(self._feeds.values())
             self._clients.clear()
+            self._listeners.clear()
             self._feeds.clear()
             for channel in channels:
                 channel.stopped.set()

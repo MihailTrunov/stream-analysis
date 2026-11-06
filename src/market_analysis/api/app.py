@@ -41,6 +41,7 @@ from market_analysis.application.history_ranges import (
     history_prices,
     request_history,
 )
+from market_analysis.application.live_analysis import live_analysis
 from market_analysis.application.live_ingress import live_ingress
 from market_analysis.application.live_retention import read_live_history
 from market_analysis.application.logging import configure_logging, research_logger
@@ -315,6 +316,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        live_analysis.close()
         live_ingress.close()
         logger.info("API stopped")
 

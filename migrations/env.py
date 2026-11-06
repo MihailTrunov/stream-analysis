@@ -9,6 +9,7 @@ from market_analysis.persistence import (
     analysis_sessions,  # noqa: F401
     history_ranges,  # noqa: F401
     import_jobs,  # noqa: F401
+    live_analysis,  # noqa: F401
     live_candles,  # noqa: F401
     market_data,  # noqa: F401
     pattern_instances,  # noqa: F401
