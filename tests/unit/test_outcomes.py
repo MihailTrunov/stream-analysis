@@ -1,6 +1,5 @@
 """Typed, causal, immutable outcomes over declared same-day M1 windows."""
 
-import os
 from dataclasses import replace
 from datetime import time, timedelta
 from decimal import Decimal
@@ -609,12 +608,10 @@ def test_failed_predecessor_downgrade_preserves_newer_schema(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("backend", ["sqlite", "postgres"])
-def test_migration_immutability_and_used_downgrade(tmp_path, monkeypatch, backend):
+def test_migration_immutability_and_used_downgrade(tmp_path, monkeypatch, backend, request):
     url = f"sqlite:///{tmp_path / 'outcomes.sqlite'}"
     if backend == "postgres":
-        url = os.getenv("STREAM_ANALYSIS_TEST_DATABASE_URL")
-        if not url:
-            pytest.skip("PostgreSQL integration URL is not configured")
+        url = request.getfixturevalue("isolated_postgres_url")
     monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
     engine = create_engine(url)
