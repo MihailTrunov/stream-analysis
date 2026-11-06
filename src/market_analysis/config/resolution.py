@@ -160,6 +160,7 @@ def resolve_evaluation_plan(
         outcomes=tuple(outcomes),
         segments=tuple(segments),
         export_settings=plan.export_settings,
+        event_set=plan.event_set,
     )
 
 

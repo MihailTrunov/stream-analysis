@@ -604,7 +604,7 @@ def test_failed_predecessor_downgrade_preserves_newer_schema(tmp_path, monkeypat
         command.downgrade(Config("alembic.ini"), "20261105_15")
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT COUNT(*) FROM outcome_observations")) == 0
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261106_17"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261106_18"
     engine.dispose()
 
 

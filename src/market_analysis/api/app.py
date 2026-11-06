@@ -15,6 +15,7 @@ from sqlalchemy import create_engine
 
 from market_analysis import __version__
 from market_analysis.api.analysis import router as analysis_router
+from market_analysis.api.evaluations import router as evaluation_router
 from market_analysis.api.live import router as live_router
 from market_analysis.application.analysis_sessions import (
     StreamSettings,
@@ -339,6 +340,7 @@ def detection_time_context(event_id: UUID) -> dict[str, object]:
 
 
 app.include_router(analysis_router)
+app.include_router(evaluation_router)
 app.include_router(live_router)
 
 

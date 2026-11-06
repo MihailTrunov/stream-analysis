@@ -323,6 +323,8 @@ Playback speed is a UI/orchestration concern and cannot alter analytical output.
 
 EvaluationRun invokes the same bar-by-bar detector pipeline under the same DetectionAnalysisConfig/DetectionConfigHash, captures immutable DetectionTimeContextSnapshots, applies EventSet eligibility/filtering, then evaluates configured OutcomeDefinitions from the EvaluationPlan after detection.
 
+SCRUM-95 supplies immutable multi-stream evaluation inputs and primary EventSet membership. `evaluation-plan-v2` adds typed observable-field predicates while existing v1 canonical hashes remain unchanged. CREATED/RUNNING/DETECTION_COMPLETED/COMPLETED/FAILED/CANCELLED distinguish detector completion from completion of all requested stages. Per-stream progress and required outcome records gate completion; models do not imply a working queue scheduler. See the [EvaluationRun contract](../plans/2026-11-06-scrum-95-evaluation-models.md).
+
 Batch processing should initially run in-process. Multiprocessing/distributed execution is deferred until correctness is established.
 
 ## Cross-Run Identity and Parity Semantics

@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -230,6 +230,44 @@ class SegmentSelection(ImmutableModel):
         return self
 
 
+class EventSetPredicate(ImmutableModel):
+    field: Identifier
+    operator: Literal["EQ", "NE", "LT", "LTE", "GT", "GTE", "IS_UNAVAILABLE"] = "EQ"
+    value: ConfigValue = None
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def normalize_value(cls, value: Any) -> Any:
+        return ConfigParameter.normalize_value(value)
+
+    @model_validator(mode="after")
+    def validate_unavailable(self) -> Self:
+        if self.operator == "IS_UNAVAILABLE" and self.value is not None:
+            raise ConfigurationError("IS_UNAVAILABLE does not take an operand")
+        return self
+
+    def canonical_dict(self) -> dict[str, object]:
+        return {"field": self.field, "operator": self.operator,
+                "value": _parameter_payload(ConfigParameter(name="value", value=self.value))}
+
+
+class EventSetSelection(ImmutableModel):
+    schema_version: Literal["event-set-v1"] = "event-set-v1"
+    predicates: tuple[EventSetPredicate, ...] = Field(default=(), max_length=32)
+
+    @model_validator(mode="after")
+    def unique_predicates(self) -> Self:
+        keys = [_canonical_json(item.canonical_dict()) for item in self.predicates]
+        if len(keys) != len(set(keys)):
+            raise ConfigurationError("duplicate EventSet predicate")
+        return self
+
+    def canonical_dict(self) -> dict[str, object]:
+        return {"schema_version": self.schema_version, "predicates": sorted(
+            (item.canonical_dict() for item in self.predicates), key=_canonical_json,
+        )}
+
+
 class EvaluationPlan(ImmutableModel):
     schema_version: Identifier = "evaluation-plan-v1"
     detection_config_hash: Identifier
@@ -238,9 +276,14 @@ class EvaluationPlan(ImmutableModel):
     outcomes: tuple[OutcomeSelection, ...] = ()
     segments: tuple[SegmentSelection, ...] = ()
     export_settings: tuple[ConfigParameter, ...] = ()
+    event_set: EventSetSelection | None = None
 
     @model_validator(mode="after")
     def validate_identity(self) -> Self:
+        if self.event_set is not None and self.schema_version != "evaluation-plan-v2":
+            raise ConfigurationError("EventSet selection requires evaluation-plan-v2")
+        if self.schema_version == "evaluation-plan-v2" and self.event_set is None:
+            object.__setattr__(self, "event_set", EventSetSelection())
         _ensure_unique("context field", self.context_fields)
         _ensure_unique(
             "outcome",
@@ -281,7 +324,7 @@ class EvaluationPlan(ImmutableModel):
             self.export_settings,
             key=lambda value: value.name,
         )
-        return {
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "detection_config_hash": self.detection_config_hash,
             "context_schema_version": self.context_schema_version,
@@ -299,6 +342,10 @@ class EvaluationPlan(ImmutableModel):
                 for item in export_settings
             ],
         }
+        if self.schema_version == "evaluation-plan-v2":
+            assert self.event_set is not None
+            payload["event_set"] = self.event_set.canonical_dict()
+        return payload
 
     def canonical_json(self) -> str:
         return _canonical_json(self.canonical_dict())
@@ -316,6 +363,11 @@ class EvaluationPlan(ImmutableModel):
             raw["export_settings"] = [
                 _parse_canonical_parameter(item) for item in raw["export_settings"]
             ]
+            if raw.get("event_set") is not None:
+                raw["event_set"]["predicates"] = [
+                    {**item, "value": _parse_canonical_parameter(item["value"])["value"]}
+                    for item in raw["event_set"]["predicates"]
+                ]
             return cls.model_validate(raw)
         except (KeyError, TypeError, ValueError) as exc:
             raise ConfigurationError("invalid canonical evaluation JSON") from exc

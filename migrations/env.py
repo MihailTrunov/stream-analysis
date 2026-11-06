@@ -8,6 +8,7 @@ from alembic import context
 from market_analysis.persistence import (
     analysis_sessions,  # noqa: F401
     detection_contexts,  # noqa: F401
+    evaluations,  # noqa: F401
     history_ranges,  # noqa: F401
     import_jobs,  # noqa: F401
     live_analysis,  # noqa: F401
