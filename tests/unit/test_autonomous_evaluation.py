@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from test_evaluation_runs import (
     clean_build,
     create,
@@ -25,7 +25,7 @@ from market_analysis.application.analysis_sessions import (
     AnalysisSessionManager,
     StreamSettings,
 )
-from market_analysis.application.autonomous_evaluation import execute_evaluation
+from market_analysis.application.autonomous_evaluation import EvaluationStopped, execute_evaluation
 from market_analysis.application.evaluation_runs import evaluation_events, read_evaluation_run
 from market_analysis.code_version import CodeCaptureStatus, CodeVersion
 from market_analysis.config import OutcomeSelection
@@ -33,9 +33,14 @@ from market_analysis.demo.replay_seed import seed_replay_datasets
 from market_analysis.domain import SimulationClockError, Timeframe
 from market_analysis.domain.evaluation import EvaluationError, EvaluationStatus
 from market_analysis.persistence.dataset_store import DatasetStore
+from market_analysis.persistence.detection_contexts import detection_context_snapshots
 from market_analysis.persistence.evaluations import (
     evaluation_event_sets,
     evaluation_stream_progress,
+)
+from market_analysis.persistence.pattern_instances import (
+    pattern_instance_transitions,
+    pattern_instances,
 )
 
 
@@ -344,5 +349,55 @@ def test_postgres_actual_executor_completion_and_partial_failure(tmp_path, monke
         assert len(events["events"]) == (1 if fail else 3)
         assert events["complete"] is not fail
         assert final.cursor_index == (11 if fail else 13)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_first_event_chunk_rolls_back_every_record_on_migrated_sqlite(
+    tmp_path, monkeypatch, cancel
+):
+    url = f"sqlite:///{tmp_path / 'rollback.sqlite'}"
+    monkeypatch.setenv("STREAM_ANALYSIS_DATABASE_URL", url)
+    command.upgrade(Config("alembic.ini"), "head")
+    engine = create_engine(url)
+    store = DatasetStore(tmp_path / "data")
+    try:
+        with engine.begin() as connection:
+            seed_replay_datasets(connection, store)
+            record = create(connection, store)
+
+        def stop_after_event(stream, candle, result, persisted):
+            if persisted:
+                assert candle.bar.timestamp.minute == 8
+                raise (EvaluationStopped if cancel else RuntimeError)("first event in chunk")
+
+        def execute():
+            return execute_evaluation(
+                engine,
+                store,
+                str(record.inputs.evaluation_id),
+                chunk_size=1,
+                revision_provider=clean_build,
+                on_frame=stop_after_event,
+            )
+
+        if cancel:
+            assert execute().status is EvaluationStatus.CANCELLED
+        else:
+            with pytest.raises(RuntimeError, match="first event in chunk"):
+                execute()
+        with engine.connect() as connection:
+            final = read_evaluation_run(connection, str(record.inputs.evaluation_id))
+            assert final.cursor_index == 7
+            for table in (
+                pattern_instances,
+                pattern_instance_transitions,
+                detection_context_snapshots,
+                evaluation_event_sets,
+            ):
+                assert connection.scalar(select(func.count()).select_from(table)) == 0
+            progress = connection.execute(select(evaluation_stream_progress)).mappings().one()
+            assert progress["processed_bars"] == 8
     finally:
         engine.dispose()

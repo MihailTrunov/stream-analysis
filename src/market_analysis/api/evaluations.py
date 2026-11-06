@@ -17,6 +17,7 @@ from market_analysis.application.evaluation_runs import (
 )
 from market_analysis.domain.evaluation import EvaluationNotFound, EvaluationRequest
 from market_analysis.persistence.dataset_store import DatasetStore
+from market_analysis.persistence.transactions import atomic_transaction
 
 router = APIRouter(prefix="/evaluation-runs", tags=["evaluation"])
 
@@ -27,7 +28,7 @@ def database() -> Iterator[Connection]:
         raise HTTPException(status_code=503, detail="database is not configured")
     engine = create_engine(url)
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             yield connection
     finally:
         engine.dispose()

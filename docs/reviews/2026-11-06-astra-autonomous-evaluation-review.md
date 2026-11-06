@@ -4,6 +4,8 @@ Reviewer: GPT-6 Astra, **high reasoning**, independent review agent.
 
 Reviewed range: `bfd68d7..d4c6cb9` on master. This includes SCRUM-120's outcome framework, SCRUM-95's EvaluationRun/EventSet models, SCRUM-96's production executor, PostgreSQL fixture corrections and SCRUM-110's actual autonomous parity adapter. The preceding [Astra review](2026-11-06-astra-parity-context-review.md) covered earlier work only.
 
+Implementation follow-up: [both findings have fixes and regression evidence](2026-11-06-astra-autonomous-fixes.md). The original review findings and independent verification below are retained; the follow-up is author verification, not a new Astra verdict.
+
 ## Verdict
 
 **Two confirmed findings: one P1 and one P2. Fix both before proceeding to SCRUM-123.** Passing existing tests does not establish the claimed cross-mode identity and SQLite chunk-rollback guarantees. No implementation fixes are included in this review.

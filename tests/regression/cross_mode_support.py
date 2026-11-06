@@ -291,7 +291,13 @@ def session_trace(session, configs, start):
 def single_configs(settings):
     result = []
     for item in settings:
-        resolved = resolve_detection_config(item.config, pattern_definitions=PATTERN_DEFINITIONS)
+        # The reference consumes the frozen run payload. Actual production modes
+        # receive raw/default user settings and must cross that boundary themselves.
+        resolved = DetectionAnalysisConfig.from_canonical_json(
+            resolve_detection_config(
+                item.config, pattern_definitions=PATTERN_DEFINITIONS,
+            ).canonical_json()
+        )
         result.extend(
             resolved.model_copy(update={"patterns": (pattern,)})
             for pattern in resolved.patterns

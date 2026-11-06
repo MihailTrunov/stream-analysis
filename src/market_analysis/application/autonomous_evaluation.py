@@ -42,6 +42,7 @@ from market_analysis.persistence.evaluations import (
     finish_detection,
 )
 from market_analysis.persistence.pattern_instances import PersistedDetectorEvent
+from market_analysis.persistence.transactions import atomic_transaction
 
 from .evaluation_runs import record_event_membership
 
@@ -87,7 +88,7 @@ def execute_evaluation(
     """
     if type(chunk_size) is not int or not 1 <= chunk_size <= 2000:
         raise EvaluationError("evaluation chunk_size must be 1..2000 source minutes")
-    with engine.begin() as connection:
+    with atomic_transaction(engine) as connection:
         record = read_evaluation_run(connection, evaluation_id)
         if record is None:
             raise EvaluationError("evaluation run not found")
@@ -208,7 +209,7 @@ def execute_evaluation(
         while clock.has_next:
             if should_stop():
                 raise EvaluationStopped("operator stopped autonomous execution")
-            with engine.begin() as connection:
+            with atomic_transaction(engine) as connection:
                 for _ in range(chunk_size):
                     if not clock.has_next:
                         break
@@ -242,7 +243,7 @@ def execute_evaluation(
             committed_index = clock.index
             if on_commit is not None:
                 on_commit()
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             if should_stop():
                 raise EvaluationStopped("operator stopped autonomous execution")
             verify_closed_interval(calendar, watermark, inputs.selected_end)
@@ -274,7 +275,7 @@ def execute_evaluation(
     except BaseException as error:
         lifecycle_error: Exception | None = None
         try:
-            with engine.begin() as connection:
+            with atomic_transaction(engine) as connection:
                 current = read_evaluation_run(connection, evaluation_id)
                 if (
                     current is not None

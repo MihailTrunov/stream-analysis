@@ -447,7 +447,9 @@ class AnalysisSessionManager:
                                 pattern_definitions=PATTERN_DEFINITIONS,
                             )
                             runtime = DetectorRuntime(
-                                config,
+                                DetectionAnalysisConfig.from_canonical_json(
+                                    snapshot.detection_config_json,
+                                ),
                                 detector_bindings(config),
                                 run_id=snapshot.run_id,
                                 dataset_revision_id=source_input_id or request.dataset_revision_id,

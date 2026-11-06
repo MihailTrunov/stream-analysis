@@ -24,13 +24,12 @@ from market_analysis.application.live_analysis import LiveAnalysisManager, LiveA
 from market_analysis.application.live_ingress import LiveIngress
 from market_analysis.application.live_inputs import read_live_input
 from market_analysis.application.live_retention import feed_key
-from market_analysis.application.replay_catalog import PATTERN_DEFINITIONS, demo_detection_config
+from market_analysis.application.replay_catalog import demo_detection_config
 from market_analysis.config import (
     ComponentSelection,
     ConfigParameter,
     DetectionAnalysisConfig,
     PatternSelection,
-    resolve_detection_config,
 )
 from market_analysis.config.oanda_uk_calendars import (
     build_oanda_uk_calendar,
@@ -139,16 +138,6 @@ def publish(storage, bars, feed, end):
 def exercise_modes(storage, bars, config, end, display=Timeframe.M1):
     engine, store = storage
     configurations = (config,) if isinstance(config, DetectionAnalysisConfig) else tuple(config)
-    # Feed the same fully resolved, serialized settings to every production mode.
-    # Decimal display scales/order are not preserved by canonical config storage.
-    configurations = tuple(
-        DetectionAnalysisConfig.from_canonical_json(
-            resolve_detection_config(
-                item, pattern_definitions=PATTERN_DEFINITIONS,
-            ).canonical_json()
-        )
-        for item in configurations
-    )
     instrument = configurations[0].instrument_id
     symbol = "US30_USD" if instrument == "US30" else "DE30_EUR"
     calendar = build_oanda_uk_calendar(
