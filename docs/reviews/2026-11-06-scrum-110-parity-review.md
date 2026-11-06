@@ -1,5 +1,7 @@
 # SCRUM-110 parity foundation and reference identity fix
 
+Later increment: [SCRUM-119](2026-11-06-scrum-119-context-review.md) adds actual detection-time snapshot capture and event-level parity to the existing matrix. The absence statements below describe the earlier foundation increment. Autonomous EvaluationRun remains outstanding.
+
 This is the implementation/self-review record for the current parity increment, not an independent Astra review. Full SCRUM-110 remains In Progress because autonomous EvaluationRun execution (SCRUM-96) and DetectionTimeContextSnapshot capture (SCRUM-119) are absent. The existing manual/history driver is not autonomous evaluation, and persisted occurrence context is not an event-time X-side snapshot.
 
 ## Confirmed production defect

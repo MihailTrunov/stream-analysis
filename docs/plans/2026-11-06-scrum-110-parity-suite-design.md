@@ -1,5 +1,7 @@
 # SCRUM-110 — semantic parity suite
 
+Later increment: [SCRUM-119](2026-11-06-scrum-119-detection-context-design.md) implements context snapshots and adds persisted event-time values/availability to this matrix. Earlier absence statements below are retained as foundation history. Autonomous EvaluationRun remains outstanding.
+
 SCRUM-110 compares completed-candle analytical state, ordered market/detector events and event-time context across equivalent source/config/calendar/aggregation/initialization inputs. The current implementation has replay, requested historical calculation and captured-live drivers. Autonomous EvaluationRun execution (SCRUM-96) and DetectionTimeContextSnapshot capture (SCRUM-119) are not implemented; their acceptance gates remain open. Historical calculation is not relabelled autonomous evaluation, and occurrence context is not relabelled an event-time snapshot.
 
 ## Current increment

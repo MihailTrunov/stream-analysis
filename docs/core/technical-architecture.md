@@ -369,6 +369,8 @@ A snapshot may include fields not used by the triggering detector if they were o
 
 Future predictive datasets use X = DetectionTimeContextSnapshot and Y = one or more OutcomeObservations. Outcome-side data is never copied into X.
 
+SCRUM-119 implements `detection-time-context-v1` at the shared detector-event persistence boundary. Capture uses the emitting immutable frame and an event-aligned detector phase, including intermediate same-candle transitions. A separate `available_at` preserves actual candle-close observability because existing detector `detection_time` labels the candle start. Snapshots are append-only, retain pinned dataset/calendar/config/component/detector/build lineage, and can be read after a session closes through `GET /detector-events/{event_id}/context`. Existing events are not reconstructed from later occurrence context. See the [capture contract](../plans/2026-11-06-scrum-119-detection-context-design.md).
+
 ## OutcomeDefinition Contract
 
 OutcomeDefinition is the parent abstraction for all post-event observations. OutcomeMetric is a subtype/category for numeric outcomes rather than the only supported form.
