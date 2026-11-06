@@ -143,6 +143,8 @@ class DetectorOutput:
 
     instance: PatternInstance
     transitions: tuple[TransitionIntent, ...] = ()
+    # Required for exact intermediate context when several transitions share a bar.
+    transition_contexts: tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.instance, PatternInstance):
@@ -152,6 +154,10 @@ class DetectorOutput:
             if not isinstance(intent, TransitionIntent):
                 raise DetectorRecordError("transitions must contain TransitionIntent values")
         object.__setattr__(self, "transitions", transitions)
+        contexts = tuple(freeze_mapping(item) for item in self.transition_contexts)
+        if contexts and len(contexts) != len(transitions):
+            raise DetectorRecordError("transition contexts must align with transitions")
+        object.__setattr__(self, "transition_contexts", contexts)
 
 
 @dataclass(frozen=True, slots=True)

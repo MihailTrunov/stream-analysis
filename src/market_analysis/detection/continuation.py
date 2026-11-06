@@ -39,7 +39,7 @@ from market_analysis.patterns import (
 )
 
 from .inputs import DetectorInput
-from .records import DetectorOutput, TransitionIntent
+from .records import DetectorOutput, TransitionIntent, freeze_mapping
 
 _CONTEXT = Context(prec=34)
 
@@ -380,6 +380,7 @@ class ContinuationDetector:
                 "CROSSES",
             )
             if continuation_break is not None:
+                reclaim_context = freeze_mapping(context)
                 confirmed = self._terminal(
                     bar_input,
                     context,
@@ -388,7 +389,10 @@ class ContinuationDetector:
                     continuation_break,
                     from_state="RECLAIMED",
                 )
-                return DetectorOutput(confirmed.instance, (reclaim_intent, *confirmed.transitions))
+                return DetectorOutput(
+                    confirmed.instance, (reclaim_intent, *confirmed.transitions),
+                    (reclaim_context, confirmed.instance.context),
+                )
             age = bar_input.completed_bars - cast(int, context["candidate_bar_index"])
             maximum = cast(int, bar_input.parameters["max_candidate_age_bars"])
             if age >= maximum:
@@ -396,6 +400,7 @@ class ContinuationDetector:
                 return DetectorOutput(
                     replace(bar_input.instance, state="EXPIRED", context=context),
                     (reclaim_intent, expiry_intent),
+                    (context, context),
                 )
             return DetectorOutput(
                 replace(bar_input.instance, state="RECLAIMED", context=context), (reclaim_intent,)

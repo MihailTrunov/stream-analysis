@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Literal, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,6 +28,7 @@ from market_analysis.application.browser_replay import (
     published_source_bars,
     replay_sources,
 )
+from market_analysis.application.context_capture import load_detection_context
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
 from market_analysis.application.history_inputs import (
     HistoryInputConflict,
@@ -322,6 +323,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Stream Analysis", version=__version__, lifespan=lifespan)
+
+
+@app.get("/detector-events/{event_id}/context")
+def detection_time_context(event_id: UUID) -> dict[str, object]:
+    engine = create_engine(_database_url())
+    try:
+        with engine.connect() as connection:
+            snapshot = load_detection_context(connection, str(event_id))
+            if snapshot is None:
+                raise HTTPException(status_code=404, detail="detection-time context not found")
+            return snapshot.to_dict()
+    finally:
+        engine.dispose()
+
+
 app.include_router(analysis_router)
 app.include_router(live_router)
 

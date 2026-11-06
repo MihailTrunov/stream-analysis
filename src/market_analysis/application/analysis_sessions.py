@@ -148,7 +148,10 @@ class DetectorStream:
             self.valid_from = candle.available_at
             self.available_from = candle.available_at
         result = self.runtime.process_bar(candle.bar)
-        self.store(connection, candle.bar, result, self.runtime.binding_fingerprint)
+        self.store(
+            connection, candle.bar, result, self.runtime.binding_fingerprint,
+            available_at=candle.available_at,
+        )
         self.processed += 1
         frame = json.loads(result.frame.debug_json())
         self.frames.append(

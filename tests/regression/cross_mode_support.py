@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import defaultdict
 from datetime import datetime
 
 from parity_support import Trace
+from sqlalchemy import create_engine
 
+from market_analysis.application.context_capture import load_detection_context
 from market_analysis.application.replay_catalog import PATTERN_DEFINITIONS, detector_bindings
 from market_analysis.config import detection_config_hash, resolve_detection_config
 from market_analysis.detection import DetectorEvent, DetectorRuntime, json_value
+from market_analysis.detection.context_snapshots import CONTEXT_SCHEMA_VERSION, capture_values
 from market_analysis.domain import Timeframe
 from market_analysis.domain.aggregation import AGGREGATION_VERSION, MINUTES, CandleAggregator
 from market_analysis.domain.dataset_lineage import canonical_bar_checksum_ordered
@@ -152,6 +156,19 @@ def reference_trace(bars, calendar, configs, start, end, input_id):
                     "events": detector_events(
                         [event.to_canonical_dict() for event in result.events], keys
                     ),
+                    "contexts": [
+                        {
+                            "context_schema_version": CONTEXT_SCHEMA_VERSION,
+                            "available_at": stamp(candle.available_at),
+                            "values": json_value(capture_values(
+                                result.frame, event, instance,
+                                PATTERN_DEFINITIONS[(event.pattern_id, event.pattern_version)],
+                            )),
+                        }
+                        for event, instance in zip(
+                            result.events, result.event_instances, strict=True
+                        )
+                    ],
                 }
             )
         for instance in runtime.occurrences:
@@ -186,6 +203,15 @@ def reference_trace(bars, calendar, configs, start, end, input_id):
 
 def session_trace(session, configs, start):
     points, occurrences = [], []
+    engine = create_engine(os.environ["STREAM_ANALYSIS_DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            snapshots = {
+                event["event_id"]: load_detection_context(connection, event["event_id"])
+                for stream in session.streams for event in stream.events
+            }
+    finally:
+        engine.dispose()
     for stream in session.streams:
         tf = stream.runtime.config.timeframe
         keys = occurrence_keys(stream.events, "runtime_instance_id")
@@ -215,6 +241,16 @@ def session_trace(session, configs, start):
                     "events": detector_events(
                         events, keys, "runtime_instance_id", persisted_ordinals
                     ),
+                    "contexts": [
+                        {
+                            "context_schema_version": (
+                                snapshots[event["event_id"]].context_schema_version
+                            ),
+                            "available_at": stamp(snapshots[event["event_id"]].available_at),
+                            "values": json_value(snapshots[event["event_id"]].values),
+                        }
+                        for event in events
+                    ],
                 }
             )
         for (_, _, runtime_id), record in stream.store._instances.items():

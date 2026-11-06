@@ -1,7 +1,7 @@
 """Real replay/history/captured-live paths against an independent causal driver.
 
-EvaluationRun and DetectionTimeContextSnapshot do not exist yet. These tests
-intentionally neither mock those modes nor label occurrence context as X-side capture.
+Detection-time context is compared at every emitted event. EvaluationRun is
+still a separate execution dependency and is not mocked by these chart modes.
 """
 
 import json

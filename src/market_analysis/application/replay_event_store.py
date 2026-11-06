@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime, timedelta
 from typing import cast
 
 from sqlalchemy import Connection
 
+from market_analysis.application.context_capture import capture_detection_context
 from market_analysis.detection import DetectorEvent, DetectorRuntimeResult
 from market_analysis.detection.records import json_value
 from market_analysis.domain import Bar
@@ -52,7 +54,17 @@ class ReplayEventStore:
         bar: Bar,
         result: DetectorRuntimeResult,
         binding_fingerprint: str,
+        *,
+        available_at: datetime | None = None,
     ) -> None:
+        if available_at is None:
+            if bar.timeframe.value != "1m":
+                raise ReplayEvidenceError("higher-timeframe capture requires actual available_at")
+            available_at = bar.timestamp + timedelta(minutes=1)
+        phases = {
+            (*self._key(event), event.sequence): phase
+            for event, phase in zip(result.events, result.event_instances, strict=True)
+        }
         grouped: dict[RuntimeKey, list[DetectorEvent]] = {}
         for event in result.events:
             grouped.setdefault(self._key(event), []).append(event)
@@ -118,6 +130,11 @@ class ReplayEventStore:
                     ):
                         raise ReplayEvidenceError("persisted event differs from runtime")
                     self._event_ids[(*key, source.sequence)] = (stored.event_id, stored.instance_id)
+                    capture_detection_context(
+                        connection, frame=result.frame, event=source,
+                        instance=phases[(*key, source.sequence)], stored=stored,
+                        definition=definition, available_at=available_at,
+                    )
             self._instances[key] = changed
         if grouped:
             raise ReplayEvidenceError("emitted event has no post-step PatternInstance")

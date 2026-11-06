@@ -125,11 +125,14 @@ class DetectorRuntimeResult:
     ``events`` lists this bar's committed DetectorEvent intents in execution
     order and ``instances`` the post-step occurrence state per binding in the
     same deterministic order.
+    ``event_instances`` aligns phase observations with ``events``; None means
+    a custom multi-transition detector omitted intermediate context.
     """
 
     frame: MarketStateFrame
     events: tuple[DetectorEvent, ...]
     instances: tuple[PatternInstance, ...]
+    event_instances: tuple[PatternInstance | None, ...] = ()
 
 
 class _Slot:
@@ -532,6 +535,7 @@ class DetectorRuntime:
                 (*self._prepare(slot, current, frame, ledger, event_refs, detection_time), restart)
             )
         events: list[DetectorEvent] = []
+        event_instances: list[PatternInstance | None] = []
         instances = dict(self._instances)
         sequences = dict(self._sequences)
         for slot, output, transitions, restart in prepared:
@@ -543,7 +547,18 @@ class DetectorRuntime:
             if restart:
                 sequences[key] = 0
             self._advance(slot, frame, transitions)
-            for intent in transitions:
+            for ordinal, intent in enumerate(transitions):
+                context = (
+                    output.transition_contexts[ordinal]
+                    if output.transition_contexts
+                    else output.instance.context if len(transitions) == 1 else None
+                )
+                event_instances.append(
+                    None if context is None else PatternInstance(
+                        intent.pattern_id, intent.pattern_version, intent.instance_id,
+                        intent.to_state, context,
+                    )
+                )
                 sequence = sequences[key]
                 sequences[key] = sequence + 1
                 events.append(
@@ -586,6 +601,7 @@ class DetectorRuntime:
             frame=frame,
             events=tuple(events),
             instances=tuple(instances[self._key(slot)] for slot in self._bindings),
+            event_instances=tuple(event_instances),
         )
 
     def _initial_state(self, pattern_id: str, pattern_version: str) -> str:

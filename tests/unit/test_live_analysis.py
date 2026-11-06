@@ -510,7 +510,7 @@ def test_live_input_migration_preserves_lineage_and_refuses_destructive_downgrad
     try:
         state = manager.connect(request(revision), feed)
         hub.poll(feed_key(feed))
-        with pytest.raises(RuntimeError, match="lineage must be retained"):
+        with pytest.raises(RuntimeError, match="detection-time context must be retained"):
             command.downgrade(config, "20261105_14")
         with engine.connect() as connection:
             assert (
@@ -519,7 +519,7 @@ def test_live_input_migration_preserves_lineage_and_refuses_destructive_downgrad
                         "SELECT version_num FROM alembic_version",
                     )
                 )
-                == "20261105_15"
+                == "20261106_16"
             )
             assert read_live_input(connection, store, state["input_id"])["source_minutes"] == 5
     finally:
