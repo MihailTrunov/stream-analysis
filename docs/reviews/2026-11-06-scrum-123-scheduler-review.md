@@ -2,6 +2,8 @@
 
 This is implementation/self-review evidence, not an independent Astra review. The two preceding Astra findings were fixed and pushed separately in `0d13e71`; [their verification](2026-11-06-astra-autonomous-fixes.md) remains distinct.
 
+Independent follow-up: [Astra high review of ee66bc7](2026-11-06-astra-scheduler-review.md) found three P2 issues requiring fixes: standalone loading heartbeat expiry, a PostgreSQL orphan-recovery heartbeat race, and invalid chunk-size claims. The separate full Python run on the final commit passed **1,123 tests (20 PostgreSQL-dependent skips)**, closing the earlier final-UUID verification gap. The original implementation evidence below is retained; it does not supersede those findings.
+
 ## Delivered behavior
 
 The default evaluation service now consumes a durable serial queue rather than only writing a heartbeat. Jobs pin the existing immutable EvaluationRun inputs, can be reordered or cancelled before starting, and expose durable status/progress/failure summaries through backend APIs. The queue starts paused and requires explicit start. Active cancellation pauses progression and preserves completed chunks; stale-worker recovery fences old ownership and leaves the next job waiting. No detector checkpoint automatically resumes.
