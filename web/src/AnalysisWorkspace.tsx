@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { validateReplayState } from './validation';
 import { SessionBoundary } from './SessionBoundary';
 import { ReplaySession } from './ReplaySession';
+import { LiveSession } from './LiveSession';
 import { apiJson, sessionPath, type ReplaySource, type ReplayState, type ReviewPattern } from './replay';
 import { newTab, restoreWorkspace, WORKSPACE_KEY, type AnalysisTab, type Workspace } from './workspace';
 
@@ -15,6 +16,8 @@ export function AnalysisWorkspace() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,12 +74,36 @@ export function AnalysisWorkspace() {
     ] } : current);
   }, [updateTab, workspace.tabs]);
 
-  function closeTab(id: string) {
-    setWorkspace((current) => {
+  async function closeTab(id: string) {
+    if (closing || workspace.tabs.length === 1) return;
+    const closed = workspace.tabs.find((tab) => tab.id === id);
+    setClosing(true); setCloseError(null);
+    try {
+      if (closed?.mode === 'live' && closed.liveConnectionId) {
+        await apiJson(`/live/subscriptions/${closed.liveConnectionId}`, { method: 'DELETE' });
+      }
+      setWorkspace((current) => {
       const tabs = current.tabs.filter((tab) => tab.id !== id);
       if (!tabs.length) return current;
       return { ...current, tabs, activeId: current.activeId === id ? tabs.at(-1)!.id : current.activeId };
-    });
+      });
+    } catch (reason) { setCloseError(`Could not disconnect and close the tab: ${String(reason)}`); }
+    finally { setClosing(false); }
+  }
+
+  async function resetTab(tab: AnalysisTab) {
+    try {
+      if (tab.mode === 'live' && tab.liveConnectionId) {
+        await apiJson(`/live/subscriptions/${tab.liveConnectionId}`, { method: 'DELETE' });
+      }
+      setWorkspace((current) => {
+        const replacement = { ...newTab(tab.instrument), sourceId: tab.sourceId, runId: tab.runId,
+          timezone: tab.timezone, mode: tab.mode, liveConnect: tab.liveConnect,
+          liveConnectionId: tab.mode === 'live' ? crypto.randomUUID() : undefined };
+        return { ...current, tabs: current.tabs.map((item) => item.id === tab.id ? replacement : item),
+          activeId: current.activeId === tab.id ? replacement.id : current.activeId };
+      });
+    } catch (reason) { setCloseError(`Could not disconnect and reset the tab: ${String(reason)}`); }
   }
 
   return <>
@@ -93,27 +120,25 @@ export function AnalysisWorkspace() {
             setWorkspace((current) => ({ ...current, activeId: next.id }));
             document.getElementById(`tab-${next.id}`)?.focus();
           }} onClick={() => setWorkspace((current) => ({ ...current, activeId: tab.id }))}>
-          <span className="tab-status" aria-hidden="true" />{tab.instrument}<span className="tab-mode">{tab.runId ? 'Replay' : 'History'}</span>
+          <span className="tab-status" aria-hidden="true" />{tab.instrument}<span className="tab-mode">{tab.mode === 'live' ? 'Live' : tab.runId ? 'Replay' : 'History'}</span>
         </button>
         <button type="button" className="close-tab" aria-label={`Close ${tab.instrument} tab`}
           title={tab.runId && bootstrap?.sessions.some((item) => item.run_id === tab.runId) ? 'Stop this replay before closing its tab' : 'Close tab'}
-          disabled={workspace.tabs.length === 1 || (Boolean(tab.runId) && bootstrap?.sessions.some((item) => item.run_id === tab.runId))}
-          onClick={() => closeTab(tab.id)}>×</button>
+          disabled={closing || workspace.tabs.length === 1 || (Boolean(tab.runId) && bootstrap?.sessions.some((item) => item.run_id === tab.runId))}
+          onClick={() => void closeTab(tab.id)}>×</button>
       </div>)}
       <button type="button" className="add-tab" aria-label="New analysis tab" disabled={workspace.tabs.length >= 20}
         onClick={() => { const tab = newTab(); setWorkspace((current) => ({ ...current, tabs: [...current.tabs, tab], activeId: tab.id })); }}>＋</button>
       <span className="workspace-local">LOCAL WORKSPACE</span>
     </div>
     {storageError && <p role="status" className="workspace-warning">Tab restoration is unavailable because browser storage could not be saved.</p>}
+    {closeError && <p role="alert" className="workspace-warning">{closeError}</p>}
     {error && <div className="workspace-loading" role="alert"><h2>Unable to load the workspace</h2><p>{error}</p><p>Check the local API in Diagnostics, then reload.</p></div>}
     {!bootstrap && !error && <div className="workspace-loading" role="status">Loading local instrument history…</div>}
     {bootstrap && workspace.tabs.map((tab) => <SessionBoundary key={tab.id} active={tab.id === workspace.activeId}
-      onReset={() => setWorkspace((current) => {
-        const replacement = { ...newTab(tab.instrument), sourceId: tab.sourceId, runId: tab.runId, timezone: tab.timezone };
-        return { ...current, tabs: current.tabs.map((item) => item.id === tab.id ? replacement : item),
-          activeId: current.activeId === tab.id ? replacement.id : current.activeId };
-      })}><ReplaySession tab={tab}
+      onReset={() => void resetTab(tab)}>{tab.mode === 'live' ? <LiveSession tab={tab} active={tab.id === workspace.activeId}
+        sources={bootstrap.sources} patterns={bootstrap.patterns} onTabChange={updateTab} onSourceAdded={addSource} /> : <ReplaySession tab={tab}
       active={tab.id === workspace.activeId} sources={bootstrap.sources} patterns={bootstrap.patterns} onSourceAdded={addSource}
-      activeRun={bootstrap.sessions.find((item) => item.run_id === tab.runId) ?? null} onTabChange={updateTab} onRunChange={updateRun} /></SessionBoundary>)}
+      activeRun={bootstrap.sessions.find((item) => item.run_id === tab.runId) ?? null} onTabChange={updateTab} onRunChange={updateRun} />}</SessionBoundary>)}
   </>;
 }

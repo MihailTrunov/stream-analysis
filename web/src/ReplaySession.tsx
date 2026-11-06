@@ -338,7 +338,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       <CandlestickChart key={`${selectedId}:${state?.run_id ?? 'history'}:${chartTimeframe}`} resetKey={`${selectedId}:${state?.run_id ?? 'history'}:${chartTimeframe}`}
         bars={visible} observations={state ? observations : []} events={chartEvents}
         selectedEventOrder={selectedOrder} onSelectEvent={(order) => { const event = events.find((item) => item.emission_order === order); if (event) selectEvent(event); }}
-        onSelectBar={state && replay.ready ? selectBar : undefined} reviewInterval={reviewInterval}
+        onSelectBar={state && replay.ready && !working ? selectBar : undefined} reviewInterval={reviewInterval}
         cursorTime={cursor} focusTime={focusTime} overlays={layers} timezone={tab.timezone}
         focusVersion={focusVersion} onReturnLatest={() => {
           setFocusTime(null);
@@ -373,7 +373,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       <div className="panel-controls">
         <div className="panel-heading"><h2>{state ? 'Historical replay' : 'Historical exploration'}</h2><span className="connection-status">LOCAL</span></div>
         <div className="mode-control" aria-label="Analysis mode"><button type="button" className="selected">History</button>
-          <button type="button" disabled title="Live market connections are not available in this build">Live <span>Coming next</span></button></div>
+          <button type="button" disabled={Boolean(state) || working} onClick={() => onTabChange(tab.id, {
+            mode: 'live', liveConnect: true, liveConnectionId: crypto.randomUUID(),
+          })}>Live</button></div>
         <label className="input-label">Go to date & time <input aria-label="Chart date and time" type="datetime-local" value={start} disabled={working} onChange={(event) => setStart(event.target.value)} /></label>
         <div className="navigation-actions"><button type="button" onClick={moveTo} disabled={working || !start}>Move to</button>
           <button className="primary" type="button" onClick={() => void launch()} disabled={working || Boolean(state) || !selected || settings.dirty}>Start replay from</button></div>

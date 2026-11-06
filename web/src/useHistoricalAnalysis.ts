@@ -83,7 +83,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   const loaded = expected.length > 0 && expected.every((key) => full.some(([coveredKey]) => key === coveredKey));
   const partial = covered.some(([, value]) => end && hasInitializedResult(value.bounds, end));
   const status = loaded ? 'calculated' : partial ? 'partial' : covered.length ? 'initialization_unavailable' : 'not_requested';
-    return { events, loaded, status, coverage: `${full.length} of ${expected.length} detector streams calculated` };
+    return { events, loaded, status, calculatedKeys: covered.filter(([, value]) => end && hasInitializedResult(value.bounds, end)).map(([key]) => key), coverage: `${full.length} of ${expected.length} detector streams calculated` };
   }, [results, identity, start, end, streams]);
   return { ...projection, busy, calculate };
 }

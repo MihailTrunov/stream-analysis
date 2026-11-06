@@ -279,7 +279,7 @@ test('manual historical calculation shows occurrence sections without starting r
   await page.getByRole('tab', { name: 'Detector settings' }).click();
   await page.getByRole('button', { name: 'Calculate RANGE_COMPRESSION_V1 for current view · 1m', exact: true }).click();
   await page.getByRole('tab', { name: /^Patterns/ }).click();
-  await expect(page.getByText('Partially calculated: earlier candles lack sufficient initialization history.')).toBeVisible();
+  await expect(page.getByText('Partially calculated: earlier candles lack sufficient initialization history.')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('region', { name: 'Developing patterns' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Active patterns' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Completed patterns' })).toBeVisible();

@@ -66,7 +66,8 @@ export function buildChartModel(
     if (low > Math.min(open, close) || high < Math.max(open, close)) {
       throw new Error('Canonical OHLC is inconsistent');
     }
-    model.candles.push({ time, open, high, low, close });
+    model.candles.push({ time, open, high, low, close,
+      ...(bar.is_complete === false ? { color: '#d6a34b', borderColor: '#b98328', wickColor: '#b98328' } : {}) });
     model.timestamps.set(time, bar.timestamp);
     if (reviewInterval && bar.timestamp >= reviewInterval.start
       && bar.timestamp < reviewInterval.end) {

@@ -30,12 +30,13 @@ interface Props {
   onLoadEarlier?: (automatic?: boolean) => void;
   earlierDisabled?: boolean;
   canReturnLatest?: boolean;
+  onNavigate?: () => void;
 }
 
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
   onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays,
   timezone = 'Europe/London', resetKey = '', initialRange = null, onRangeChange,
-  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false }: Props) {
+  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false, onNavigate }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -84,7 +85,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         rightPriceScale: { visible: true, borderColor: '#a5b2bf' },
         timeScale: {
           visible: true, timeVisible: true, secondsVisible: false,
-          borderColor: '#a5b2bf', barSpacing: 8, rightOffset: 4,
+          borderColor: '#a5b2bf', barSpacing: 8, rightOffset: 4, shiftVisibleRangeOnNewBar: false,
           tickMarkFormatter: (value: Time, kind: TickMarkType) => {
             const local = dateTimeInput(new Date(Number(value) * 1000).toISOString(), timezone);
             return kind <= TickMarkType.DayOfMonth ? local.slice(0, 10) : local.slice(11, 16);
@@ -232,7 +233,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     priorFocusVersion.current = focusVersion;
   }, [focusTime, focusVersion, result, timezone, resetKey]);
 
-  function navigate() { userNavigation.current = true; following.current = false; setIsFollowing(false); }
+  function navigate() { userNavigation.current = true; following.current = false; setIsFollowing(false); onNavigate?.(); }
   function zoom(factor: number) {
     const scale = chart.current?.timeScale();
     if (!scale) return;

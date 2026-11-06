@@ -22,6 +22,12 @@ export interface AnalysisTab {
   replayEndExplicit?: boolean;
   replayWindow?: ReplayWindow;
   viewport?: { from: number; to: number; origin: string };
+  mode?: 'history' | 'live';
+  liveConnect?: boolean;
+  liveConnectionId?: string;
+  liveWindowEnd?: string;
+  liveHistorySourceId?: string;
+  livePreparation?: { plan: NavigationPlan; key: string };
 }
 export interface Workspace { version: 3; tabs: AnalysisTab[]; activeId: string }
 export const WORKSPACE_KEY = 'stream-analysis.workspace.v1';
@@ -53,6 +59,15 @@ export function restoreWorkspace(raw: string | null): Workspace {
         historyEnd: typeof tab.historyEnd === 'string' && Number.isFinite(Date.parse(tab.historyEnd)) ? tab.historyEnd : undefined,
         navigationPlan: isNavigationPlan(tab.navigationPlan) && tab.navigationPlan.instrument_id === tab.instrument ? tab.navigationPlan : undefined,
         replayEndExplicit: tab.replayEndExplicit === true,
+        mode: tab.mode === 'live' ? 'live' as const : 'history' as const,
+        liveConnect: tab.liveConnect === true,
+        liveWindowEnd: typeof tab.liveWindowEnd === 'string' && Number.isFinite(Date.parse(tab.liveWindowEnd)) ? tab.liveWindowEnd : undefined,
+        liveHistorySourceId: typeof tab.liveHistorySourceId === 'string' ? tab.liveHistorySourceId : undefined,
+        livePreparation: tab.livePreparation && isNavigationPlan(tab.livePreparation.plan)
+          && tab.livePreparation.plan.instrument_id === tab.instrument && typeof tab.livePreparation.key === 'string'
+          ? tab.livePreparation : undefined,
+        liveConnectionId: typeof tab.liveConnectionId === 'string'
+          && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(tab.liveConnectionId) ? tab.liveConnectionId : undefined,
         replayWindow: isReplayWindow(tab.replayWindow) && tab.replayWindow.run_id === tab.runId ? tab.replayWindow : undefined,
         viewport: tab.viewport
         && Number.isFinite(tab.viewport.from) && Number.isFinite(tab.viewport.to)

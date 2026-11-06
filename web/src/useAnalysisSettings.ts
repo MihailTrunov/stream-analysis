@@ -34,7 +34,8 @@ export function useAnalysisSettings(instrument: string, saved: AnalysisStream[] 
     try {
       await Promise.all(drafts.map((stream) => apiJson('/analysis-config/preview', { method: 'POST', body: JSON.stringify(stream.config) })));
       setApplied(drafts); setReady(true);
-    } catch (error) { onError(String(error)); }
+      return true;
+    } catch (error) { onError(String(error)); return false; }
     finally { setBusy(false); }
   }
   async function add(timeframe: Timeframe) {

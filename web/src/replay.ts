@@ -80,6 +80,7 @@ export interface ReplayState {
   };
 }
 export interface ReplayBar {
+  is_complete?: boolean;
   available_at?: string;
   timestamp: string;
   open: string;
