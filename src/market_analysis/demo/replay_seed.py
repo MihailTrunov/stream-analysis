@@ -10,8 +10,9 @@ from hashlib import sha256
 from sqlalchemy import Connection
 
 from market_analysis.config.oanda_uk_calendars import (
-    OANDA_UK_LIVE_PROFILES,
+    LEGACY_CALENDAR_VERSION,
     build_oanda_uk_instrument,
+    oanda_uk_profile,
 )
 from market_analysis.domain import (
     BAR_CHECKSUM_VERSION,
@@ -130,7 +131,8 @@ def balanced_multi_hour_demo_bars(instrument_id: str) -> tuple[Bar, ...]:
 def seed_replay_datasets(connection: Connection, store: DatasetStore) -> None:
     """Publish both deterministic local samples without network or credentials."""
     for symbol in ("US30_USD", "DE30_EUR"):
-        profile = OANDA_UK_LIVE_PROFILES[symbol]
+        # Published demo IDs must keep their original calendar/provenance bytes.
+        profile = oanda_uk_profile(symbol, LEGACY_CALENDAR_VERSION)
         instrument_id = profile.instrument_id
         register_instrument(connection, build_oanda_uk_instrument(symbol))
         for version, bars, start, end in (

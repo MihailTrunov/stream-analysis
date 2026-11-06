@@ -291,7 +291,7 @@ def test_scheduled_closed_minutes_do_not_require_a_provider_job(setup):
         (START, START + timedelta(days=32)),
         (START, START + timedelta(seconds=90)),
         (NOW, NOW + timedelta(minutes=1)),
-        (datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 2, tzinfo=UTC)),
+        (datetime(2026, 12, 1, tzinfo=UTC), datetime(2026, 12, 2, tzinfo=UTC)),
     ],
 )
 def test_invalid_or_unverified_ranges_are_rejected_before_persisting(setup, start, end):
@@ -567,7 +567,7 @@ def test_navigation_rejects_invalid_feed_dates_or_initialization_before_queueing
         else feed
     )
     target = {
-        "calendar": datetime(2026, 10, 1, 14, tzinfo=UTC),
+        "calendar": datetime(2026, 12, 1, 14, tzinfo=UTC),
         "initialization": datetime(2023, 9, 27, 22, tzinfo=UTC),
         "budget": datetime(2023, 10, 2, 14, tzinfo=UTC),
     }.get(mode, START)

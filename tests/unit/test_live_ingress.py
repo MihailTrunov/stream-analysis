@@ -197,7 +197,7 @@ def test_last_disconnect_closes_source_and_restart_does_not_reconnect_clients(in
 
 def test_unverified_current_dates_fail_before_provider_contact(ingress):
     hub, _, feed, now, sources = ingress
-    now[0] = datetime(2026, 11, 5, 14, tzinfo=UTC)
+    now[0] = datetime(2026, 12, 5, 14, tzinfo=UTC)
     with pytest.raises(ValueError, match="coverage"):
         hub.subscribe("tab-one", feed, now[0] - timedelta(minutes=1))
     assert sources == []

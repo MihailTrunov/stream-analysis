@@ -101,8 +101,8 @@ def test_import_api_rejects_missing_config_unsupported_and_out_of_coverage(
                 "/imports",
                 json=_payload()
                 | {
-                    "start": "2026-09-30T14:00:00Z",
-                    "end": "2026-09-30T14:03:00Z",
+                    "start": "2026-11-10T14:00:00Z",
+                    "end": "2026-11-10T14:03:00Z",
                 },
             ).status_code
             == 422

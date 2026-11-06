@@ -9,6 +9,7 @@ from market_analysis.config.oanda_uk_calendars import (
     CALENDAR_VERSION,
     COVERAGE_END,
     COVERAGE_START,
+    LEGACY_CALENDAR_VERSION,
     OANDA_UK_LIVE_PROFILES,
     build_oanda_uk_calendar,
 )
@@ -152,7 +153,7 @@ def test_account_registry_profiles_and_coverage_are_pinned_and_immutable() -> No
         assert configured.coverage_start == COVERAGE_START
         assert configured.coverage_end == COVERAGE_END
         assert configured.version == CALENDAR_VERSION
-        for value in ("2023-09-26T12:00", "2026-09-30T12:00"):
+        for value in ("2023-09-26T12:00", "2026-11-08T12:00"):
             with pytest.raises(SessionCalendarError, match="coverage"):
                 configured.derive(stamp(value))
     assert OANDA_UK_LIVE_PROFILES["US30_USD"].display_name == "US Wall St30"
@@ -166,7 +167,8 @@ def test_account_registry_profiles_and_coverage_are_pinned_and_immutable() -> No
 
 
 def test_provider_coverage_includes_whole_first_and_last_analytical_sessions() -> None:
-    us, de = calendar(), calendar("DE30_EUR")
+    us = calendar(calendar_version=LEGACY_CALENDAR_VERSION)
+    de = calendar("DE30_EUR", calendar_version=LEGACY_CALENDAR_VERSION)
     assert us.derive(stamp("2023-09-27T22:00")).is_open
     assert us.derive(stamp("2026-09-29T20:59")).is_open
     assert de.derive(stamp("2023-09-27T00:15")).is_open
@@ -193,3 +195,33 @@ def test_provider_component_is_deterministic_across_dst_and_reset() -> None:
     for bar, expected in outputs:
         component.update(bar)
         assert component.debug_json() == expected
+
+
+@pytest.mark.parametrize("symbol, before, opening, closing", [
+    ("DE30_EUR", "2026-10-26T00:14", "2026-10-26T00:15", "2026-10-26T21:00"),
+    ("US30_USD", "2026-10-25T21:59", "2026-10-25T22:00", "2026-10-26T21:00"),
+    ("US30_USD", "2026-11-01T22:59", "2026-11-01T23:00", "2026-11-02T22:00"),
+])
+def test_extended_verified_dst_boundaries(symbol, before, opening, closing):
+    configured = calendar(symbol)
+    assert not configured.derive(stamp(before)).is_open
+    assert configured.derive(stamp(opening)).is_open
+    assert not configured.derive(stamp(closing)).is_open
+    with pytest.raises(SessionCalendarError, match="coverage"):
+        calendar(symbol, calendar_version=LEGACY_CALENDAR_VERSION).derive(stamp(opening))
+
+
+def test_old_replay_calendar_is_resolved_without_upgrading_its_lineage():
+    from market_analysis.application.history_ranges import HistoryFeed
+    from market_analysis.application.replay_catalog import resolve_replay_calendar
+
+    legacy = calendar(calendar_version=LEGACY_CALENDAR_VERSION)
+    resolved = resolve_replay_calendar("US30", legacy.calendar_id, LEGACY_CALENDAR_VERSION)
+    assert resolved.version == LEGACY_CALENDAR_VERSION
+    assert resolved.coverage_end == date(2026, 9, 28)
+    assert resolved.exceptions == legacy.exceptions
+    feed = HistoryFeed(instrument_id="US30", provider_symbol="US30_USD",
+                       calendar_version=LEGACY_CALENDAR_VERSION, account_fingerprint="a" * 64)
+    assert feed.calendar().version == LEGACY_CALENDAR_VERSION
+    with pytest.raises(SessionCalendarError):
+        calendar(calendar_version="unverified-version")

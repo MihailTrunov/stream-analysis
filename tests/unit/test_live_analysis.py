@@ -195,7 +195,7 @@ def test_seed_from_another_account_and_unverified_current_dates_are_rejected(att
                 }
             ),
         )
-    now[0] += timedelta(days=40)
+    now[0] += timedelta(days=60)
     with pytest.raises(ValueError, match="coverage"):
         manager.connect(request(revision), feed)
 
@@ -577,3 +577,20 @@ def test_live_reviews_resolve_durably_with_live_input_attribution(attached):
             "interval_start": "2026-09-28T16:05:00Z", "interval_end": "2026-09-28T16:06:00Z",
         })
         assert response.status_code == 422, response.text
+
+
+def test_old_selected_bootstrap_prepares_a_new_feed_without_relabeling_retained_history(attached):
+    from market_analysis.config.oanda_uk_calendars import LEGACY_CALENDAR_VERSION
+    from market_analysis.persistence.market_data import load_dataset_revision
+
+    manager, _, (engine, store, feed), _, _ = attached
+    legacy_feed = feed.model_copy(update={"calendar_version": LEGACY_CALENDAR_VERSION})
+    legacy_revision = _parent((engine, store, legacy_feed), 0, 120)
+    prepared = manager.prepare(request(legacy_revision), feed)
+    assert prepared["plan"]["request_ids"]
+    with engine.connect() as connection:
+        revision = load_dataset_revision(connection, legacy_revision)
+        assert revision.calendar_version == LEGACY_CALENDAR_VERSION
+        for request_id in prepared["plan"]["request_ids"]:
+            coverage = history_coverage(connection, store, request_id)
+            assert coverage["status"] == "pending"

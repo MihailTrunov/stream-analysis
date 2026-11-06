@@ -133,6 +133,7 @@ def _parent(history, start, end, *, close="101", missing=()):
         environment="live",
         account=ACCOUNT,
         provider_symbol="US30_USD",
+        calendar_version=feed.calendar_version,
     )
     advance_import(
         engine, Source(), store, ImportBatchStore(store.root), job.job_id, calendar, at=NOW

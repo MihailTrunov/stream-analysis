@@ -1,4 +1,4 @@
-"""Offline UK/live OANDA M1 schedules verified on 2026-09-28.
+"""Versioned offline UK/live OANDA M1 schedules verified through 2026-11-06.
 
 These finite profiles retain the source interval start (the minute preceding
 the published opening minute), rather than trimming canonical M1 bars.
@@ -10,7 +10,7 @@ binds an already verified account context; it does not authenticate an account.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from types import MappingProxyType
@@ -25,9 +25,11 @@ from market_analysis.domain import (
     TradingCalendar,
 )
 
-CALENDAR_VERSION = "oanda-uk-live-m1-2026-09-28-v1"
+LEGACY_CALENDAR_VERSION = "oanda-uk-live-m1-2026-09-28-v1"
+LEGACY_COVERAGE_END = date(2026, 9, 28)
+CALENDAR_VERSION = "oanda-uk-live-m1-2026-11-06-v1"
 COVERAGE_START = date(2023, 9, 27)
-COVERAGE_END = date(2026, 9, 28)
+COVERAGE_END = date(2026, 11, 6)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,11 +100,11 @@ def _us_exceptions() -> tuple[CalendarException, ...]:
     return tuple(exceptions[day] for day in sorted(exceptions))
 
 
-def _de_exceptions() -> tuple[CalendarException, ...]:
+def _de_exceptions(coverage_end: date = COVERAGE_END) -> tuple[CalendarException, ...]:
     zone = ZoneInfo("Europe/Berlin")
     exceptions = {}
     day = COVERAGE_START
-    while day <= COVERAGE_END:
+    while day <= coverage_end:
         # Finite dated overrides: IANA DST at local noon selects the verified
         # summer opening; the opening remains 00:15 UTC in both seasons.
         if day.weekday() < 5 and datetime.combine(day, time(12), zone).dst():
@@ -156,6 +158,27 @@ OANDA_UK_LIVE_PROFILES: Mapping[str, OandaUkCalendarProfile] = MappingProxyType(
 )
 
 
+OANDA_UK_CALENDAR_VERSIONS: Mapping[str, Mapping[str, OandaUkCalendarProfile]] = MappingProxyType({
+    CALENDAR_VERSION: OANDA_UK_LIVE_PROFILES,
+    LEGACY_CALENDAR_VERSION: MappingProxyType({
+        symbol: replace(profile, version=LEGACY_CALENDAR_VERSION,
+                        coverage_end=LEGACY_COVERAGE_END,
+                        exceptions=(_de_exceptions(LEGACY_COVERAGE_END)
+                                    if symbol == "DE30_EUR" else profile.exceptions))
+        for symbol, profile in OANDA_UK_LIVE_PROFILES.items()
+    }),
+})
+
+
+def oanda_uk_profile(
+    provider_symbol: str, version: str = CALENDAR_VERSION,
+) -> OandaUkCalendarProfile:
+    profiles = OANDA_UK_CALENDAR_VERSIONS.get(version)
+    if profiles is None or provider_symbol not in profiles:
+        raise SessionCalendarError("unsupported exact OANDA instrument/calendar version")
+    return profiles[provider_symbol]
+
+
 def build_oanda_uk_instrument(provider_symbol: str) -> Instrument:
     """Pin the two verified UK/live index contracts for initial M1 imports.
 
@@ -183,13 +206,12 @@ def build_oanda_uk_calendar(
     environment: str,
     account: str,
     provider_symbol: str,
+    calendar_version: str = CALENDAR_VERSION,
 ) -> TradingCalendar:
     """Bind an exact supported context without guessing aliases or account region."""
     if (provider, region, environment) != ("oanda", "UK", "live"):
         raise SessionCalendarError("unsupported provider/region/environment calendar mapping")
-    profile = OANDA_UK_LIVE_PROFILES.get(provider_symbol)
-    if profile is None:
-        raise SessionCalendarError("unsupported exact OANDA instrument calendar mapping")
+    profile = oanda_uk_profile(provider_symbol, calendar_version)
     if not isinstance(account, str) or not account.strip():
         raise SessionCalendarError("calendar binding requires a nonempty verified account")
     return TradingCalendar(

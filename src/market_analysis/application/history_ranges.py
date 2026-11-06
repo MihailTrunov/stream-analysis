@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Connection, select
 
 from market_analysis.config.oanda_uk_calendars import (
-    OANDA_UK_LIVE_PROFILES,
     build_oanda_uk_calendar,
+    oanda_uk_profile,
 )
 from market_analysis.domain import Bar, Timeframe, TradingCalendar
 from market_analysis.persistence.dataset_store import DatasetStore
@@ -69,7 +69,7 @@ class HistoryFeed(BaseModel):
         return json.dumps(self.model_dump(), sort_keys=True, separators=(",", ":"))
 
     def calendar(self) -> TradingCalendar:
-        profile = OANDA_UK_LIVE_PROFILES.get(self.provider_symbol)
+        profile = oanda_uk_profile(self.provider_symbol, self.calendar_version)
         if (
             profile is None
             or profile.instrument_id != self.instrument_id
@@ -85,6 +85,7 @@ class HistoryFeed(BaseModel):
             environment=self.environment,
             account="retained-history",
             provider_symbol=self.provider_symbol,
+            calendar_version=self.calendar_version,
         )
 
 

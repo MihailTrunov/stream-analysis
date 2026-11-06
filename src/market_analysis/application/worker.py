@@ -93,6 +93,7 @@ def _run_import_job(
             environment=environment,
             account=account,
             provider_symbol=job.request.provider_symbol,
+            calendar_version=job.request.calendar_version,
         )
         with OandaHistoricalDataSource(account, token, environment) as source:
             source.verify_account_instrument(job.request.provider_symbol)

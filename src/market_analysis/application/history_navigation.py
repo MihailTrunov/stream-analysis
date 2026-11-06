@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection
 
 from market_analysis.config import resolve_detection_config
-from market_analysis.config.oanda_uk_calendars import OANDA_UK_LIVE_PROFILES
+from market_analysis.config.oanda_uk_calendars import oanda_uk_profile
 from market_analysis.domain import Timeframe, TradingCalendar
 from market_analysis.domain.aggregation import bucket_bounds
 from market_analysis.persistence.history_ranges import HistoryRange
@@ -79,13 +79,19 @@ def plan_history_navigation(
             )
         else:
             raise ValueError("synthetic or unsupported sources cannot acquire provider history")
-        if selected_feed != feed:
+        selected_feed.calendar()  # Only explicitly retained calendar versions may be bridged.
+        # The selected revision is provenance context, not an input to the new
+        # publication. Fetch/cache under the requested calendar's own feed key;
+        # never relabel or combine an old-version dataset into that manifest.
+        if selected_feed.model_dump(exclude={"calendar_version"}) != feed.model_dump(
+            exclude={"calendar_version"},
+        ):
             raise ValueError(
                 "selected source differs from the configured provider/account/calendar feed"
             )
     calendar = feed.calendar()
     calendar.derive(target)
-    profile = OANDA_UK_LIVE_PROFILES[feed.provider_symbol]
+    profile = oanda_uk_profile(feed.provider_symbol, feed.calendar_version)
     zone = ZoneInfo(profile.timezone_name)
     verified_start = datetime.combine(
         profile.coverage_start, profile.trading_day_boundary, zone

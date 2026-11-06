@@ -14,6 +14,7 @@ from market_analysis.config import (
 from market_analysis.config.oanda_uk_calendars import (
     OANDA_UK_LIVE_PROFILES,
     build_oanda_uk_calendar,
+    oanda_uk_profile,
 )
 from market_analysis.detection import (
     COMPRESSION_V1,
@@ -127,11 +128,18 @@ def resolve_replay_calendar(
          if item.instrument_id == instrument_id),
         None,
     )
-    if profile is None or (profile.calendar_id, profile.version) != (calendar_id, version):
+    if profile is None or profile.calendar_id != calendar_id:
         raise ReplayCatalogError("dataset has no matching verified replay calendar version")
+    try:
+        oanda_uk_profile(profile.provider_symbol, version)
+    except ValueError as error:
+        raise ReplayCatalogError(
+            "dataset has no matching verified replay calendar version",
+        ) from error
     return build_oanda_uk_calendar(
         provider="oanda", region="UK", environment="live",
         account="offline-replay", provider_symbol=profile.provider_symbol,
+        calendar_version=version,
     )
 
 
