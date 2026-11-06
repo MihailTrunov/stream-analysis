@@ -9,7 +9,10 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Engine, func, select
 
-from market_analysis.application.autonomous_evaluation import execute_evaluation
+from market_analysis.application.autonomous_evaluation import (
+    execute_evaluation,
+    validate_chunk_size,
+)
 from market_analysis.application.evaluation_runs import create_evaluation_run, read_evaluation_run
 from market_analysis.application.logging import research_logger
 from market_analysis.code_version import CodeVersion, capture_code_version
@@ -359,7 +362,8 @@ def recover_stale(
         recovered += 1
     orphans = (
         connection.execute(
-            select(evaluation_runs).where(
+            select(evaluation_runs)
+            .where(
                 evaluation_runs.c.status == EvaluationStatus.RUNNING.value,
                 evaluation_runs.c.heartbeat_at < cutoff,
                 ~evaluation_runs.c.evaluation_id.in_(
@@ -368,6 +372,7 @@ def recover_stale(
                     )
                 ),
             )
+            .with_for_update()
         )
         .mappings()
         .all()
@@ -474,6 +479,7 @@ def run_scheduler_once(
     on_commit: Callable[[], None] | None = None,
     on_heartbeat: Callable[[], None] | None = None,
 ) -> EvaluationJob | None:
+    validate_chunk_size(chunk_size)
     with atomic_transaction(engine) as connection:
         recover_stale(connection, datetime.now(UTC))
         job = None if should_stop() else claim_next_job(connection, datetime.now(UTC))

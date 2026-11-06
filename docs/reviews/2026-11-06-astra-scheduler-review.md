@@ -4,6 +4,8 @@ Reviewer: GPT-6 Astra, **high reasoning**, independent review agent.
 
 Reviewed commit: `ee66bc76ffde76843ba7e28fc504f095ac723bdd` on master; primary range `0d13e71..ee66bc7`. The review also verified integration of the preceding canonical-settings and SQLite transaction fixes in `0d13e71`. No implementation fixes are included here.
 
+Implementation follow-up: [fixes and regression evidence for all three findings](2026-11-06-astra-scheduler-fixes.md). The original independent verdict below is preserved; follow-up verification is not a new Astra review.
+
 ## Verdict
 
 **Three confirmed P2 findings. Address them before building SCRUM-97/138 on this scheduler.** The existing focused tests and final-commit full suite pass, but additional probes reproduce lifecycle and recovery defects outside their coverage.

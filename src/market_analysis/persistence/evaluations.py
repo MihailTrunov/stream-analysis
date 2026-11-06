@@ -19,6 +19,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    case,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -305,7 +306,14 @@ def advance_evaluation(
         .values(
             cursor_index=cursor_index,
             available_at=available_at,
-            heartbeat_at=at,
+            heartbeat_at=case(
+                (
+                    evaluation_runs.c.heartbeat_at.is_(None)
+                    | (evaluation_runs.c.heartbeat_at < at),
+                    at,
+                ),
+                else_=evaluation_runs.c.heartbeat_at,
+            ),
             revision=evaluation_runs.c.revision + 1,
         )
     )
@@ -456,3 +464,26 @@ def cancel_evaluation(connection: Connection, evaluation_id: str, token: str, at
     )
     if changed.rowcount != 1:
         raise EvaluationError("stale evaluation owner cannot cancel execution")
+
+
+def touch_evaluation(connection: Connection, evaluation_id: str, token: str, at: datetime) -> bool:
+    """Refresh only a live owner; a blocked heartbeat cannot move time backwards."""
+    changed = connection.execute(
+        evaluation_runs.update()
+        .where(
+            evaluation_runs.c.evaluation_id == str(UUID(evaluation_id)),
+            evaluation_runs.c.status == EvaluationStatus.RUNNING.value,
+            evaluation_runs.c.owner_token == token,
+        )
+        .values(
+            heartbeat_at=case(
+                (
+                    evaluation_runs.c.heartbeat_at.is_(None)
+                    | (evaluation_runs.c.heartbeat_at < at),
+                    at,
+                ),
+                else_=evaluation_runs.c.heartbeat_at,
+            )
+        )
+    )
+    return changed.rowcount == 1

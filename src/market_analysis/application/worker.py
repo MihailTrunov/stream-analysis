@@ -12,7 +12,10 @@ from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
 
-from market_analysis.application.autonomous_evaluation import execute_evaluation
+from market_analysis.application.autonomous_evaluation import (
+    execute_evaluation,
+    validate_chunk_size,
+)
 from market_analysis.application.diagnostics import write_worker_heartbeat
 from market_analysis.application.evaluation_scheduler import run_scheduler_once, set_automatic
 from market_analysis.application.historical_import import advance_import
@@ -171,6 +174,8 @@ def run_worker(
 ) -> None:
     if kind not in {"evaluation", "import"}:
         raise ValueError(f"unsupported worker kind: {kind}")
+    if kind == "evaluation":
+        validate_chunk_size(chunk_size)
     data_root = Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data"))
     configure_logging(data_root=data_root)
     logger = research_logger(component=f"{kind}-worker")
@@ -201,6 +206,7 @@ def run_worker(
                 engine, DatasetStore(data_root), run_id, chunk_size=chunk_size,
                 should_stop=lambda: stopped,
                 on_commit=lambda: write_worker_heartbeat(data_root, kind),
+                on_heartbeat=lambda: write_worker_heartbeat(data_root, kind),
             )
             logger.info("explicit evaluation worker finished", extra={
                 "run_id": run_id, "status": result.status.value,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -11,6 +12,7 @@ from sqlalchemy import Connection, Engine, select
 
 from market_analysis.application.analysis_clock import verify_closed_interval
 from market_analysis.application.analytical_step import process_detector_candle
+from market_analysis.application.evaluation_heartbeat import maintain_evaluation_heartbeat
 from market_analysis.application.evaluation_runs import (
     complete_evaluation_if_ready,
     read_evaluation_run,
@@ -58,6 +60,13 @@ FrameObserver = Callable[
     None,
 ]
 
+HEARTBEAT_INTERVAL = 5.0
+
+
+def validate_chunk_size(chunk_size: int) -> None:
+    if type(chunk_size) is not int or not 1 <= chunk_size <= 2000:
+        raise EvaluationError("evaluation chunk_size must be 1..2000 source minutes")
+
 
 class EvaluationStopped(EvaluationError):
     """The operator requested an orderly stop at a causal processing boundary."""
@@ -82,6 +91,7 @@ def execute_evaluation(
     on_source_step: Callable[[ObservableBars], None] | None = None,
     on_frame: FrameObserver | None = None,
     on_commit: Callable[[], None] | None = None,
+    on_heartbeat: Callable[[], None] | None = None,
 ) -> EvaluationRunRecord:
     """Execute a fresh run, preserving only committed chunks after failure/stop.
 
@@ -89,8 +99,7 @@ def execute_evaluation(
     complete source sequence. Production execution retains no UI frame history.
     Full queue scheduling and stale-process recovery remain SCRUM-123.
     """
-    if type(chunk_size) is not int or not 1 <= chunk_size <= 2000:
-        raise EvaluationError("evaluation chunk_size must be 1..2000 source minutes")
+    validate_chunk_size(chunk_size)
     evaluation_id = str(UUID(evaluation_id))
     with atomic_transaction(engine) as connection:
         record = read_evaluation_run(connection, evaluation_id)
@@ -119,7 +128,18 @@ def execute_evaluation(
     committed_index = -1
     emission_order = 0
     active_stream: str | None = None
+    heartbeat = ExitStack()
     try:
+        if owner_token is None:
+            heartbeat.enter_context(
+                maintain_evaluation_heartbeat(
+                    engine,
+                    evaluation_id,
+                    token,
+                    interval=HEARTBEAT_INTERVAL,
+                    on_heartbeat=on_heartbeat,
+                )
+            )
         code = revision_provider(inputs.build_id)
         if (
             not code.is_clean_committed
@@ -331,6 +351,8 @@ def execute_evaluation(
             raise
         if lifecycle_error is not None:
             raise EvaluationError("could not persist evaluation cancellation") from lifecycle_error
+    finally:
+        heartbeat.close()
     with engine.connect() as connection:
         final = read_evaluation_run(connection, evaluation_id)
         assert final is not None
