@@ -6,6 +6,7 @@
   "scripts": {
     "nx": "nx",
     "start": "nx run platform:start",
+    "start:demo": "nx run platform:start-demo",
     "stop": "nx run platform:stop",
     "test": "nx run-many -t test",
     "ci": "NX_DAEMON=false NX_ISOLATE_PLUGINS=false nx run-many -t lint typecheck test build",

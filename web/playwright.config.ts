@@ -27,6 +27,7 @@ export default defineConfig({
         STREAM_ANALYSIS_DATABASE_URL: `sqlite+pysqlite:///${join(smokeRoot, 'smoke.sqlite')}`,
         STREAM_ANALYSIS_DATA_ROOT: join(smokeRoot, 'data'),
         STREAM_ANALYSIS_SMOKE_INIT_DB: '1',
+        STREAM_ANALYSIS_SEED_REPLAY_DEMO: '1',
       },
     },
     {

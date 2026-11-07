@@ -303,7 +303,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     logger.info("API started")
     database_url = os.getenv("STREAM_ANALYSIS_DATABASE_URL")
-    if database_url and os.getenv("STREAM_ANALYSIS_SEED_REPLAY_DEMO", "1") == "1":
+    if database_url and os.getenv("STREAM_ANALYSIS_SEED_REPLAY_DEMO", "0") == "1":
         engine = create_engine(database_url)
         try:
             if os.getenv("STREAM_ANALYSIS_SMOKE_INIT_DB") == "1":

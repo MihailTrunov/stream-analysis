@@ -15,9 +15,9 @@ runs enabled detectors regardless of policy. Always on also calculates browsed
 history. Patterns are grouped as Developing, Active and Completed at the viewed
 period, with badges for other analytical timeframes and separate evidence previews.
 
-This uses existing immutable local revisions. Provider live connections,
-continuous missing-range history fetching and background Runs/results UI remain
-follow-up capabilities. See the
+The workspace uses immutable retained revisions, shared provider live connections
+and automatic missing-range history fetching. The background Runs/results UI remains
+a follow-up capability. See the
 [session delivery note](docs/plans/2026-11-03-multitimeframe-session-delivery.md).
 The five-hour synthetic demo can initialize default M1/5m compression at its
 suggested start; longer timeframes and structural detectors need more preceding
@@ -31,17 +31,21 @@ sh scripts/start-with-lineage.sh
 
 If the workspace dependencies are installed, `pnpm start` runs the same lineage-aware startup through Nx. Use `pnpm stop` to stop and remove the Compose containers; it preserves the PostgreSQL volume and local data. The shell command remains available when Node and pnpm are not installed.
 
-To start without creating synthetic walkthrough datasets:
+Normal startup does not create synthetic walkthrough datasets. It uses retained local/provider data and configured live feeds; chart restoration controls which live tab reconnects. To explicitly seed synthetic walkthrough data:
 
 ```sh
-STREAM_ANALYSIS_SEED_REPLAY_DEMO=0 sh scripts/start-with-lineage.sh
+pnpm start:demo
+# or, without Node/pnpm:
+sh scripts/start-with-lineage.sh --seed-demo
 ```
 
-Add `--env-file app/.env` if that is where provider credentials are configured. The same flag works with `pnpm start`, or can be set to `0` in the env file passed to Compose. This disables demo seeding; it does not delete synthetic revisions already retained in the installation. Existing real/local data remains available. Fetch provider history through chart navigation or the import API when credentials are configured.
+With credentials in `app/.env`, normal startup is `sh scripts/start-with-lineage.sh --env-file app/.env`; demo startup is `sh scripts/start-with-lineage.sh --seed-demo --env-file app/.env`. The explicit environment setting `STREAM_ANALYSIS_SEED_REPLAY_DEMO=1` also enables demo seeding; the default is `0`. Skipping seeding does not remove synthetic revisions already retained in the installation.
 
 Open <http://127.0.0.1:5173> for the chart workspace and its Diagnostics installation check, and <http://127.0.0.1:8000/diagnostics> for the diagnostics API. PostgreSQL stays on the private Compose network, with live database files in a Docker-managed `postgres_data` volume. The `migrate` service runs the version-controlled Alembic migration before the API and workers start; application startup itself does not create or modify tables. Datasets, artifacts, exports and logs live under `./data` by default (override with `STREAM_ANALYSIS_DATA_ROOT`). OANDA credentials are not required for startup; provider imports and live monitoring need them.
 
 For UK/live OANDA import, set `OANDA_KEY`, `OANDA_ACCOUNT`, `OANDA_ENV=live`, and `OANDA_REGION=UK` in a local ignored env file. If your credentials are in `app/.env`, start with `sh scripts/start-with-lineage.sh --env-file app/.env` so Compose passes them to the API and import worker; do not commit that file. A direct `docker compose up --build` still works, but run CodeVersion will explicitly say unavailable unless Git metadata is supplied through the environment. A dirty checkout records the commit *and* dirty flag; it is not represented as the exact clean build. `POST /imports` accepts a `dataset_id`, `instrument_id` (`US30` or `DAX`), and UTC `start`/`end` range. `GET /imports` and `GET /imports/{job_id}` show durable progress. After a worker interruption, the job stays interrupted until `POST /imports/{job_id}/resume`; it resumes from the last committed page, not from zero. A terminal provider/validation failure requires a new request with `fresh_attempt=true`. Only a completed import publishes a selectable immutable revision. The current verified calendar covers analytical dates 2023-09-27 through 2026-11-06; the initial version through 2026-09-28 remains available for pinned history/runs. Later dates require a new verified calendar version.
+
+Historical chart navigation reuses matching retained M1 data first and asks the import worker for missing expected-open ranges. Move to and Start replay from prepare bounded history plus the required detector initialization, then publish an immutable local input. Replay advances locally over that input; panning an active replay browses its revealed history without moving the cursor. Synthetic walkthroughs cannot fetch provider candles to extend their range. There is no separate preload shell command; use the import API for an explicit preload, or let provider-history navigation request coverage.
 
 The original two-bar **installation check** remains intentionally non-research-grade; it only verifies bar delivery and diagnostics. The separate **Detector walkthrough** defaults to a deterministic, synthetic five-hour US30 M1 Parquet revision: one hour of warm-up followed by a four-hour suggested replay. A matching DAX sample is also available. Older short demo revisions remain selectable for audit and regression checks. These samples are not research-grade and need no OANDA credentials. Select a revision and interval, optionally apply detector parameters, then start replay. The API verifies the immutable revision, pinned calendar, open-session gaps and required warm-up before creating pinned analytical stream snapshots.
 

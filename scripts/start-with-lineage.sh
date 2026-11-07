@@ -1,6 +1,12 @@
 #!/bin/sh
 set -eu
 
+if [ "${1:-}" = "--seed-demo" ]; then
+    STREAM_ANALYSIS_SEED_REPLAY_DEMO=1
+    export STREAM_ANALYSIS_SEED_REPLAY_DEMO
+    shift
+fi
+
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_root=$(dirname -- "$script_dir")
 cd "$project_root"

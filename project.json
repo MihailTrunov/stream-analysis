@@ -2,6 +2,7 @@
   "name": "platform",
   "targets": {
     "start": {"executor": "nx:run-commands", "options": {"command": "sh scripts/start-with-lineage.sh"}},
+    "start-demo": {"executor": "nx:run-commands", "options": {"command": "sh scripts/start-with-lineage.sh --seed-demo"}},
     "stop": {"executor": "nx:run-commands", "options": {"command": "docker compose down"}},
     "test": {"executor": "nx:run-commands", "options": {"command": "uv run pytest"}},
     "lint": {"executor": "nx:run-commands", "options": {"command": "uv run ruff check src scripts tests migrations"}},
