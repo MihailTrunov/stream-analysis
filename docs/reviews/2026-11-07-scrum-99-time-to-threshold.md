@@ -13,3 +13,5 @@ Focused verification: 131 tests passed / 3 PostgreSQL-dependent skips across thr
 Full Python regression: **1,258 passed / 24 PostgreSQL-dependent skips** (519.42 seconds). Separate PostgreSQL integration: **25 passed**. The authorized sequence continues with SCRUM-100.
 
 [Independent Astra high follow-up](2026-11-07-astra-threshold-structural-review.md) found one unresolved P2: equal first-hit candle indices are always marked ambiguous, even when the opening price uniquely establishes the first side. The original same-candle ambiguity description and passing fixture above do not override the Jira/core conditional unknowable-order contract. No implementation fix was made in the review.
+
+Implementation follow-up: the [opening-order correction](2026-11-07-threshold-opening-fix.md) addresses this P2 with exact opening-price checks and corrected ambiguity fixtures. Earlier unresolved wording records the review-time state.

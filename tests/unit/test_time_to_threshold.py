@@ -45,7 +45,7 @@ def threshold_source(
     value = source(**kwargs)
     ranges = ranges or [("104", "96")] * len(value.bars)
     bars = tuple(
-        replace(bar, open=Decimal(hi), high=Decimal(hi), low=Decimal(lo), close=Decimal(lo))
+        replace(bar, open=Decimal("100"), high=Decimal(hi), low=Decimal(lo), close=Decimal(lo))
         for bar, (hi, lo) in zip(value.bars, ranges, strict=True)
     )
     context = dict(value.context)
@@ -437,3 +437,69 @@ def test_zero_magnitude_is_an_explicit_reference_price_touch():
     )
     assert result.status is ResultStatus.AMBIGUOUS
     assert "SAME_BAR_AMBIGUOUS" in result.reason
+
+
+@pytest.mark.parametrize(
+    "basis,direction,pattern,candidate,positive_is_up",
+    [
+        ("EVENT_DIRECTION", "UP", "EMA_RECLAIM_STRUCTURE_CONTINUATION_V1", "DOWN", True),
+        ("EVENT_DIRECTION", "DOWN", "EMA_RECLAIM_STRUCTURE_CONTINUATION_V1", "UP", False),
+        ("EVENT_DIRECTION", "UP", "EMA_STRUCTURE_REVERSAL_V1", "DOWN", False),
+        ("UP_DOWN", "DOWN", "COMPRESSION", "UNKNOWN", True),
+    ],
+)
+@pytest.mark.parametrize("opening", ["110", "115", "90", "85", "100"])
+def test_same_candle_opening_observation_resolves_only_known_order(
+    basis, direction, pattern, candidate, positive_is_up, opening
+):
+    value = threshold_source(
+        ranges=[("120", "85")] + [("104", "96")] * 4,
+        parameters={"basis": basis},
+        direction=direction,
+        pattern=pattern,
+        candidate=candidate,
+    )
+    value = replace(value, bars=(replace(value.bars[0], open=Decimal(opening)), *value.bars[1:]))
+    result = time_to_threshold(value)
+    if opening == "100":
+        assert result.status is ResultStatus.AMBIGUOUS and result.value is None
+    else:
+        up = Decimal(opening) >= Decimal(110)
+        side = (
+            ("UP" if up else "DOWN")
+            if basis == "UP_DOWN"
+            else ("POSITIVE" if up == positive_is_up else "NEGATIVE")
+        )
+        assert result.status is ResultStatus.AVAILABLE and result.value == f"{side}_FIRST"
+    # Knowing the opening order does not invent a finer timestamp than candle close.
+    for kind, expected in (("BARS", 1), ("SECONDS", 60)):
+        for side in ("POSITIVE", "NEGATIVE"):
+            config = BY_KIND[kind].resolve(
+                selection(
+                    kind,
+                    **{item.name: item.value for item in value.configuration.parameters},
+                    side=side,
+                )
+            )
+            out = time_to_threshold(replace(value, configuration=config), kind=kind)
+            assert out.status is ResultStatus.AVAILABLE and out.value == Decimal(expected)
+
+
+def test_exact_atr_opening_boundary_under_low_decimal_precision():
+    value = threshold_source(
+        ranges=[("106", "95")] + [("100.01", "99.99")] * 4,
+        atr="1.7",
+        parameters={
+            "positive_units": "ATR",
+            "positive_threshold": Decimal("3.1"),
+            "negative_threshold": Decimal("4.01"),
+        },
+    )
+    with localcontext() as context:
+        context.prec = 2
+        at = replace(value, bars=(replace(value.bars[0], open=Decimal("105.27")), *value.bars[1:]))
+        assert time_to_threshold(at).value == "POSITIVE_FIRST"
+        inside = replace(
+            value, bars=(replace(value.bars[0], open=Decimal("105.269999")), *value.bars[1:])
+        )
+        assert time_to_threshold(inside).status is ResultStatus.AMBIGUOUS

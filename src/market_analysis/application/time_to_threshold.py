@@ -156,16 +156,25 @@ def time_to_threshold(source: OutcomeInput, *, kind: Kind = "CATEGORY") -> Outco
     if first_positive is None and first_negative is None:
         return OutcomeResult(ResultStatus.AVAILABLE, "NOT_REACHED")
     if first_positive is not None and first_positive == first_negative:
-        return OutcomeResult(
-            ResultStatus.AMBIGUOUS,
-            reason=(
-                "SAME_BAR_AMBIGUOUS: both thresholds first touched in the same OHLC candle; "
-                "intrabar order is unknown"
-            ),
+        assert positive is not None and negative is not None
+        opening_move = exact_difference(source.bars[first_positive].open, reference)
+        if direction == "DOWN":
+            opening_move = opening_move.copy_negate()
+        positive_at_open = opening_move >= positive
+        negative_at_open = opening_move.copy_negate() >= negative
+        if positive_at_open == negative_at_open:
+            return OutcomeResult(
+                ResultStatus.AMBIGUOUS,
+                reason=(
+                    "SAME_BAR_AMBIGUOUS: both thresholds first touched in the same OHLC "
+                    "candle; opening observation does not establish their order"
+                ),
+            )
+        positive_first = positive_at_open
+    else:
+        positive_first = first_positive is not None and (
+            first_negative is None or first_positive < first_negative
         )
-    positive_first = first_positive is not None and (
-        first_negative is None or first_positive < first_negative
-    )
     label = (
         ("UP" if positive_first else "DOWN")
         if parameters["basis"] == "UP_DOWN"
