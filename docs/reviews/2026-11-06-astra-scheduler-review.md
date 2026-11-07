@@ -78,3 +78,5 @@ The database URL above uses synthetic credentials for the owned review container
 The root agent separately ran the complete Python suite on the clean final implementation commit `ee66bc7`, including its last UUID normalization: **1,123 passed, 20 PostgreSQL-dependent skipped**. This closes the earlier full-suite verification gap. PostgreSQL cases listed above were independently exercised by Astra against the disposable PostgreSQL16 service. The commit-range diff check passed.
 
 The prior Decimal/canonical-configuration and SQLite SAVEPOINT findings remain fixed. No additional confirmed issue was found in reviewed token omission, immutable input links/history, migration retention, queue bounds, cancellation or completion paths. Browser checks were not repeated during this independent review; earlier browser evidence remains separate implementation verification. Production outcomes and Runs/results UI remain deferred scope, not findings.
+
+[Independent Astra high follow-up](2026-11-07-astra-outcomes-review.md) reviewed fixes `3a0400d` together with SCRUM-97/98 through `d7f8f71` and verified all three findings above are resolved, with no actionable new findings.

@@ -274,11 +274,13 @@ def test_postgres_queue_executes_every_excursion(isolated_postgres_url, tmp_path
         engine.dispose()
 
 
-def test_excursion_catalog_exposes_fixed_units_and_explicit_atr_instance():
+def test_excursion_catalog_exposes_fixed_units_and_explicit_atr_instance(monkeypatch):
     from fastapi.testclient import TestClient
 
     from market_analysis.api.app import app
 
+    monkeypatch.delenv("STREAM_ANALYSIS_DATABASE_URL", raising=False)
+    monkeypatch.setenv("STREAM_ANALYSIS_SEED_REPLAY_DEMO", "0")
     with TestClient(app) as client:
         response = client.get("/outcome-definitions")
         assert response.status_code == 200

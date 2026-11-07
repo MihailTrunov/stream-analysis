@@ -11,3 +11,5 @@ One shared chunk-size validator now runs before scheduler recovery/claim and bef
 All seven new reproducing cases failed before the fixes and passed afterward. The source-loading regression uses a short real lease with a gated live loader and a shorter heartbeat interval; it does not rewrite heartbeat timestamps. An additional ownership/monotonicity case covers delayed updates and fenced-owner rejection.
 
 Verification: **1,130 Python passed (21 PostgreSQL-dependent skips)**; separate affected scheduler/executor selection **44 passed with PostgreSQL enabled**, including the real orphan heartbeat race and existing queue claim/recovery checks. Ruff, mypy (109 source files) and diff checks passed. No browser implementation changed, and browser checks were not repeated for this backend-only correction. No installed database or provider was used. The authorized sequence continues with SCRUM-97.
+
+[Independent Astra high follow-up](2026-11-07-astra-outcomes-review.md) confirmed all three scheduler findings are resolved. It independently passed the eight scheduler-fix cases, including the PostgreSQL heartbeat race, as part of the combined outcome review.
