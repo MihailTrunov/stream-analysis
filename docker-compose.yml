@@ -29,6 +29,7 @@ services:
     environment:
       STREAM_ANALYSIS_DATABASE_URL: postgresql+psycopg://market_analysis:market_analysis@postgres:5432/market_analysis
       STREAM_ANALYSIS_DATA_ROOT: /data
+      STREAM_ANALYSIS_SEED_REPLAY_DEMO: ${STREAM_ANALYSIS_SEED_REPLAY_DEMO:-1}
       STREAM_ANALYSIS_BUILD_ID: ${STREAM_ANALYSIS_BUILD_ID:-development}
       STREAM_ANALYSIS_GIT_COMMIT: ${STREAM_ANALYSIS_GIT_COMMIT:-}
       STREAM_ANALYSIS_GIT_DIRTY: ${STREAM_ANALYSIS_GIT_DIRTY:-}

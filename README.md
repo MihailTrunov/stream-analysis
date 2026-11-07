@@ -31,6 +31,14 @@ sh scripts/start-with-lineage.sh
 
 If the workspace dependencies are installed, `pnpm start` runs the same lineage-aware startup through Nx. Use `pnpm stop` to stop and remove the Compose containers; it preserves the PostgreSQL volume and local data. The shell command remains available when Node and pnpm are not installed.
 
+To start without creating synthetic walkthrough datasets:
+
+```sh
+STREAM_ANALYSIS_SEED_REPLAY_DEMO=0 sh scripts/start-with-lineage.sh
+```
+
+Add `--env-file app/.env` if that is where provider credentials are configured. The same flag works with `pnpm start`, or can be set to `0` in the env file passed to Compose. This disables demo seeding; it does not delete synthetic revisions already retained in the installation. Existing real/local data remains available. Fetch provider history through chart navigation or the import API when credentials are configured.
+
 Open <http://127.0.0.1:5173> for the chart workspace and its Diagnostics installation check, and <http://127.0.0.1:8000/diagnostics> for the diagnostics API. PostgreSQL stays on the private Compose network, with live database files in a Docker-managed `postgres_data` volume. The `migrate` service runs the version-controlled Alembic migration before the API and workers start; application startup itself does not create or modify tables. Datasets, artifacts, exports and logs live under `./data` by default (override with `STREAM_ANALYSIS_DATA_ROOT`). OANDA credentials are not required for startup; provider imports and live monitoring need them.
 
 For UK/live OANDA import, set `OANDA_KEY`, `OANDA_ACCOUNT`, `OANDA_ENV=live`, and `OANDA_REGION=UK` in a local ignored env file. If your credentials are in `app/.env`, start with `sh scripts/start-with-lineage.sh --env-file app/.env` so Compose passes them to the API and import worker; do not commit that file. A direct `docker compose up --build` still works, but run CodeVersion will explicitly say unavailable unless Git metadata is supplied through the environment. A dirty checkout records the commit *and* dirty flag; it is not represented as the exact clean build. `POST /imports` accepts a `dataset_id`, `instrument_id` (`US30` or `DAX`), and UTC `start`/`end` range. `GET /imports` and `GET /imports/{job_id}` show durable progress. After a worker interruption, the job stays interrupted until `POST /imports/{job_id}/resume`; it resumes from the last committed page, not from zero. A terminal provider/validation failure requires a new request with `fresh_attempt=true`. Only a completed import publishes a selectable immutable revision. The current verified calendar covers analytical dates 2023-09-27 through 2026-11-06; the initial version through 2026-09-28 remains available for pinned history/runs. Later dates require a new verified calendar version.
