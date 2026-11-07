@@ -31,6 +31,7 @@ def test_api_only_creates_demo_revisions_when_explicitly_enabled(
     try:
         with TestClient(app) as client:
             assert client.get("/health").status_code == 200
+            assert client.get("/diagnostics").json()["synthetic_demo_enabled"] == seeded
         with engine.connect() as connection:
             count = connection.scalar(select(func.count()).select_from(dataset_revisions))
             assert (count > 0) == seeded
@@ -70,3 +71,39 @@ def test_start_wrapper_consumes_demo_flag_and_preserves_compose_arguments(tmp_pa
     assert output["args"] == ["compose", "--env-file", "fixture.env", "up", "--build"]
     assert output["demo"] == ("1" if demo else "0")
     assert output["lineage"]
+
+
+@pytest.mark.parametrize(
+    "root_env,app_env,arguments,expected",
+    [
+        (False, True, [], ["--env-file", "app/.env"]),
+        (True, True, [], []),
+        (False, False, [], []),
+        (False, True, ["--env-file", "custom.env"], ["--env-file", "custom.env"]),
+        (False, True, ["--env-file=custom.env"], ["--env-file=custom.env"]),
+    ],
+)
+def test_start_wrapper_selects_local_env_without_overriding_explicit_choice(
+    tmp_path, root_env, app_env, arguments, expected
+):
+    project = tmp_path / "project"
+    scripts = project / "scripts"
+    scripts.mkdir(parents=True)
+    script = scripts / "start-with-lineage.sh"
+    script.write_text(
+        (Path(__file__).resolve().parents[2] / "scripts/start-with-lineage.sh").read_text()
+    )
+    if root_env:
+        (project / ".env").write_text("DUMMY=root\n")
+    if app_env:
+        (project / "app").mkdir()
+        (project / "app/.env").write_text("DUMMY=app\n")
+    stub = tmp_path / "docker"
+    stub.write_text(f"#!{sys.executable}\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
+    stub.chmod(0o755)
+    environment = {**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]}
+    result = subprocess.run(
+        ["sh", str(script), *arguments], env=environment, cwd=project,
+        capture_output=True, text=True, check=True,
+    )
+    assert json.loads(result.stdout) == ["compose", *expected, "up", "--build"]

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { dateTimeInput, displayTime, inputInstant } from './time';
 import { normalizeApiInstants } from './replay';
-import { restoreWorkspace } from './workspace';
+import { newLiveTab, restoreLiveWorkspace, restoreWorkspace, workspaceStorageKey, WORKSPACE_KEY, LIVE_WORKSPACE_KEY } from './workspace';
+import type { ReplaySource } from './replay';
 
 describe('workspace restoration', () => {
   it('restores independent tabs and the focused tab, rejecting invalid or duplicate entries', () => {
@@ -68,5 +69,56 @@ describe('UK display time leaves analytical instants in UTC', () => {
       rationale: { timestamp: '2026-07-05T13:11:00+01:00', value: '42' },
       observations: [{ detection_time: '2026-07-05T12:11:00Z' }],
     });
+  });
+});
+
+
+describe('normal startup workspace', () => {
+  const sources = [
+    { dataset_revision_id: 'offline-replay-us30-v3', non_research_grade: true },
+    { dataset_revision_id: 'provider-us30', non_research_grade: false },
+  ] as ReplaySource[];
+  const tab = { id: 'one', instrument: 'US30', sourceId: 'provider-us30', timezone: 'Europe/London' };
+  const snapshot = (tabs: unknown[], activeId = 'one') => JSON.stringify({ version: 3, tabs, activeId });
+
+  it('starts live and keeps demo storage separate', () => {
+    expect(newLiveTab()).toMatchObject({ mode: 'live', liveConnect: true, sourceId: '' });
+    expect(restoreLiveWorkspace(null, sources).tabs[0]).toMatchObject({ mode: 'live', liveConnect: true });
+    expect(workspaceStorageKey(false)).toBe(LIVE_WORKSPACE_KEY);
+    expect(workspaceStorageKey(true)).toBe(WORKSPACE_KEY);
+    expect(LIVE_WORKSPACE_KEY).not.toBe(WORKSPACE_KEY);
+  });
+
+  it('migrates real history and live tabs while dropping synthetic history', () => {
+    const legacy = snapshot([tab, { ...tab, id: 'demo', sourceId: 'offline-replay-us30-v3' },
+      { ...tab, id: 'live', mode: 'live', liveConnect: false }], 'live');
+    const restored = restoreLiveWorkspace(null, sources, legacy);
+    expect(restored.tabs.map((item) => item.id)).toEqual(['one', 'live']);
+    expect(restored.activeId).toBe('live');
+    expect(restored.tabs[0].mode).toBe('history');
+    expect(restored.tabs[1].liveConnect).toBe(false);
+  });
+
+  it('uses the normal snapshot before the legacy snapshot', () => {
+    const restored = restoreLiveWorkspace(snapshot([tab]), sources,
+      snapshot([{ ...tab, id: 'other', mode: 'live' }], 'other'));
+    expect(restored.activeId).toBe('one');
+  });
+
+  it('opens live for the last instrument when only demo history was saved', () => {
+    const restored = restoreLiveWorkspace(null, sources, snapshot([
+      { ...tab, instrument: 'DAX', chartTimeframe: '5m', sourceId: 'offline-replay-dax-v2' },
+    ]));
+    expect(restored.tabs[0]).toMatchObject({ instrument: 'DAX', chartTimeframe: '5m', mode: 'live', sourceId: '' });
+  });
+
+  it('clears synthetic bootstrap references from a saved live tab', () => {
+    const restored = restoreLiveWorkspace(snapshot([
+      { ...tab, sourceId: 'offline-replay-us30-v3', mode: 'live', liveConnect: true,
+        liveHistorySourceId: 'offline-replay-us30-v3', liveWindowEnd: '2026-01-05T12:00:00Z' },
+    ]), sources);
+    expect(restored.tabs[0]).toMatchObject({ id: 'one', mode: 'live', sourceId: '', liveConnect: true });
+    expect(restored.tabs[0].liveHistorySourceId).toBeUndefined();
+    expect(restored.tabs[0].liveWindowEnd).toBeUndefined();
   });
 });

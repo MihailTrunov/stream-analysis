@@ -112,6 +112,7 @@ class DiagnosticsResponse(BaseModel):
     import_worker_available: bool
     oanda_credentials_configured: bool
     oanda_import_available: bool
+    synthetic_demo_enabled: bool = False
     data_root: str
 
 
@@ -291,6 +292,7 @@ def diagnostics_snapshot() -> DiagnosticsResponse:
             and database_healthy
             and read_worker_heartbeat(data_root, "import")
         ),
+        synthetic_demo_enabled=os.getenv("STREAM_ANALYSIS_SEED_REPLAY_DEMO", "0") == "1",
         data_root=str(data_root),
     )
 

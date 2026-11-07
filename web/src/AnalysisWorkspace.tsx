@@ -4,9 +4,9 @@ import { SessionBoundary } from './SessionBoundary';
 import { ReplaySession } from './ReplaySession';
 import { LiveSession } from './LiveSession';
 import { apiJson, sessionPath, type ReplaySource, type ReplayState, type ReviewPattern } from './replay';
-import { newTab, restoreWorkspace, WORKSPACE_KEY, type AnalysisTab, type Workspace } from './workspace';
+import { newTab, newLiveTab, restoreWorkspace, restoreLiveWorkspace, workspaceStorageKey, WORKSPACE_KEY, type AnalysisTab, type Workspace } from './workspace';
 
-interface Bootstrap { sources: ReplaySource[]; patterns: ReviewPattern[]; sessions: ReplayState[] }
+interface Bootstrap { sources: ReplaySource[]; patterns: ReviewPattern[]; sessions: ReplayState[]; demoMode: boolean }
 
 export function AnalysisWorkspace() {
   const [workspace, setWorkspace] = useState<Workspace>(() => {
@@ -26,21 +26,31 @@ export function AnalysisWorkspace() {
       apiJson<{ patterns: ReviewPattern[] }>('/pattern-definitions', { signal: controller.signal }),
       apiJson<{ active: ReplayState | null }>('/replay/active', { signal: controller.signal }),
       apiJson<{ sessions: ReplayState[] }>('/analysis/active', { signal: controller.signal }),
-    ]).then(async ([catalog, definitions, legacy, analyses]) => {
-      const running = [...analyses.sessions, ...(legacy.active ? [legacy.active] : [])];
+      apiJson<{ synthetic_demo_enabled?: boolean }>('/diagnostics', { signal: controller.signal }),
+    ]).then(async ([catalog, definitions, legacy, analyses, diagnostics]) => {
+      const demoMode = diagnostics.synthetic_demo_enabled === true;
+      const sources = demoMode ? catalog.sources : catalog.sources.filter((source) => !source.non_research_grade);
+      const syntheticIds = new Set(catalog.sources.filter((source) => source.non_research_grade).map((source) => source.dataset_revision_id));
+      const running = [...analyses.sessions, ...(legacy.active ? [legacy.active] : [])]
+        .filter((session) => demoMode || !syntheticIds.has(session.dataset_revision_id));
       const sessions = await Promise.all(running.map(async (item) => {
         validateReplayState(item);
         return item.status === 'running' ? apiJson<ReplayState>(`${sessionPath(item)}/pause`, {
           method: 'POST', signal: controller.signal }) : item;
       }));
       if (controller.signal.aborted) return;
-      setWorkspace((current) => {
-        const missing = sessions.filter((item) => !current.tabs.some((tab) => tab.runId === item.run_id));
-        return missing.length ? { ...current, tabs: [...current.tabs, ...missing.map((item) => ({
-          ...newTab(item.instrument_id), sourceId: item.dataset_revision_id, runId: item.run_id,
-        }))] } : current;
-      });
-      setBootstrap({ sources: catalog.sources, patterns: definitions.patterns, sessions });
+      let raw: string | null = null;
+      let previous: string | null = null;
+      try {
+        raw = localStorage.getItem(workspaceStorageKey(demoMode));
+        previous = localStorage.getItem(WORKSPACE_KEY);
+      } catch { setStorageError(true); }
+      const current = demoMode ? restoreWorkspace(raw) : restoreLiveWorkspace(raw, catalog.sources, previous);
+      const missing = sessions.filter((item) => !current.tabs.some((tab) => tab.runId === item.run_id));
+      setWorkspace(missing.length ? { ...current, tabs: [...current.tabs, ...missing.map((item) => ({
+        ...newTab(item.instrument_id), sourceId: item.dataset_revision_id, runId: item.run_id,
+      }))].slice(0, 20) } : current);
+      setBootstrap({ sources, patterns: definitions.patterns, sessions, demoMode });
     }).catch((reason: unknown) => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -48,9 +58,10 @@ export function AnalysisWorkspace() {
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem(WORKSPACE_KEY, JSON.stringify(workspace)); setStorageError(false); }
+    if (!bootstrap) return;
+    try { localStorage.setItem(workspaceStorageKey(bootstrap.demoMode), JSON.stringify(workspace)); setStorageError(false); }
     catch { setStorageError(true); }
-  }, [workspace]);
+  }, [workspace, bootstrap]);
 
   const updateTab = useCallback((id: string, patch: Partial<AnalysisTab>) => {
     setWorkspace((current) => {
@@ -127,8 +138,8 @@ export function AnalysisWorkspace() {
           disabled={closing || workspace.tabs.length === 1 || (Boolean(tab.runId) && bootstrap?.sessions.some((item) => item.run_id === tab.runId))}
           onClick={() => void closeTab(tab.id)}>×</button>
       </div>)}
-      <button type="button" className="add-tab" aria-label="New analysis tab" disabled={workspace.tabs.length >= 20}
-        onClick={() => { const tab = newTab(); setWorkspace((current) => ({ ...current, tabs: [...current.tabs, tab], activeId: tab.id })); }}>＋</button>
+      <button type="button" className="add-tab" aria-label="New analysis tab" disabled={!bootstrap || workspace.tabs.length >= 20}
+        onClick={() => { const tab = bootstrap?.demoMode ? newTab() : newLiveTab(); setWorkspace((current) => ({ ...current, tabs: [...current.tabs, tab], activeId: tab.id })); }}>＋</button>
       <span className="workspace-local">LOCAL WORKSPACE</span>
     </div>
     {storageError && <p role="status" className="workspace-warning">Tab restoration is unavailable because browser storage could not be saved.</p>}

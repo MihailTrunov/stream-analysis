@@ -30,7 +30,9 @@ export interface AnalysisTab {
   livePreparation?: { plan: NavigationPlan; key: string };
 }
 export interface Workspace { version: 3; tabs: AnalysisTab[]; activeId: string }
+// Keep the original key for the historical demo workspace.
 export const WORKSPACE_KEY = 'stream-analysis.workspace.v1';
+export const LIVE_WORKSPACE_KEY = 'stream-analysis.workspace.live.v1';
 
 export function newTab(instrument = 'US30'): AnalysisTab {
   return { id: crypto.randomUUID(), instrument, sourceId: '', timezone: 'Europe/London' };
@@ -93,4 +95,34 @@ function validStreams(value: unknown): value is AnalysisStream[] {
   return Array.isArray(value) && value.length > 0 && value.length <= 7 && value.every((item) =>
     item && isDetectionConfig(item.config) && item.policies && typeof item.policies === 'object'
     && Object.values(item.policies).every((mode) => ['live', 'manual', 'always'].includes(String(mode))));
+}
+
+
+export function newLiveTab(instrument = 'US30'): AnalysisTab {
+  return { ...newTab(instrument), mode: 'live', liveConnect: true,
+    liveConnectionId: crypto.randomUUID() };
+}
+
+export function workspaceStorageKey(demoMode: boolean): string {
+  return demoMode ? WORKSPACE_KEY : LIVE_WORKSPACE_KEY;
+}
+
+export function restoreLiveWorkspace(raw: string | null, sources: ReplaySource[], legacy: string | null = null): Workspace {
+  const restored = restoreWorkspace(raw ?? legacy);
+  const synthetic = new Set(sources.filter((source) => source.non_research_grade).map((source) => source.dataset_revision_id));
+  const unknownDemo = (id: string) => !sources.some((source) => source.dataset_revision_id === id)
+    && id.startsWith('offline-replay-');
+  const tabs = restored.tabs.filter((tab) => tab.mode === 'live'
+    || Boolean(tab.sourceId) && !synthetic.has(tab.sourceId) && !unknownDemo(tab.sourceId))
+    .map((tab) => {
+      if (tab.mode !== 'live' || !synthetic.has(tab.sourceId) && !unknownDemo(tab.sourceId)) return tab;
+      return { ...tab, sourceId: '', liveHistorySourceId: undefined, liveWindowEnd: undefined,
+        livePreparation: undefined, navigationPlan: undefined, viewport: undefined };
+    });
+  if (tabs.length) return { version: 3, tabs,
+    activeId: tabs.some((tab) => tab.id === restored.activeId) ? restored.activeId : tabs[0].id };
+  const previous = restored.tabs.find((tab) => tab.id === restored.activeId) ?? restored.tabs[0];
+  const first = { ...newLiveTab(previous.instrument), timezone: previous.timezone,
+    chartTimeframe: previous.chartTimeframe };
+  return { version: 3, tabs: [first], activeId: first.id };
 }
