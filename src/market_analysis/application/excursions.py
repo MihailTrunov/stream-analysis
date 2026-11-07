@@ -1,17 +1,20 @@
 """Detection-close price excursions with immutable direction and ATR bases."""
 
 from collections.abc import Mapping
-from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
 from functools import partial
 from typing import Literal, cast
 
-from market_analysis.application.outcome_basis import captured_direction, exact_difference
+from market_analysis.application.outcome_basis import (
+    captured_atr,
+    captured_direction,
+    exact_difference,
+)
 from market_analysis.application.outcome_evaluation import (
     OutcomeAlgorithm,
     OutcomeInput,
     OutcomeResult,
 )
-from market_analysis.config import OutcomeSelection
 from market_analysis.domain.outcomes import (
     OutcomeDefinition,
     OutcomeError,
@@ -46,31 +49,6 @@ DEFINITIONS = tuple(_definition(kind, normalized) for kind in KINDS for normaliz
 _BY_ID = {definition.outcome_id: definition for definition in DEFINITIONS}
 
 
-def _captured_atr(source: OutcomeInput, selection: OutcomeSelection) -> Decimal | None:
-    instance_id = next(
-        item.value for item in selection.parameters if item.name == "atr_instance_id"
-    )
-    components = source.context.get("components")
-    if not isinstance(components, Mapping):
-        return None
-    component = components.get(instance_id)
-    if (
-        not isinstance(component, Mapping)
-        or component.get("component_id") != "atr"
-        or component.get("instance_id") != instance_id
-        or component.get("value_ready") is not True
-    ):
-        return None
-    raw = component.get("atr")
-    if not isinstance(raw, str | Decimal | int) or isinstance(raw, bool):
-        return None
-    try:
-        value = Decimal(raw)
-    except InvalidOperation:
-        return None
-    return value if value.is_finite() and value > 0 else None
-
-
 def excursion(source: OutcomeInput, *, kind: Kind, normalized: bool = False) -> OutcomeResult:
     definition = _BY_ID[f"{kind}_ATR" if normalized else kind]
     if source.configuration is None:
@@ -100,7 +78,10 @@ def excursion(source: OutcomeInput, *, kind: Kind, normalized: bool = False) -> 
     else:
         value = up if kind == "UP_EXCURSION" else down
     if normalized:
-        atr = _captured_atr(source, selection)
+        instance_id = next(
+            item.value for item in selection.parameters if item.name == "atr_instance_id"
+        )
+        atr = captured_atr(source, instance_id)
         if atr is None:
             return OutcomeResult(
                 ResultStatus.NOT_APPLICABLE,

@@ -1,7 +1,7 @@
 """Detection-time direction and exact price arithmetic shared by v1 metrics."""
 
 from collections.abc import Mapping
-from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation, localcontext
 from typing import cast
 
 from market_analysis.application.outcome_evaluation import OutcomeInput
@@ -32,3 +32,25 @@ def exact_difference(left: Decimal, right: Decimal) -> Decimal:
     precision = max(28, max(left.adjusted(), right.adjusted()) - exponent + 2)
     with localcontext(Context(prec=precision, rounding=ROUND_HALF_EVEN)):
         return left - right
+
+
+def captured_atr(source: OutcomeInput, instance_id: object) -> Decimal | None:
+    components = source.context.get("components")
+    if not isinstance(components, Mapping):
+        return None
+    component = components.get(instance_id)
+    if (
+        not isinstance(component, Mapping)
+        or component.get("component_id") != "atr"
+        or component.get("instance_id") != instance_id
+        or component.get("value_ready") is not True
+    ):
+        return None
+    raw = component.get("atr")
+    if not isinstance(raw, str | Decimal | int) or isinstance(raw, bool):
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return None
+    return value if value.is_finite() and value > 0 else None
