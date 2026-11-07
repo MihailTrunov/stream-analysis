@@ -1,5 +1,6 @@
 """Bounded registered outcome work after detector/context/population persistence."""
 
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ from sqlalchemy import Engine, select
 from market_analysis.application.outcome_evaluation import OutcomeAlgorithm, evaluate_outcome
 from market_analysis.application.outcome_registry import OUTCOME_ALGORITHMS, OUTCOME_DEFINITIONS
 from market_analysis.application.replay_catalog import PATTERN_DEFINITIONS
+from market_analysis.application.structural_event_inventory import structural_event_inventory
 from market_analysis.code_version import CodeVersion
 from market_analysis.config import EvaluationPlan, OutcomeSelection
 from market_analysis.domain import BarSequence, TradingCalendar
@@ -39,6 +41,7 @@ class _Task:
     definitions: Mapping[tuple[str, str], OutcomeDefinition]
     selection: OutcomeSelection
     algorithm: OutcomeAlgorithm
+    available_at: datetime
 
 
 def _tasks(engine: Engine, record: EvaluationRunRecord) -> Iterator[_Task]:
@@ -97,6 +100,12 @@ def _tasks(engine: Engine, record: EvaluationRunRecord) -> Iterator[_Task]:
                 item for item in occurrence.detector_events if item.event_id == member["event_id"]
             )
         after = member["emission_order"]
+        available_at = member["available_at"]
+        available_at = (
+            available_at.replace(tzinfo=UTC)
+            if available_at.tzinfo is None
+            else available_at.astimezone(UTC)
+        )
         for selection in plans[member["source_run_id"]].outcomes:
             identity = selection.outcome_id, selection.outcome_version
             if identity not in OUTCOME_ALGORITHMS:
@@ -111,6 +120,7 @@ def _tasks(engine: Engine, record: EvaluationRunRecord) -> Iterator[_Task]:
                 definitions[member["source_run_id"]],
                 selection,
                 OUTCOME_ALGORITHMS[identity],
+                available_at,
             )
 
 
@@ -125,6 +135,7 @@ def evaluate_registered_outcomes(
     revision_provider: Callable[[str], CodeVersion],
     on_commit: Callable[[], None] | None = None,
 ) -> None:
+    inventory = structural_event_inventory(record, sequence, calendar, check_stop=check_stop)
     tasks = _tasks(engine, record)
     while True:
         check_stop()
@@ -134,6 +145,12 @@ def evaluate_registered_outcomes(
         with atomic_transaction(engine) as connection:
             for task in batch:
                 check_stop()
+                candidates = inventory.get(task.event.run_id, ())
+                _, day_end = calendar.trading_day_bounds(task.event.detection_time)
+                first = bisect_left(
+                    candidates, task.available_at, key=lambda item: item.available_at
+                )
+                last = bisect_right(candidates, day_end, key=lambda item: item.available_at)
                 evaluate_outcome(
                     connection,
                     event=task.event,
@@ -144,6 +161,7 @@ def evaluate_registered_outcomes(
                     bar_sequence=sequence,
                     calendar=calendar,
                     algorithm=task.algorithm,
+                    events=candidates[first:last],
                     revision_provider=revision_provider,
                 )
             # Fence the whole observation batch against cancellation/recovery of its owner.

@@ -124,6 +124,20 @@ class OutcomeDefinition(ImmutableModel):
         return digest(payload, "outcome-definition-v1")
 
 
+class CanonicalMarketEvent(ImmutableModel):
+    event_type: Identifier
+    source_instance_id: Identifier
+    category: Identifier
+    evidence_json: StrictStr
+
+    @field_validator("evidence_json")
+    @classmethod
+    def valid_evidence(cls, value: str) -> str:
+        if not isinstance(json.loads(value), dict):
+            raise OutcomeError("canonical market evidence must be a JSON object")
+        return value
+
+
 class OutcomeEventReference(ImmutableModel):
     semantic_ref: str = Field(pattern=r"^[0-9a-f]{64}$")
     kind: Literal["market", "detector"]
@@ -135,6 +149,9 @@ class OutcomeEventReference(ImmutableModel):
     detection_time: datetime
     available_at: datetime
     within_bar_ordinal: int = Field(ge=0, strict=True)
+    canonical_market: CanonicalMarketEvent | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("event_time", "detection_time", "available_at")
     @classmethod
@@ -145,6 +162,8 @@ class OutcomeEventReference(ImmutableModel):
 
     @model_validator(mode="after")
     def validate_time(self) -> Self:
+        if self.canonical_market is not None and self.kind != "market":
+            raise OutcomeError("canonical market evidence requires a market reference")
         if self.event_time > self.detection_time or self.detection_time >= self.available_at:
             raise OutcomeError("outcome event reference times are inconsistent")
         return self

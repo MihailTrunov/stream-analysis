@@ -11,6 +11,12 @@ from market_analysis.application.forward_return import (
     forward_return_percent,
 )
 from market_analysis.application.outcome_evaluation import OutcomeAlgorithm
+from market_analysis.application.structural_outcomes import (
+    ALGORITHMS as STRUCTURAL_ALGORITHMS,
+)
+from market_analysis.application.structural_outcomes import (
+    DEFINITIONS as STRUCTURAL_DEFINITIONS,
+)
 from market_analysis.application.time_to_threshold import (
     ALGORITHMS as THRESHOLD_ALGORITHMS,
 )
@@ -27,6 +33,7 @@ OUTCOME_DEFINITIONS: Mapping[tuple[str, str], OutcomeDefinition] = MappingProxyT
             FORWARD_RETURN_PERCENT,
             *DEFINITIONS,
             *THRESHOLD_DEFINITIONS,
+            *STRUCTURAL_DEFINITIONS,
         )
     }
 )
@@ -34,6 +41,7 @@ OUTCOME_ALGORITHMS: Mapping[tuple[str, str], OutcomeAlgorithm] = MappingProxyTyp
     {
         **ALGORITHMS,
         **THRESHOLD_ALGORITHMS,
+        **STRUCTURAL_ALGORITHMS,
         FORWARD_RETURN.identity: forward_return,
         FORWARD_RETURN_PERCENT.identity: forward_return_percent,
     }
