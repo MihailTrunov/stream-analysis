@@ -288,7 +288,9 @@ class EvaluationPlan(ImmutableModel):
         _ensure_unique(
             "outcome",
             (
-                (item.outcome_id, item.outcome_version)
+                (_canonical_json(_named_selection_payload(item, "outcome"))
+                 if self.schema_version == "evaluation-plan-v2"
+                 else (item.outcome_id, item.outcome_version))
                 for item in self.outcomes
             ),
         )
@@ -311,6 +313,7 @@ class EvaluationPlan(ImmutableModel):
             key=lambda value: (
                 value.outcome_id,
                 value.outcome_version,
+                _canonical_json(_named_selection_payload(value, "outcome")),
             ),
         )
         segments = sorted(

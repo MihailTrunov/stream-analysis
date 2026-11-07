@@ -14,7 +14,12 @@ from sqlalchemy import Connection
 
 from market_analysis.application.context_capture import load_detection_context
 from market_analysis.code_version import CodeVersion, capture_code_version
-from market_analysis.config import DetectionAnalysisConfig, EvaluationPlan, evaluation_plan_hash
+from market_analysis.config import (
+    DetectionAnalysisConfig,
+    EvaluationPlan,
+    OutcomeSelection,
+    evaluation_plan_hash,
+)
 from market_analysis.detection.records import freeze_mapping
 from market_analysis.domain import Bar, BarSequence, Timeframe, TradingCalendar
 from market_analysis.domain.outcomes import (
@@ -28,6 +33,7 @@ from market_analysis.domain.outcomes import (
     ReferenceMode,
     ResultStatus,
     outcome_semantic_key,
+    selection_payload,
 )
 from market_analysis.patterns import PatternDefinition
 from market_analysis.persistence.market_data import load_dataset_lineage, load_dataset_revision
@@ -47,6 +53,7 @@ class OutcomeInput:
     bars: tuple[Bar, ...]
     events: tuple[OutcomeEventReference, ...]
     context: Mapping[str, object]
+    configuration: OutcomeSelection | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +86,7 @@ def evaluate_outcome(
     bar_sequence: BarSequence,
     calendar: TradingCalendar,
     algorithm: OutcomeAlgorithm,
+    selection: OutcomeSelection | None = None,
     events: tuple[OutcomeEventReference, ...] = (),
     revision_provider: Callable[[str], CodeVersion] = capture_code_version,
 ) -> OutcomeObservation:
@@ -107,17 +115,23 @@ def evaluate_outcome(
         raise OutcomeError("outcome plan hash differs from pinned input")
     if definitions.get(definition.identity) != definition:
         raise OutcomeError("unregistered outcome definition")
-    selection = next(
-        (
-            item
-            for item in plan.outcomes
-            if (item.outcome_id, item.outcome_version) == definition.identity
-        ),
-        None,
-    )
-    if selection is None:
+    matches = [
+        item
+        for item in plan.outcomes
+        if (item.outcome_id, item.outcome_version) == definition.identity
+    ]
+    if not matches:
         raise OutcomeError("outcome is not selected by the pinned EvaluationPlan")
+    if selection is None:
+        if len(matches) != 1:
+            raise OutcomeError("an exact outcome configuration is required for multiple selections")
+        selection = matches[0]
     selected = definition.resolve(selection)
+    if not any(
+        selection_payload(definition.resolve(item)) == selection_payload(selected)
+        for item in matches
+    ):
+        raise OutcomeError("outcome configuration is not selected by the pinned EvaluationPlan")
     revision = load_dataset_revision(connection, event.dataset_revision_id)
     stored_lineage = load_dataset_lineage(
         connection,
@@ -232,6 +246,7 @@ def evaluate_outcome(
             tuple(bounded),
             tuple(bounded_events),
             freeze_mapping(snapshot.values),
+            selected,
         )
     )
     if not isinstance(result, OutcomeResult):

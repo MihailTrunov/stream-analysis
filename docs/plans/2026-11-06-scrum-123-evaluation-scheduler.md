@@ -31,3 +31,7 @@ Verify deterministic ordering, copied-input isolation, reorder/remove, cancel/pa
 Routes: `POST /evaluation-jobs`, `GET /evaluation-jobs/{job_id}`, `POST /evaluation-jobs/{job_id}/cancel`, `GET /evaluation-queue`, `POST /evaluation-queue/start`, `POST /evaluation-queue/pause`, and `PUT /evaluation-queue/order` with the complete waiting `job_ids` list. Operational responses omit lease tokens. `GET /evaluation-runs/{evaluation_id}/events` supplies the existing durable evidence view. History is bounded and waiting submissions are capped at 1,000.
 
 The default `python -m market_analysis.application.worker evaluation` consumes this queue. `--once` performs one recovery/claim/execution cycle for offline verification. SQL guards retain job history and prevent changing job/source links; used-data downgrade requires restoring a pre-queue backup. Existing rows are never silently relabelled or re-executed.
+
+## Implemented follow-up: SCRUM-97
+
+The initial detector-only submission restriction above is superseded for registered forward-return algorithms. The worker evaluates requested metrics after source events, captured context and EventSet membership, retaining the analytical lease until required observations are recorded. Unknown/unimplemented algorithms remain rejected. See the [forward-return contract](2026-11-06-scrum-97-forward-return.md).

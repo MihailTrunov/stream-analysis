@@ -18,6 +18,7 @@ from market_analysis.application.event_sets import (
     field_types,
     normalize_event_set,
 )
+from market_analysis.application.outcome_registry import OUTCOME_DEFINITIONS
 from market_analysis.application.replay_catalog import (
     PATTERN_DEFINITIONS,
     detector_bindings,
@@ -62,10 +63,6 @@ from market_analysis.persistence.pattern_instances import (
     pattern_instances,
 )
 from market_analysis.persistence.runs import create_run_snapshot, load_run_snapshot
-
-# Metric implementations are registered by SCRUM-97–100. No placeholder metric
-# is advertised as a real production formula by this contract increment.
-OUTCOME_DEFINITIONS: dict[tuple[str, str], OutcomeDefinition] = {}
 
 
 def create_evaluation_run(

@@ -1,0 +1,15 @@
+# SCRUM-97 implementation verification
+
+This records author verification for the [approved forward-return contract](../plans/2026-11-06-scrum-97-forward-return.md). The independent Astra review is scheduled after SCRUM-98, as requested.
+
+Two production NUMERIC definitions are registered: FORWARD_RETURN in points and FORWARD_RETURN_PERCENT in ratios (0.05 means 5%). Defaults suggest explicit horizons 5/15/30/60; no existing plan silently acquires selections. Optional directional normalization reads only AVAILABLE captured continuation source direction or reversal candidate direction. Unknown/directionless sources produce NOT_APPLICABLE for directional output. Zero reference produces NOT_APPLICABLE only for ratio output. Point subtraction is exact and ratio division uses fixed precision 28/HALF_EVEN.
+
+Evaluation-plan-v2 supports multiple configurations of one definition, with canonical configuration ordering and resolved-duplicate rejection. The v1 uniqueness contract and existing identity fixtures remain intact. Exact configuration selection prevents accidental first-horizon reuse. Each observation keeps source event/context/configuration/plan/dataset/calendar/build lineage and fixed units.
+
+Autonomous execution now runs registered outcomes downstream of persisted source events, X and population membership. Observation batches are bounded, cancellation-aware and fenced by the active analytical owner. The parent remains RUNNING until the completion gate verifies every required observation. Cancellation/failure retains committed source events and observation batches; pending and unavailable results are not invented. Queue submission accepts registered algorithms; the read-only `/outcome-definitions` endpoint advertises implemented contracts. Runs/results UI remains a separate delivery.
+
+Hand-calculated and SQL tests cover positive/negative/zero values, all default horizons, final-close inclusion, captured direction (including reversal), later-state independence, ratio precision, zero reference, short/gapped windows, higher-timeframe source availability, multi-configuration identity, serialization and idempotence. Actual queued execution covers twelve selections and windows beyond the selected detector interval, cancellation and injected outcome failure with retained partial observations. Real PostgreSQL verifies registered execution and typed roundtrips.
+
+Focused verification: 95 passed / 3 PostgreSQL-dependent skips in the framework/configuration/evaluation selection; a separate forward-return run with PostgreSQL enabled passed 32 cases, and the subsequently added failure-prefix case passed separately. All PostgreSQL checks passed: 23 tests. Ruff, mypy (118 source files) and diff checks passed. Full Python regression result is recorded below after completion. No frontend implementation changed; no installed database or provider was used.
+
+Full Python regression: **1,161 passed, 21 PostgreSQL-dependent skips** (412.65 seconds). The additional PostgreSQL roundtrip and injected-failure-prefix cases added after full-suite collection passed in the separate focused checks above.

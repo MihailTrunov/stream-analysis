@@ -95,7 +95,15 @@ def engine():
     engine.dispose()
 
 
-def setup_source(connection, selected, *, future=3, missing=(), timeframe=Timeframe.M1):
+def setup_source(
+    connection,
+    selected,
+    *,
+    future=3,
+    missing=(),
+    timeframe=Timeframe.M1,
+    selection_values=(),
+):
     bars = (
         *chain_series(),
         bar(15, "150", "160", "119"),
@@ -109,8 +117,9 @@ def setup_source(connection, selected, *, future=3, missing=(), timeframe=Timefr
     if timeframe is Timeframe.M1:
         _, store, _, snapshots = drive(
             connection,
-            outcome="fixture",
+            outcome=selected.outcome_id,
             outcome_specs=selected.parameters,
+            outcome_values=selection_values,
         )
         snapshot = snapshots[-1]
         source = next(
@@ -133,7 +142,11 @@ def setup_source(connection, selected, *, future=3, missing=(), timeframe=Timefr
                 config, pattern_definitions=PATTERN_DEFINITIONS
             ),
             context_schema_version="detection-time-context-v1",
-            outcomes=(OutcomeSelection(outcome_id="fixture", outcome_version="1"),),
+            outcomes=(
+                OutcomeSelection(
+                    outcome_id=selected.outcome_id, outcome_version="1", parameters=selection_values
+                ),
+            ),
         )
         create_run_snapshot(
             connection,

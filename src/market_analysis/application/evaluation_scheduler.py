@@ -15,6 +15,7 @@ from market_analysis.application.autonomous_evaluation import (
 )
 from market_analysis.application.evaluation_runs import create_evaluation_run, read_evaluation_run
 from market_analysis.application.logging import research_logger
+from market_analysis.application.outcome_registry import OUTCOME_ALGORITHMS
 from market_analysis.code_version import CodeVersion, capture_code_version
 from market_analysis.config import EvaluationPlan
 from market_analysis.domain.evaluation import EvaluationError, EvaluationRequest, EvaluationStatus
@@ -55,7 +56,11 @@ def enqueue_evaluation(connection: Connection, evaluation_id: str, at: datetime)
     record = read_evaluation_run(connection, evaluation_id)
     if record is None or record.status is not EvaluationStatus.CREATED:
         raise EvaluationError("only a fresh frozen evaluation can be queued")
-    if any(EvaluationPlan.from_canonical_json(s.plan_json).outcomes for s in record.inputs.streams):
+    if any(
+        (item.outcome_id, item.outcome_version) not in OUTCOME_ALGORITHMS
+        for stream in record.inputs.streams
+        for item in EvaluationPlan.from_canonical_json(stream.plan_json).outcomes
+    ):
         raise EvaluationError(
             "queued outcome execution is unavailable until algorithms are registered"
         )

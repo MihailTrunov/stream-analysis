@@ -18,6 +18,7 @@ from market_analysis.api.analysis import router as analysis_router
 from market_analysis.api.evaluation_queue import router as evaluation_queue_router
 from market_analysis.api.evaluations import router as evaluation_router
 from market_analysis.api.live import router as live_router
+from market_analysis.api.outcomes import router as outcome_router
 from market_analysis.application.analysis_sessions import (
     StreamSettings,
     analysis_sessions,
@@ -344,6 +345,7 @@ app.include_router(analysis_router)
 app.include_router(evaluation_router)
 app.include_router(evaluation_queue_router)
 app.include_router(live_router)
+app.include_router(outcome_router)
 
 
 @app.get("/health")

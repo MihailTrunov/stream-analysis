@@ -13,6 +13,7 @@ from sqlalchemy import Connection, Engine, select
 from market_analysis.application.analysis_clock import verify_closed_interval
 from market_analysis.application.analytical_step import process_detector_candle
 from market_analysis.application.evaluation_heartbeat import maintain_evaluation_heartbeat
+from market_analysis.application.evaluation_outcomes import evaluate_registered_outcomes
 from market_analysis.application.evaluation_runs import (
     complete_evaluation_if_ready,
     read_evaluation_run,
@@ -298,6 +299,23 @@ def execute_evaluation(
                 available_at=inputs.selected_end,
                 at=datetime.now(UTC),
             )
+
+        def check_outcome_stop() -> None:
+            if should_stop():
+                raise EvaluationStopped("operator stopped autonomous execution")
+
+        evaluate_registered_outcomes(
+            engine,
+            record,
+            sequence,
+            calendar,
+            token=token,
+            check_stop=check_outcome_stop,
+            revision_provider=revision_provider,
+            on_commit=on_commit,
+        )
+        with atomic_transaction(engine) as connection:
+            check_outcome_stop()
             finish_detection(connection, evaluation_id, token, datetime.now(UTC))
             complete_evaluation_if_ready(connection, evaluation_id, datetime.now(UTC))
         logger.info(

@@ -27,3 +27,5 @@ Browser verification passed **51 cases initially**, and all **5 failed cases pas
 ## Delivery boundary
 
 Current queued execution supports detector-only plans; selecting unavailable downstream execution is rejected explicitly. Production outcome algorithms remain SCRUM-97–100. Workspace Runs and results-tab presentation remain SCRUM-138/139; the new APIs supply their queue operations. Existing standalone nonqueued runs remain supported. Implementation tests use offline immutable datasets and scratch storage; no installed database was migrated and no provider was contacted.
+
+SCRUM-97 follow-up: the original detector-only boundary above now also permits registered forward-return outcomes. See [implementation verification](2026-11-07-scrum-97-forward-return.md); the original scheduler evidence is preserved here.
