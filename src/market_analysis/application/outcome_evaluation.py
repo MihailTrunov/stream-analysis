@@ -13,6 +13,7 @@ from uuid import UUID, uuid5
 from sqlalchemy import Connection
 
 from market_analysis.application.context_capture import load_detection_context
+from market_analysis.application.segment_registry import SEGMENT_PARAMETERS
 from market_analysis.code_version import CodeVersion, capture_code_version
 from market_analysis.config import (
     DetectionAnalysisConfig,
@@ -109,9 +110,10 @@ def evaluate_outcome(
         raise OutcomeError("outcome executor build differs from the pinned source run")
     plan = EvaluationPlan.from_canonical_json(run.evaluation_plan_json)
     specs = {key: item.parameters for key, item in definitions.items()}
-    if plan.segments:
-        raise OutcomeError("segment definitions are not registered for outcome execution")
-    if evaluation_plan_hash(plan, outcome_parameters=specs) != run.evaluation_plan_hash:
+    if (
+        evaluation_plan_hash(plan, outcome_parameters=specs, segment_parameters=SEGMENT_PARAMETERS)
+        != run.evaluation_plan_hash
+    ):
         raise OutcomeError("outcome plan hash differs from pinned input")
     if definitions.get(definition.identity) != definition:
         raise OutcomeError("unregistered outcome definition")

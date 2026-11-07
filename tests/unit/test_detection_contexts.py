@@ -56,6 +56,7 @@ def drive(
     connection, *, outcome=None, through_confirmation=True, schema=CONTEXT_SCHEMA_VERSION,
     outcome_specs=(),
     outcome_values=(),
+    calendar=None,
 ):
     definition = CONTINUATION_V1
     definitions = {definition.identity: definition}
@@ -76,6 +77,8 @@ def drive(
     runtime = DetectorRuntime(
         config, [DetectorBinding(definition, ContinuationDetector(), reentrant=True)],
         run_id=str(run_id), dataset_revision_id="context-fixture",
+        calendar=calendar,
+        pinned_calendar_version=None if calendar is None else calendar.version,
     )
     store = ReplayEventStore(definitions)
     series = (*chain_series(), bar(15, "150", "160", "119")) if (

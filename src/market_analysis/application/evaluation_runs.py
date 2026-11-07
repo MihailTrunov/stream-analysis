@@ -25,6 +25,7 @@ from market_analysis.application.replay_catalog import (
     required_warmup_bars,
     resolve_replay_calendar,
 )
+from market_analysis.application.segment_registry import SEGMENT_DEFINITIONS, SEGMENT_PARAMETERS
 from market_analysis.code_version import CodeVersion, capture_code_version
 from market_analysis.config import (
     DetectionAnalysisConfig,
@@ -130,16 +131,20 @@ def create_evaluation_run(
             raise EvaluationError(
                 "selective context fields are unsupported; v1 captures its full schema"
             )
-        if item.plan.segments or item.plan.export_settings:
-            raise EvaluationError("segment/export execution contracts are not registered yet")
+        if item.plan.export_settings:
+            raise EvaluationError("export execution contracts are not registered yet")
         plan = resolve_evaluation_plan(
             item.plan,
             outcome_parameters={
                 key: value.parameters for key, value in outcome_definitions.items()
             },
+            segment_parameters=SEGMENT_PARAMETERS,
         )
         for selected in plan.outcomes:
             outcome_definitions[(selected.outcome_id, selected.outcome_version)].resolve(selected)
+        for selected_segment in plan.segments:
+            identity = selected_segment.segment_id, selected_segment.segment_version
+            SEGMENT_DEFINITIONS[identity].resolve(selected_segment)
         plan = normalize_event_set(plan, field_types([config], PATTERN_DEFINITIONS))
         normalized.append((config, plan))
     aggregators = {
@@ -198,6 +203,7 @@ def create_evaluation_run(
                     outcome_parameters={
                         key: value.parameters for key, value in outcome_definitions.items()
                     },
+                    segment_parameters=SEGMENT_PARAMETERS,
                     revision_provider=lambda _: code,
                 )
                 runtime = DetectorRuntime(
@@ -228,6 +234,15 @@ def create_evaluation_run(
                                 (item.outcome_id, item.outcome_version)
                             ].model_dump_json()
                             for item in copied_plan.outcomes
+                        ),
+                        segment_definitions=tuple(
+                            SEGMENT_DEFINITIONS[
+                                (item.segment_id, item.segment_version)
+                            ].model_dump_json()
+                            for item in sorted(
+                                copied_plan.segments,
+                                key=lambda item: (item.segment_id, item.segment_version),
+                            )
                         ),
                         warmup_required=required_warmup_bars(copied),
                         warmup_available=warmup[copied.timeframe],

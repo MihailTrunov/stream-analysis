@@ -25,6 +25,7 @@ from market_analysis.application.replay_catalog import (
     resolve_replay_calendar,
 )
 from market_analysis.application.replay_event_store import ReplayEventStore
+from market_analysis.application.segmentation import pinned_segments
 from market_analysis.code_version import CodeVersion, capture_code_version
 from market_analysis.config import DetectionAnalysisConfig, EvaluationPlan
 from market_analysis.detection import DetectorRuntime, DetectorRuntimeResult
@@ -148,6 +149,7 @@ def execute_evaluation(
             or code.revision != inputs.code_revision
         ):
             raise EvaluationError("executor build differs from the pinned clean evaluation build")
+        pinned_segments(record, for_execution=True)
         with engine.connect() as connection:
             sequence = store.load_sequence(
                 connection, inputs.dataset_revision_id, inputs.instrument_id, Timeframe.M1

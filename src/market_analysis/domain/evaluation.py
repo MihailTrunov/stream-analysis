@@ -78,6 +78,7 @@ class EvaluationStreamInput(ImmutableModel):
     plan_json: str
     evaluation_plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     outcome_definitions: tuple[str, ...] = ()
+    segment_definitions: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
     warmup_required: int = Field(ge=0, strict=True)
     warmup_available: int = Field(ge=0, strict=True)
     expected_bars: int = Field(ge=1, strict=True)

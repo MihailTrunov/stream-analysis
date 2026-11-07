@@ -75,3 +75,15 @@ def events(
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.get("/{evaluation_id}/segments")
+def segments(evaluation_id: UUID, connection: Annotated[Connection, Depends(database)]) -> Any:
+    from market_analysis.application.segmentation import evaluation_segments
+
+    try:
+        return evaluation_segments(connection, str(evaluation_id))
+    except EvaluationNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
