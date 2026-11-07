@@ -1,0 +1,13 @@
+# SCRUM-98 implementation verification
+
+Author verification for the [excursion contract](../plans/2026-11-07-scrum-98-excursions.md). Independent Astra high review follows this ticket together with the scheduler fixes and SCRUM-97.
+
+Eight NUMERIC v1 definitions are now registered: MFE, MAE, UP_EXCURSION and DOWN_EXCURSION in points, with a separate `_ATR` counterpart for each in ATR multiples. Every observation uses the detection close and the full bounded canonical-M1 future window. Detection-bar extrema are excluded; the final required future candle is included. MFE/MAE use captured direction; raw up/down values remain meaningful for directionless sources. The ticket's exact signed formulas are preserved without flooring at zero.
+
+Normalized configuration explicitly selects an ATR instance (default `atr`). Only that source snapshot's ready, finite, positive ATR is accepted; no later component or alternate instance supplies a fallback. Missing or invalid ATR makes the normalized observation NOT_APPLICABLE without invalidating its independently requested raw counterpart. Division uses fixed precision 28/HALF_EVEN. Forward returns and excursions share the original captured-direction contract and exact price subtraction.
+
+The existing registered downstream path supplies batch ownership/cancellation, immutable observation lineage, content hashes, idempotence and completion checks. Definition fingerprints pin units, normalization semantics and parameters. The read-only catalog lists all eight contracts. No schema migration or detector changes were required; results UI remains separate work.
+
+Verification: **80 focused tests passed with PostgreSQL enabled**, covering excursions and forward returns together. Nine additional signed-baseline/catalog cases passed separately (five newly added cases, four repeated). Checks include hand-calculated bullish/bearish/flat/directionless values, final-bar extrema, exclusion of source-bar timestamps, reversal candidate direction, captured ATR and selected-instance behavior, later-state mutation negatives, missing/invalid ATR, short/gapped windows, SQL roundtrip/idempotence and actual queued execution on SQLite and isolated PostgreSQL. Ruff, mypy (120 source files), formatting for the changed outcome files, and diff checks passed.
+
+The initial test run exposed two new test-fixture mistakes (three future candles for a five-candle window, and units checked on observations rather than their pinned definitions); corrected fixtures passed. No installed database or provider was used. Full final regression and independent review results will be recorded after both tickets are committed.

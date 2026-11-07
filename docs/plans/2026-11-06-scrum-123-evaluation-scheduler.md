@@ -35,3 +35,5 @@ The default `python -m market_analysis.application.worker evaluation` consumes t
 ## Implemented follow-up: SCRUM-97
 
 The initial detector-only submission restriction above is superseded for registered forward-return algorithms. The worker evaluates requested metrics after source events, captured context and EventSet membership, retaining the analytical lease until required observations are recorded. Unknown/unimplemented algorithms remain rejected. See the [forward-return contract](2026-11-06-scrum-97-forward-return.md).
+
+SCRUM-98 extends the same registered downstream path to MFE/MAE and raw up/down excursions, with separate captured-ATR normalization. See the [excursion contract](2026-11-07-scrum-98-excursions.md).

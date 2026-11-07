@@ -315,9 +315,8 @@ def test_registered_catalog_is_available_without_running_an_analysis(storage):
         response = client.get("/outcome-definitions")
         assert response.status_code == 200
         assert response.json()["default_horizons"] == [5, 15, 30, 60]
-        assert {item["outcome_id"] for item in response.json()["definitions"]} == {
-            "FORWARD_RETURN",
-            "FORWARD_RETURN_PERCENT",
+        assert {"FORWARD_RETURN", "FORWARD_RETURN_PERCENT"} <= {
+            item["outcome_id"] for item in response.json()["definitions"]
         }
 
 
