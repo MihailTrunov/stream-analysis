@@ -19,7 +19,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
     // Give this fake feed one deterministic bootstrap, regardless of datasets
     // created by earlier real API tests in the shared smoke server.
     data.sources = data.sources.filter((source: Record<string, unknown>) => source.dataset_revision_id === 'offline-replay-us30-v3')
-      .map((source: Record<string, unknown>) => ({ ...source, non_research_grade: false }));
+      .map((source: Record<string, unknown>) => ({ ...source, non_research_grade: false, range_start: stamp(0), range_end: stamp(count) }));
     if (publishedSource) data.sources.push(publishedSource);
     await route.fulfill({ json: data });
   });
@@ -32,6 +32,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
       range_start: stamp(0), range_end: stamp(12), bar_count: 12, non_research_grade: false };
     await route.fulfill({ json: publishedSource });
   });
+  await page.route('**/api/history/navigation', route => route.fulfill({ status: 422, json: { detail: 'Reached the beginning of this fixture feed.' } }));
   function state(id: string) {
     const request = connections.get(id)!;
     return { subscription_id: id, run_id: `session-${id}`, input_id: `live-input-${id}`,

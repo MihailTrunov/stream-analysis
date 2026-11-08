@@ -39,7 +39,7 @@ export function PatternGroups({ events, start, end, timeframe, loaded, selected,
     <label>State <select aria-label="Timeline state" value={state} onChange={(event) => setState(event.target.value)}><option value="">All states</option>
       {[...new Set(events.map((event) => event.to_state))].map((value) => <option key={value}>{value}</option>)}
     </select></label>
-    {!loaded && <p role="status">Detections have not been calculated for this view.</p>}
+    {!loaded && <p role="status">{occurrences.length ? 'Some periods in this view have not been calculated. Known detections are retained.' : 'Detections have not been calculated for this view.'}</p>}
     {(['Developing', 'Active', 'Completed'] as const).map((group) => <section key={group} aria-label={`${group} patterns`}>
       <h3>{group} <span>{occurrences.filter((item) => item.group === group).length}</span></h3>
       <ol>{occurrences.filter((item) => item.group === group).map(({ latest: event, transitions }) => <li key={`${event.run_id}:${event.instance_id}`}>

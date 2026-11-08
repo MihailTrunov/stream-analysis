@@ -97,3 +97,13 @@ describe('TradingView chart model', () => {
     expect(markup).toContain('www.tradingview.com');
   });
 });
+
+
+it('shows session transitions without implying the first loaded candle is a session boundary', () => {
+  const provider = { ...initial, components: { session: { trading_date: '2026-01-05', session_name: 'provider' } } };
+  const transition = { ...provider, timestamp: second, components: { session: { trading_date: '2026-01-06', session_name: 'provider' } } };
+  const firstOnly = buildChartModel(bars, [provider], [], third, visibility, null, null);
+  expect(firstOnly.markers.filter((marker) => String(marker.id).startsWith('session:'))).toHaveLength(0);
+  const model = buildChartModel(bars, [provider, transition], [], third, visibility, null, null);
+  expect(model.markers.filter((marker) => String(marker.id).startsWith('session:')).map((marker) => marker.text)).toEqual(['Trading session']);
+});

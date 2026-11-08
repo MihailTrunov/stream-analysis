@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { mergeObservations, useAnalysisEvidence } from './analysisEvidence';
 import { AnalysisSettings } from './AnalysisSettings';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventInspector } from './EventInspector';
 import { PanelTabs } from './PanelTabs';
 import { PatternGroups, projectOccurrences } from './PatternGroups';
+import { usePriceBuffer } from './priceBuffer';
 import { candleAt, localWindowEnd } from './historyNavigation';
-import { TIMEFRAMES, type ReplayBar, type ReplayDetectorEvent, type ReplaySource, type ReviewPattern, type Timeframe } from './replay';
+import { TIMEFRAMES, type ReplayBar, type ReplayObservation, type ReplayDetectorEvent, type ReplaySource, type ReviewPattern, type Timeframe } from './replay';
 import { dateTimeInput, displayTime, inputInstant } from './time';
 import { useAnalysisSettings } from './useAnalysisSettings';
 import { useLiveAnalysis } from './useLiveAnalysis';
@@ -19,6 +21,9 @@ interface Props {
   onTabChange: (id: string, patch: Partial<AnalysisTab>) => void;
   onSourceAdded: (source: ReplaySource) => void;
 }
+const emptyObservations: ReplayObservation[] = [];
+const emptyEvents: ReplayDetectorEvent[] = [];
+const emptyPrices: ReplayBar[] = [];
 const layers: OverlayVisibility = { ema: true, trend: true, swing: true, range: true, session: true };
 export function LiveSession({ tab, active, sources, patterns, onTabChange, onSourceAdded }: Props) {
   const providerSources = sources.filter((source) => !source.non_research_grade && source.instrument_id === tab.instrument);
@@ -38,6 +43,9 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   const [logicalRange, setLogicalRange] = useState<{ from: number; to: number } | null>(null);
   const [external, setExternal] = useState<{ source: ReplaySource; bars: ReplayBar[]; timeframe: Timeframe; end: string } | null>(null);
   const viewport = useRef(tab.viewport);
+  const extending = useRef(false);
+  const [bufferVersion, setBufferVersion] = useState(0);
+  const [historyNote, setHistoryNote] = useState<string | null>(null);
   const earlierRequest = useRef<string | null>(null);
   const save = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settings = useAnalysisSettings(tab.instrument, tab.streams, tab.appliedStreams,
@@ -61,18 +69,21 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   }, [active, sources, tab.liveHistorySourceId, timeframe, end, external]);
   const view = live.view;
   const externalBars = external?.timeframe === timeframe ? external.bars : [];
-  const completed = external ? externalBars : view?.bars ?? [];
+  const completed = usePriceBuffer(`${connectionId}:${timeframe}:${bufferVersion}`, external ? externalBars : view?.bars ?? emptyPrices, Boolean(end), viewport.current);
   const navigation = useHistoryNavigation(active, tab.navigationPlan, {
     onPersist: (navigationPlan) => onTabChange(tab.id, { navigationPlan }),
     onError: (message) => { earlierRequest.current = null; setError(message); },
     onReady: (source, historyBars, target, windowEnd) => {
+      setError(null);
       onSourceAdded(source); setExternal({ source, bars: historyBars, timeframe, end: windowEnd }); setEnd(windowEnd);
       onTabChange(tab.id, { liveHistorySourceId: source.dataset_revision_id });
-      setFocus(target); setFocusVersion((value) => value + 1); setLogicalRange(null);
+      if (!extending.current) { setBufferVersion((value) => value + 1); setFocus(target); setFocusVersion((value) => value + 1); setLogicalRange(null); }
+      extending.current = false;
     },
   });
-  const bars = useMemo(() => external ? (external.timeframe === timeframe ? external.bars : []) : view?.live.forming && !end && view.live.status === 'connected'
-    ? [...view.bars, view.live.forming].slice(-500) : view?.bars ?? [], [view, end, external, timeframe]);
+  const bars = useMemo(() => view?.live.forming && !end && !external && view.live.status === 'connected'
+    && (!completed.length || view.live.forming.timestamp > completed.at(-1)!.timestamp)
+    ? [...completed, view.live.forming] : completed, [view, end, external, completed]);
   // Logical indices can stay unchanged while the bounded live window rolls.
   // Derive timestamps from the current bars on every snapshot.
   const left = logicalRange ? Math.max(0, Math.min(bars.length - 1, Math.floor(logicalRange.from))) : 0;
@@ -82,12 +93,14 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
     ? new Date(Date.parse(bars[right].timestamp) + 60_000).toISOString() : view?.view_end ?? '');
   const historical = useLiveHistory(connectionId, settings.applied, timeframe, start, finish,
     active && live.connected, Boolean(end), setError, external?.source);
+  const evidence = useAnalysisEvidence(`${connectionId}:${timeframe}`, view?.observations ?? emptyObservations, view?.events ?? emptyEvents, completed);
+  const observations = useMemo(() => mergeObservations(evidence.observations, historical.observations), [evidence.observations, historical.observations]);
   const events = useMemo(() => {
     const calculated = new Set(historical.calculatedKeys);
-    return [...(external ? [] : view?.events ?? []).filter((event) => !calculated.has(`${event.timeframe}:${event.pattern_id}`)),
+    return [...evidence.events.filter((event) => !calculated.has(`${event.timeframe}:${event.pattern_id}`)),
       ...historical.events].sort((a, b) => Date.parse(a.available_at ?? a.detection_time) - Date.parse(b.available_at ?? b.detection_time))
       .map((event, emission_order) => ({ ...event, emission_order }));
-  }, [view, external, historical.events, historical.calculatedKeys]);
+  }, [evidence.events, historical.events, historical.calculatedKeys]);
   const selectedOrder = events.find((event) => event.event_id === selectedId)?.emission_order ?? null;
   const visibleEvents = useMemo(() => events.filter((event) => (event.timeframe === timeframe || event.emission_order === selectedOrder)
     && Date.parse(event.available_at ?? event.detection_time) <= Date.parse(finish)), [events, timeframe, selectedOrder, finish]);
@@ -128,6 +141,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
     finally { setReinitializing(false); }
   }
   function moveTo() {
+    extending.current = false;
     try {
       if (!live.state || !selected) return;
       const target = inputInstant(date, tab.timezone);
@@ -143,6 +157,8 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
     } catch (reason) { setError(String(reason)); }
   }
   function latest() {
+    setBufferVersion((value) => value + 1);
+    setHistoryNote(null); extending.current = false;
     if (save.current) clearTimeout(save.current);
     earlierRequest.current = null; navigation.cancel(); setExternal(null); viewport.current = undefined; setEnd(undefined); setFocus(null); setLogicalRange(null);
     setFocusVersion((value) => value + 1); onTabChange(tab.id, { viewport: undefined, liveHistorySourceId: undefined });
@@ -153,10 +169,11 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
     if (earlierRequest.current === key) return;
     earlierRequest.current = key;
     if (!external && Date.parse(completed[0].timestamp) > Date.parse(live.state.history_start)) {
-      setFocus(completed[0].timestamp); setFocusVersion((value) => value + 1);
+      setHistoryNote('Loading older candles…');
       setEnd(completed[Math.min(90, completed.length - 1)].available_at ?? completed[0].timestamp);
       return;
     }
+    extending.current = true; setHistoryNote(null);
     const target = new Date(Date.parse(completed[0].timestamp) - 60_000).toISOString();
     void navigation.begin({ source: external?.source ?? selected, target, timeframe,
       streams: settings.applied ?? [], intent: 'move' });
@@ -184,12 +201,14 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
         }}>{TIMEFRAMES.map((tf) => <option key={tf}>{tf}</option>)}</select>
         <span className="source-badge">Live provider</span>
       </div>
-      <CandlestickChart key={timeframe} bars={bars} observations={external ? [] : view?.observations ?? []}
+      <CandlestickChart key={timeframe} bars={bars} observations={observations}
         events={visibleEvents} selectedEventOrder={selectedOrder}
         onSelectEvent={(order) => { const event = events.find((item) => item.emission_order === order); if (event) select(event); }}
         cursorTime={bars.at(-1)?.timestamp ?? null} focusTime={focus ? candleAt(completed, focus)?.timestamp ?? focus : null} focusVersion={focusVersion}
         timezone={tab.timezone} overlays={layers} onReturnLatest={latest} canReturnLatest={Boolean(end)}
-        onLoadEarlier={earlier} earlierDisabled={navigation.busy || !completed.length}
+        onLoadEarlier={earlier} earlierDisabled={navigation.busy || !completed.length || Boolean(end && !external && !view)}
+        autoLoadEarlier={!navigation.failed && !error}
+        historyStatus={navigation.message ?? (navigation.failed ? error : historyNote && !view ? historyNote : null)}
         onNavigate={() => { if (!end && live.state) setEnd(live.state.available_at); }}
         initialRange={viewport.current?.origin === bars[0]?.timestamp ? viewport.current : null}
         onRangeChange={(range) => {
@@ -214,7 +233,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
         {live.state?.detail && <p role="status">{live.state.detail}</p>}
         {live.state && <p role="status">Confirmed through: {displayTime(live.state.available_at, tab.timezone)}</p>}
         {live.stage && <p role="status">{live.stage}</p>}
-        {navigation.message && <p role="status">{navigation.message}</p>}
+        {navigation.failed && <button type="button" onClick={() => { setError(null); void navigation.retry(); }}>Retry history loading</button>}
         <label className="input-label">Go to date & time<input aria-label="Chart date and time" type="datetime-local" value={date} onChange={(event) => setDate(event.target.value)} /></label>
         <button type="button" onClick={moveTo} disabled={!live.state || !date}>Move to</button>
         {focus && <p className="focus-notice">Viewing {displayTime(focus, tab.timezone)}</p>}
@@ -227,7 +246,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
             ? `Historical calculations: ${historical.coverage}. Live detections are shown as of the viewed period.`
             : 'Live policies evaluate completed candles. Manual detectors require Calculate current view.'}</p>
           <PatternGroups events={events} start={start} end={finish} timeframe={timeframe}
-          loaded={(!external && view?.coverage === 'calculated') || historical.loaded || historical.status === 'partial'} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
+          loaded={(view?.coverage === 'calculated' && Boolean(live.state && Date.parse(start) >= Date.parse(live.state.history_start))) || historical.loaded || historical.status === 'partial'} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
           onInspect={(event, pin) => { setDetails(event); setPinned(pin); }} onDismiss={() => { if (!pinned) setDetails(null); }} /></>
           : <AnalysisSettings streams={settings.drafts} patterns={patterns} onAddDetector={settings.addDetector}
             disabled={live.connecting || reinitializing || settings.busy} dirty={settings.dirty} onChange={settings.setDrafts}

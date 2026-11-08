@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { mergeObservations } from './analysisEvidence';
 import { containsEnd, hasInitializedResult, coversWindow, type StreamCoverage } from './analysisCoverage';
-import { apiJson, type AnalysisStream, type ReplayDetectorEvent, type ReplaySource, type ReplayState, type ReplayViewResponse, type Timeframe } from './replay';
+import { apiJson, type AnalysisStream, type ReplayDetectorEvent, type ReplayObservation, type ReplaySource, type ReplayState, type ReplayViewResponse, type Timeframe } from './replay';
 
 export function useHistoricalAnalysis(source: ReplaySource | undefined, streams: AnalysisStream[] | null,
   timeframe: Timeframe, start: string | null, end: string | null, automatic: boolean, onError: (message: string) => void) {
-  const [results, setResults] = useState<Record<string, { events: ReplayDetectorEvent[]; bounds: StreamCoverage; identity: string }>>({});
+  const [results, setResults] = useState<Record<string, { events: ReplayDetectorEvent[]; observations: ReplayObservation[]; bounds: StreamCoverage; identity: string }>>({});
   const currentResults = useRef(results);
   currentResults.current = results;
   const [busy, setBusy] = useState(false);
@@ -58,7 +59,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
       }
       const entries = keys.flatMap((key) => {
         const bounds = result.stream_coverage?.find((item) => `${item.timeframe}:${item.pattern_id}` === key);
-        return bounds ? [[key, { events: result.events.filter((event) => `${event.timeframe}:${event.pattern_id}` === key), bounds, identity: requestIdentity }]] : [];
+        return bounds ? [[key, { events: result.events.filter((event) => `${event.timeframe}:${event.pattern_id}` === key), observations: result.observations ?? [], bounds, identity: requestIdentity }]] : [];
       });
       setResults((current) => ({ ...current, ...Object.fromEntries(entries) }));
     } catch (error) { onError(String(error)); if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); }
@@ -83,7 +84,9 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   const loaded = expected.length > 0 && expected.every((key) => full.some(([coveredKey]) => key === coveredKey));
   const partial = covered.some(([, value]) => end && hasInitializedResult(value.bounds, end));
   const status = loaded ? 'calculated' : partial ? 'partial' : covered.length ? 'initialization_unavailable' : 'not_requested';
-    return { events, loaded, status, calculatedKeys: covered.filter(([, value]) => end && hasInitializedResult(value.bounds, end)).map(([key]) => key), coverage: `${full.length} of ${expected.length} detector streams calculated` };
-  }, [results, identity, start, end, streams]);
+    const observations = covered.filter(([key, value]) => key.startsWith(`${timeframe}:`) && end && hasInitializedResult(value.bounds, end))
+      .reduce((frames, [, value]) => mergeObservations(frames, value.observations), [] as ReplayObservation[]);
+    return { events, observations, loaded, status, calculatedKeys: covered.filter(([, value]) => end && hasInitializedResult(value.bounds, end)).map(([key]) => key), coverage: `${full.length} of ${expected.length} detector streams calculated` };
+  }, [results, identity, start, end, streams, timeframe]);
   return { ...projection, busy, calculate };
 }

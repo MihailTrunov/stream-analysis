@@ -104,7 +104,7 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
     await apiJson(`/live/subscriptions/${id}`, { method: 'DELETE' });
   }
   return { state: state?.subscription_id === id ? state : null,
-    view: connected && (readKey === identity || end === undefined || Boolean(end && view?.view_end
+    view: connected && (readKey === identity || end === undefined && view?.view_end === view?.live.available_at || Boolean(end && view?.view_end
       && Date.parse(view.view_end) === Date.parse(end))) && view?.timeframe === timeframe
       && view.live.subscription_id === id ? view : null,
     connecting, connected, disconnect, stage };

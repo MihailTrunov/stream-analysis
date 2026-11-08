@@ -19,7 +19,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
     // Give this fake feed one deterministic bootstrap, regardless of datasets
     // created by earlier real API tests in the shared smoke server.
     data.sources = data.sources.filter((source: Record<string, unknown>) => source.dataset_revision_id === 'offline-replay-us30-v3')
-      .map((source: Record<string, unknown>) => ({ ...source, non_research_grade: false }));
+      .map((source: Record<string, unknown>) => ({ ...source, non_research_grade: false, range_start: stamp(0), range_end: stamp(count) }));
     if (publishedSource) data.sources.push(publishedSource);
     await route.fulfill({ json: data });
   });
@@ -32,6 +32,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
       range_start: stamp(0), range_end: stamp(12), bar_count: 12, non_research_grade: false };
     await route.fulfill({ json: publishedSource });
   });
+  await page.route('**/api/history/navigation', route => route.fulfill({ status: 422, json: { detail: 'Reached the beginning of this fixture feed.' } }));
   function state(id: string) {
     const request = connections.get(id)!;
     return { subscription_id: id, run_id: `session-${id}`, input_id: `live-input-${id}`,
@@ -99,7 +100,7 @@ test('full-window calculate submits historical snapshot on first click', async (
   page.on('request', request => { if (request.url().includes('/live/analysis/') && request.url().endsWith('/history')) snapshots.push(request.postDataJSON()); });
   await page.goto('/');
   await page.getByRole('button', { name: 'Live', exact: true }).click();
-  await expect(page.getByRole('img', { name: /500 visible bars/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /501 visible bars/ })).toBeVisible();
   await page.waitForTimeout(400);
   await page.getByRole('tab', { name: 'Detector settings', exact: true }).click();
   await page.getByRole('button', { name: 'Calculate RANGE_COMPRESSION_V1 for current view · 1m' }).click();
@@ -126,7 +127,7 @@ test('review older history keeps its cutoff and reloads the selected timeframe',
   await page.route('**/api/analysis/review-history/stop', route => route.fulfill({json:{}}));
   await page.goto('/');
   await page.getByRole('button',{name:'Live',exact:true}).click();
-  await expect(page.getByRole('img',{name:/500 visible bars/})).toBeVisible();
+  await expect(page.getByRole('img',{name:/501 visible bars/})).toBeVisible();
   await page.getByLabel('Chart date and time').fill('2026-01-05T08:10');
   await page.getByRole('button',{name:'Move to',exact:true}).click();
   await expect.poll(()=>waiting).toBe(true);

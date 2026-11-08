@@ -58,7 +58,7 @@ test('Move to loads an unloaded retained window and restores it without creating
   await expect(chart).toHaveAccessibleName(/86 visible bars/);
 });
 
-test('earlier-history control replaces a bounded window and stops at the synthetic limit', async ({ page }) => {
+test('earlier-history control extends the price buffer and stops at the synthetic limit', async ({ page }) => {
   await page.route('**/api/replay/sources/offline-replay-us30-v3/bars?*', async (route) => {
     const response = await route.fetch(); const data = await response.json();
     if (Date.parse(new URL(route.request().url()).searchParams.get('end')!) === Date.parse('2026-01-05T14:00:00Z')) data.bars = data.bars.slice(-100);
@@ -67,7 +67,7 @@ test('earlier-history control replaces a bounded window and stops at the synthet
   await page.goto('/');
   await expect(page.getByRole('img', { name: /100 visible bars/ })).toBeVisible();
   await page.getByRole('button', { name: 'Load earlier candles', exact: true }).click();
-  await expect(page.getByRole('img', { name: /225 visible bars/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /300 visible bars/ })).toBeVisible();
   await page.getByRole('button', { name: 'Load earlier candles', exact: true }).click();
   await expect(page.getByText('Reached the beginning of this synthetic dataset.')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -173,7 +173,7 @@ test('panning to the left edge automatically requests an earlier bounded window'
   await page.mouse.down();
   await page.mouse.move(box.x + 800, box.y + box.height / 2, { steps: 12 });
   await page.mouse.up();
-  await expect(page.getByRole('img', { name: /225 visible bars/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /300 visible bars/ })).toBeVisible();
   expect((await (await page.request.get('/api/analysis/active')).json()).sessions).toHaveLength(0);
 });
 

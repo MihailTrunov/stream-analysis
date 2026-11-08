@@ -19,7 +19,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
     // Give this fake feed one deterministic bootstrap, regardless of datasets
     // created by earlier real API tests in the shared smoke server.
     data.sources = data.sources.filter((source: Record<string, unknown>) => source.dataset_revision_id === 'offline-replay-us30-v3')
-      .map((source: Record<string, unknown>) => ({ ...source, non_research_grade: false }));
+      .map((source: Record<string, unknown>) => ({ ...source, non_research_grade: false, range_start: stamp(0), range_end: stamp(count) }));
     if (publishedSource) data.sources.push(publishedSource);
     await route.fulfill({ json: data });
   });
@@ -32,6 +32,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
       range_start: stamp(0), range_end: stamp(12), bar_count: 12, non_research_grade: false };
     await route.fulfill({ json: publishedSource });
   });
+  await page.route('**/api/history/navigation', route => route.fulfill({ status: 422, json: { detail: 'Reached the beginning of this fixture feed.' } }));
   function state(id: string) {
     const request = connections.get(id)!;
     return { subscription_id: id, run_id: `session-${id}`, input_id: `live-input-${id}`,
@@ -96,15 +97,17 @@ test('rolling a full live window exposes the newest detections', async ({ page }
   const live = await fakeLive(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Live', exact: true }).click();
-  await expect(page.getByRole('img', { name: /500 visible bars/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /501 visible bars/ })).toBeVisible();
   await page.waitForTimeout(400);
   const viewport = () => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport);
+  await expect.poll(async () => Boolean((await viewport())?.to)).toBe(true);
   const before = await viewport();
   for (let i = 0; i < 5; i++) live.advance();
   await expect(page.getByText(/Confirmed through:.*20:05/)).toBeVisible();
   await page.waitForTimeout(400);
   const after = await viewport();
-  expect(after.to).toBeCloseTo(before.to, 1);
+  expect(after.to - after.from).toBeCloseTo(before.to - before.from, 1);
+  expect(after.to).toBeGreaterThan(before.to);
   await expect(page.getByTestId('timeline-event')).toContainText('20:05');
 });
 test('panning a full live window requests earlier retained candles', async ({ page }) => {
@@ -113,8 +116,9 @@ test('panning a full live window requests earlier retained candles', async ({ pa
   page.on('request', (request) => { if (request.url().includes('/live/analysis/') && request.url().includes('/view')) endpoints.push(new URL(request.url()).searchParams.get('end') ?? 'latest'); });
   await page.goto('/');
   await page.getByRole('button', { name: 'Live', exact: true }).click();
-  await expect(page.getByRole('img', { name: /500 visible bars/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /501 visible bars/ })).toBeVisible();
   await page.getByRole('button', { name: 'Fit candles', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => { const v = JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport; return v ? v.to - v.from : 0; })).toBeGreaterThan(450);
   const box = (await page.locator('.trading-chart').boundingBox())!;
   await page.mouse.move(box.x + 100, box.y + box.height / 2);
   await page.mouse.down();

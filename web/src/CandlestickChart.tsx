@@ -5,7 +5,9 @@ import {
   type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi,
   type Time,
 } from 'lightweight-charts';
-import { buildChartModel, type ChartLayers } from './chartModel';
+import { MAX_PRICE_BARS } from './priceBuffer';
+import { needsEarlierHistory, rebaseViewport, type LogicalRange } from './chartViewport';
+import { buildChartModel, type ChartLayers, type ChartModel } from './chartModel';
 import type { ReplayBar, ReplayDetectorEvent, ReplayObservation } from './replay';
 import { dateTimeInput, displayTime, type DisplayTimezone } from './time';
 
@@ -30,24 +32,30 @@ interface Props {
   onLoadEarlier?: (automatic?: boolean) => void;
   earlierDisabled?: boolean;
   canReturnLatest?: boolean;
+  historyStatus?: string | null;
+  autoLoadEarlier?: boolean;
   onNavigate?: () => void;
 }
 
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
   onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays,
   timezone = 'Europe/London', resetKey = '', initialRange = null, onRangeChange,
-  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false, onNavigate }: Props) {
+  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false, historyStatus, autoLoadEarlier = true, onNavigate }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const markers = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const ema = useRef(new Map<string, ISeriesApi<'Line'>>());
   const range = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const priorCandles = useRef<ChartModel['candles']>([]);
   const priorCount = useRef(0);
   const priorFocus = useRef<string | null>(null);
   const priorFocusVersion = useRef(0);
   const [chartError, setChartError] = useState<string | null>(null);
-  const callbacks = useRef({ onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier });
+  const callbacks = useRef({ onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier, earlierDisabled, autoLoadEarlier });
+  const fitRequested = useRef(false);
+  const geometry = useRef<{ times: number[]; range: LogicalRange } | null>(null);
+  const fillFrame = useRef<number | null>(null);
   const initialViewport = useRef(initialRange);
   initialViewport.current = initialRange;
   const following = useRef(initialRange === null);
@@ -56,7 +64,18 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
   const requestedFocus = useRef({ focusTime, focusVersion });
   requestedFocus.current = { focusTime, focusVersion };
   const timestamps = useRef(new Map<number, string>());
-  callbacks.current = { onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier };
+  callbacks.current = { onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier, earlierDisabled, autoLoadEarlier };
+
+  function fillHistory() {
+    if (fillFrame.current !== null) cancelAnimationFrame(fillFrame.current);
+    fillFrame.current = requestAnimationFrame(() => {
+      fillFrame.current = null;
+      const value = chart.current?.timeScale().getVisibleLogicalRange();
+      const current = callbacks.current;
+      if (value && userNavigation.current && priorCount.current > 0 && !current.earlierDisabled && current.autoLoadEarlier
+        && needsEarlierHistory({ from: Number(value.from), to: Number(value.to) }, MAX_PRICE_BARS)) current.onLoadEarlier?.(true);
+    });
+  }
 
   const result = useMemo(() => {
     try {
@@ -102,6 +121,14 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         borderVisible: false, priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
       });
       const markerPlugin = createSeriesMarkers(series, []);
+      geometry.current = null; priorCandles.current = [];
+      let priorWidth = 0;
+      const resize = new ResizeObserver(([entry]) => {
+        if (priorWidth && Math.abs(entry.contentRect.width - priorWidth) > 1) userNavigation.current = true;
+        priorWidth = entry.contentRect.width;
+        fillHistory();
+      });
+      resize.observe(container.current);
       instance.subscribeClick((point) => {
         const markerId = point.hoveredInfo?.objectId;
         if (typeof markerId === 'string' && markerId.startsWith('event:')) {
@@ -121,11 +148,14 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       const emaSeries = ema.current;
       instance.timeScale().subscribeVisibleLogicalRangeChange((value) => {
         if (value) {
+          if (fitRequested.current && Number(value.from) <= 1 && Number(value.to) >= priorCount.current - 2) fitRequested.current = false;
           callbacks.current.onRangeChange?.({ from: Number(value.from), to: Number(value.to) });
-          if (userNavigation.current && !following.current && priorCount.current > 0 && Number(value.from) <= 3) callbacks.current.onLoadEarlier?.(true);
+          fillHistory();
         }
       });
       return () => {
+        resize.disconnect();
+        if (fillFrame.current !== null) cancelAnimationFrame(fillFrame.current);
         markerPlugin.detach();
         instance.remove();
         chart.current = null;
@@ -151,8 +181,23 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       return;
     }
     try {
+      const before = instance.timeScale().getVisibleLogicalRange();
+      if (before && geometry.current?.times.length) geometry.current.range = { from: Number(before.from), to: Number(before.to) };
+      const saved = geometry.current;
       timestamps.current = model.timestamps;
-      series.setData(model.candles);
+      const old = priorCandles.current;
+      const equal = (bar: ChartModel['candles'][number], previous: ChartModel['candles'][number]) =>
+        bar.time === previous.time && bar.open === previous.open && bar.high === previous.high
+        && bar.low === previous.low && bar.close === previous.close && bar.color === previous.color
+        && bar.borderColor === previous.borderColor && bar.wickColor === previous.wickColor;
+      const samePrefix = old.length === model.candles.length
+        && model.candles.slice(0, -1).every((bar, index) => equal(bar, old[index]));
+      const priceChanged = !samePrefix || Boolean(model.candles.length && !equal(model.candles.at(-1)!, old.at(-1)!));
+      if (priceChanged) {
+        if (samePrefix && model.candles.length && old.at(-1)?.time === model.candles.at(-1)?.time) series.update(model.candles.at(-1)!);
+        else series.setData(model.candles);
+      }
+      priorCandles.current = model.candles;
       markers.current?.setMarkers(model.markers);
       for (const [id, value] of model.ema) {
         let line = ema.current.get(id);
@@ -185,18 +230,22 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
         instance.removeSeries(range.current);
         range.current = null;
       }
-      if (model.candles.length && (priorCount.current === 0
-        || model.candles.length < priorCount.current)) {
-        if (priorCount.current === 0 && initialViewport.current) {
-          following.current = false; setIsFollowing(false);
-        }
-        instance.timeScale().setVisibleLogicalRange(initialViewport.current ?? {
-          from: model.candles.length - 90, to: model.candles.length + 4,
-        });
-      } else if (model.candles.length > priorCount.current && following.current) {
-        instance.timeScale().scrollToRealTime();
+      if (model.candles.length && (priceChanged || !saved || fitRequested.current)) {
+        const times = model.candles.map((bar) => Number(bar.time));
+        if (fitRequested.current) {
+          instance.timeScale().fitContent(); fitRequested.current = false;
+        } else if (!saved) {
+          if (initialViewport.current) { following.current = false; setIsFollowing(false); }
+          instance.timeScale().setVisibleLogicalRange(initialViewport.current ?? {
+            from: model.candles.length - 90, to: model.candles.length + 4,
+          });
+        } else if (following.current) instance.timeScale().scrollToPosition(4, false);
+        else instance.timeScale().setVisibleLogicalRange(rebaseViewport(saved.times, times, saved.range));
+        const visible = instance.timeScale().getVisibleLogicalRange();
+        if (visible) geometry.current = { times, range: { from: Number(visible.from), to: Number(visible.to) } };
       }
       priorCount.current = model.candles.length;
+      fillHistory();
       setChartError(null);
     } catch (reason) {
       setChartError(reason instanceof Error ? reason.message : String(reason));
@@ -233,11 +282,14 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     priorFocusVersion.current = focusVersion;
   }, [focusTime, focusVersion, result, timezone, resetKey]);
 
-  function navigate() { userNavigation.current = true; following.current = false; setIsFollowing(false); onNavigate?.(); }
+  useEffect(() => { if (!earlierDisabled && autoLoadEarlier) fillHistory(); }, [earlierDisabled, autoLoadEarlier]);
+
+  function navigate() { fitRequested.current = false; userNavigation.current = true; following.current = false; setIsFollowing(false); onNavigate?.(); }
   function zoom(factor: number) {
     const scale = chart.current?.timeScale();
     if (!scale) return;
-    scale.applyOptions({ barSpacing: Math.max(2, Math.min(50, scale.options().barSpacing * factor)) });
+    navigate();
+    scale.applyOptions({ barSpacing: Math.max(Math.max(0.25, (container.current?.clientWidth ?? 1000) / 4500), Math.min(50, scale.options().barSpacing * factor)) });
   }
 
   return <div className="chart-viewport">
@@ -247,18 +299,19 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     <div className="chart-navigation" aria-label="Chart navigation">
       <button type="button" aria-label="Zoom in" onClick={() => zoom(1.3)}>＋</button>
       <button type="button" aria-label="Zoom out" onClick={() => zoom(1 / 1.3)}>−</button>
-      <button type="button" onClick={() => { navigate(); chart.current?.timeScale().fitContent(); }}>Fit candles</button>
-      {onLoadEarlier && <button type="button" onClick={() => onLoadEarlier()} disabled={earlierDisabled}>Load earlier candles</button>}
+      <button type="button" onClick={() => { navigate(); fitRequested.current = true; userNavigation.current = false; chart.current?.timeScale().fitContent(); }}>Fit candles</button>
+      {onLoadEarlier && <button type="button" onClick={() => { navigate(); onLoadEarlier(); }} disabled={earlierDisabled}>Load earlier candles</button>}
       <button type="button" onClick={() => {
         following.current = true; setIsFollowing(true); chart.current?.timeScale().scrollToRealTime();
         userNavigation.current = false;
         onReturnLatest?.();
       }} disabled={isFollowing && !focusTime && !canReturnLatest}>Return to latest</button>
     </div>
+    {historyStatus && <p role="status" className="chart-history-status">{historyStatus}</p>}
     <p className="chart-caption">
       {bars.length
         ? <><time>{displayTime(bars.at(-1)!.timestamp, timezone)}</time> · {result.model?.candles.length ?? 0} candles · Drag to pan · Scroll to zoom</>
-        : 'No visible candles yet. Step once to process warm-up and reveal the first selected bar.'}
+        : 'Waiting for candle data.'}
       {' '}Charting by <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>.
     </p>
     {bars.length > 0 && onSelectBar && <button type="button"

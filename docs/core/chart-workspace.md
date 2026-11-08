@@ -38,6 +38,30 @@ maps work to Jira and defines implementation prerequisites.
 - Support US30 and DAX initially. Continuous leftward scrolling loads local
   history or fetches missing provider ranges, up to actual provider availability.
   Use bounded requests/rendering rather than loading all history into the browser.
+- Initially buffer 1,440 completed canonical M1 trading candles (24 trading hours),
+  spanning scheduled closures, plus any extra detector initialization needed.
+  Reuse retained prices and fetch missing ranges. Initially display approximately
+  90 candles unless a saved viewport is restored. Higher-timeframe display reads
+  cover at least that trading duration or a useful 90-candle window.
+- Zoom buttons, wheel zoom, panning and resizing request older prices when the
+  visible interval approaches or exceeds the loaded left edge. Older prices extend
+  the display buffer without point focus or a zoom reset. Preserve candle spacing
+  and a time anchor through prepends, forming-candle removal and rolling windows.
+  Explicit Move to/event focus is a separate navigation action. Stop automatic
+  retries on failure or known history limits; expose retry/loading status.
+- Price loading is independent of historical detector execution. Respect each
+  detector's live/manual/always policy; fetching prices does not restart live
+  analysis or advance/rewind a replay. Bound individual pages, request cache and
+  displayed candles (currently 500 per historical page, 16 cached windows and
+  6,000 displayed prices per tab).
+- Retain known detector hits and component observations alongside loaded prices.
+  Panning or adding older prices must not discard calculated markers. Historical
+  calculations supply their own chart observations; periods without results remain
+  explicitly uncalculated. Replay evidence obeys revealed candle availability.
+- Session annotations describe observed trading-session changes. Do not label
+  the first loaded candle as a session opening or display the internal `provider`
+  name as an unexplained marker. Calendar/session identities used for analytical
+  lineage remain unchanged.
 - Retained history is shared across tabs, historical replay and autonomous
   evaluation. Reuse fetched history after restart; preserve source provenance,
   validation, gaps, checksums and immutable revisions referenced by runs.

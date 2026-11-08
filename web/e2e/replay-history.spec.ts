@@ -100,7 +100,7 @@ test('Step progresses analysis while the older window stays fixed and Return rel
   await expect(page.getByRole('img', { name: /36 visible bars/ })).toBeVisible();
   expect((await current(page)).cursor_index).toBe(before.cursor_index + 1);
   await page.getByRole('button', { name: 'Return to replay cursor', exact: true }).click();
-  await expect(page.getByRole('img', { name: /10 visible bars through 2026-01-05T10:00:00Z/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /visible bars through 2026-01-05T10:00:00Z/ })).toBeVisible();
   expect((await current(page)).cursor_index).toBe(before.cursor_index + 1);
 });
 

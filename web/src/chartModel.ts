@@ -119,13 +119,13 @@ export function buildChartModel(
       const session = frame.components.session;
       if (session) {
         const identity = `${session.trading_date}:${session.session_name}`;
-        if (identity !== priorSession) {
+        if (priorSession && identity !== priorSession) {
           model.markers.push({
             id: `session:${identity}`, time, position: 'belowBar', shape: 'circle',
-            color: '#607d9b', text: String(session.session_name),
+            color: '#607d9b', text: session.session_name === 'provider' ? 'Trading session' : String(session.session_name),
           });
-          priorSession = identity;
         }
+        priorSession = identity;
       }
     }
     if (layers.swing) {

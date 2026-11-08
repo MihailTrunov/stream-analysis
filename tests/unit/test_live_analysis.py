@@ -352,6 +352,11 @@ def test_first_live_connection_can_prepare_and_publish_history_without_a_selecte
     )
     assert initialized["available_at"] == "2026-09-28T16:05:00Z"
     assert all(item["processed"] >= item["required"] for item in initialized["initialization"])
+    view = manager.view(initialized["subscription_id"], Timeframe.M1)
+    assert len(view["bars"]) == 1440
+    assert all(datetime.fromisoformat(bar["available_at"]) <= datetime.fromisoformat(
+        view["available_at"]
+    ) for bar in view["bars"])
 
 
 def test_apply_reinitializes_with_a_new_input_and_keeps_other_live_tabs_processing(attached):
