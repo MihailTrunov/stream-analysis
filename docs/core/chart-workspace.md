@@ -69,11 +69,26 @@ maps work to Jira and defines implementation prerequisites.
   than assuming the wall-clock minute has a candle. Show retained provider prices
   while missing startup history is prepared, independently of live connection
   success. Weekends and holidays must not leave the chart blank.
-- When the current date is outside verified calendar coverage, display the latest
-  verified completed history and clearly report the live limitation. Do not invent
-  calendar rules, imply those prices are a current live quote, or start an
-  unverified live analytical session. Historical navigation/calculation remains
-  available under the existing detector policies.
+- Price acquisition must not depend on verified calendar coverage. Attempt the
+  configured provider for latest completed prices and requested historical chart
+  windows even when calendar dates are unverified. Display available retained
+  prices on refresh failure and expose their actual timestamps and refresh status.
+- Retain those canonical completed M1 prices separately under
+  `provider-prices/<account-feed-hash>/<UTC-date>.parquet` in the configured data
+  root. Raw cache identity excludes calendar version; OHLC/source/account identity,
+  completion, checksums and conflicting-redelivery checks still apply. Include this
+  cache in portable backups; do not publish it as a validated research revision.
+- Calendar status and analysis availability are distinct from price availability.
+  Missing coverage prevents validated detector/replay dispatch, never a provider
+  price attempt. Historical detector policies still apply to validated inputs.
+  Do not invent verified open-session rules or extrapolate calendar versions.
+  Higher-timeframe raw price previews are provisional M1 display aggregates using
+  configured alignment metadata, explicitly incomplete and unavailable to detectors.
+- Price-only live subscriptions share acquisition per feed, begin lazily on first
+  tab focus, retain completed candles with atomic daily-cache replacement, and
+  continue acquisition for connected hidden tabs without polling/rendering their DOM.
+  Historical price-only exploration does not create a live subscription. Restore
+  its saved end and price-only status; preserve selected validated historical views.
 - Live monitoring receives current provider data. The forming candle may update
   on the chart, but detectors evaluate only completed candles. Do not generate
   provisional intrabar detector signals.

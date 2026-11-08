@@ -62,6 +62,19 @@ a distinct driver.
   and immutable hourly Parquet publication. Acknowledgment follows database commit;
   packaging failure retains journaled data. The portable PostgreSQL dump includes
   recent records as well as metadata; the shared data root contains published files.
+- Chart price acquisition is a separate boundary from validated analysis ingestion.
+  `/live/prices/{instrument}` requests provider-selected completed M1 windows before
+  any open-session classification, for latest or historical ends. Shared price-only
+  subscriptions refresh independently of visible-browser polling. Account-scoped
+  source authentication and canonical OHLC/finalization validation remain required.
+  Atomic per-UTC-day Parquet under `provider-prices/` retains these prices; the cache
+  key contains feed/account/normalization identity and excludes calendar version.
+  This directory is included in portable backups. It contains no DatasetRevision,
+  analytical watermark or assertion of calendar/gap validity. The existing validated
+  journal, hourly publication and pinned detector/replay inputs remain separate.
+  Missing calendar coverage is an explicit response/UI state; provisional higher
+  timeframe display aggregates cannot enter analytical dispatch. A price-only live
+  subscription yields to validated live ingress once analytical connection succeeds.
 - Source minutes remain canonical. Versioned aggregation creates 5m/15m/30m/1h/
   4h/1D analytical bars, not only chart display aggregates. Each analytical stream
   drives the same market-state/detector runtime on its completed bars; display
