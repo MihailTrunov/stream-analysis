@@ -70,6 +70,27 @@ def source(
     )
 
 
+def test_price_window_fetches_latest_completed_minutes_without_calendar() -> None:
+    end = datetime(2026, 11, 9, 15, tzinfo=UTC)
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json=body(
+            candle(0, time=(end - timedelta(minutes=2)).isoformat().replace('+00:00', 'Z')),
+            candle(1, time=(end - timedelta(minutes=1)).isoformat().replace('+00:00', 'Z')),
+            candle(2, complete=False, time=end.isoformat().replace('+00:00', 'Z')),
+        ))
+
+    adapter = source(httpx.MockTransport(handler))
+    page = adapter.price_window(instrument(), end=end, count=2)
+    assert len(page.bars) == 2
+    assert all(bar.is_complete for bar in page.bars)
+    assert calls[0].url.params['count'] == '3'
+    assert calls[0].url.params['to'] == '2026-11-09T15:00:00Z'
+    assert 'from' not in calls[0].url.params
+
+
 def test_maps_midpoint_complete_bars_and_half_open_interval() -> None:
     calls: list[httpx.Request] = []
 

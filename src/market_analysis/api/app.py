@@ -50,6 +50,7 @@ from market_analysis.application.live_analysis import live_analysis
 from market_analysis.application.live_ingress import live_ingress
 from market_analysis.application.live_retention import read_live_history
 from market_analysis.application.logging import configure_logging, research_logger
+from market_analysis.application.provider_prices import provider_prices
 from market_analysis.application.replay_catalog import (
     DEMO_CONFIG_ID,
     DEMO_CONFIG_VERSION,
@@ -325,6 +326,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     finally:
         live_analysis.close()
         live_ingress.close()
+        provider_prices.close()
         logger.info("API stopped")
 
 

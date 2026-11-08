@@ -14,6 +14,7 @@ from market_analysis.application.history_ranges import HistoryFeed
 from market_analysis.application.live_analysis import LiveAnalysisRequest, live_analysis
 from market_analysis.application.live_ingress import live_ingress
 from market_analysis.application.live_inputs import read_live_input
+from market_analysis.application.provider_prices import provider_prices
 from market_analysis.config.oanda_uk_calendars import OANDA_UK_LIVE_PROFILES
 from market_analysis.domain import Timeframe
 
@@ -44,6 +45,34 @@ class LiveSnapshotRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start: datetime
     end: datetime
+
+
+@router.get("/prices/{instrument_id}")
+def price_window(instrument_id: Literal["US30", "DAX"],
+                 timeframe: Timeframe = Timeframe.M1, end: datetime | None = None
+                 ) -> dict[str, object]:
+    feed = configured_feed(instrument_id)
+    try:
+        return provider_prices.window(feed, timeframe, end)
+    except Exception as error:
+        # Transport errors and configuration/account identifiers stay server-side.
+        raise HTTPException(status_code=503, detail="Provider prices are unavailable.") from error
+
+
+@router.post("/price-subscriptions", status_code=201)
+def subscribe_prices(request: SubscribeRequest) -> dict[str, str]:
+    feed = configured_feed(request.instrument_id)
+    try:
+        provider_prices.subscribe(str(request.subscription_id), feed)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"status": "subscribed"}
+
+
+@router.delete("/price-subscriptions/{subscription_id}")
+def disconnect_prices(subscription_id: UUID) -> dict[str, str]:
+    provider_prices.unsubscribe(str(subscription_id))
+    return {"status": "disconnected"}
 
 
 @router.post("/subscriptions", status_code=201)

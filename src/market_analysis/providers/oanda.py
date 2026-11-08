@@ -24,7 +24,7 @@ from market_analysis.domain.historical_data import (
     ProviderError,
 )
 from market_analysis.domain.live_data import LiveCandleUpdate
-from market_analysis.domain.market_data import Bar, DomainValidationError, Timeframe
+from market_analysis.domain.market_data import Bar, DomainValidationError, Instrument, Timeframe
 
 _GRANULARITY: Mapping[Timeframe, tuple[str, timedelta]] = {
     Timeframe.M1: ("M1", timedelta(minutes=1)),
@@ -219,6 +219,34 @@ class OandaHistoricalDataSource:
             "includeFirst": "true",
         }
         return self._request_json(url, params)
+
+    def price_window(
+        self, instrument: Instrument, *, end: datetime, count: int = 1440,
+    ) -> HistoricalDataPage:
+        """Provider-selected completed M1 prices; calendar coverage is not a fetch prerequisite."""
+        if (end.tzinfo is None or end.second or end.microsecond
+            or isinstance(count, bool) or not 1 <= count <= 4999):
+            raise ProviderError("price window requires an aligned aware end and count 1..4999")
+        end = end.astimezone(UTC)
+        symbol = instrument.provider_symbol("oanda", environment=self.environment)
+        url = (f"{_BASE_URLS[self.environment]}/v3/accounts/{quote(self.account_id, safe='')}"
+               f"/instruments/{quote(symbol, safe='')}/candles")
+        payload = self._request_json(url, {
+            "price": "M", "granularity": "M1", "count": str(count + 1),
+            "to": _utc_text(end), "smooth": "false",
+        })
+        records = payload.get("candles")
+        if not isinstance(records, list) or len(records) > count + 1:
+            raise ProviderError("invalid OANDA price-window candle list")
+        timestamps = [_timestamp(record.get("time")) for record in records
+                      if isinstance(record, dict)]
+        start = min([end, *timestamps])
+        request = HistoricalDataRequest(instrument, Timeframe.M1, start, end)
+        bars = self._normalize(payload, request, symbol, "M1", start, start, end, None)
+        if any(bar.timestamp.second or bar.timestamp.microsecond for bar in bars):
+            raise ProviderError("OANDA M1 price is not minute-aligned")
+        return HistoricalDataPage(request, bars[-count:],
+                                  HistoricalSource("oanda", symbol, SOURCE_ID, self.environment))
 
     def poll_live(self, request: HistoricalDataRequest, *, at: datetime) -> LiveCandleUpdate:
         """Use provider completion flags, never quote-stream inferred OHLC, for analysis."""

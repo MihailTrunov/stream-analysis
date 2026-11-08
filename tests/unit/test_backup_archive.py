@@ -32,6 +32,15 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     return source, dump, archive
 
 
+def test_price_cache_is_included_in_portable_backups(tmp_path: Path) -> None:
+    source, dump, archive = _fixture(tmp_path)
+    cache = source / 'provider-prices' / ('f' * 64)
+    cache.mkdir(parents=True)
+    (cache / '2026-11-09.parquet').write_bytes(b'raw-price-parquet')
+    create_archive(source, dump, archive)
+    assert 'data/provider-prices/' + 'f' * 64 + '/2026-11-09.parquet' in verify_archive(archive)
+
+
 def test_create_verify_extract_and_exclude_postgres_volume(tmp_path: Path) -> None:
     source, dump, archive = _fixture(tmp_path)
     assert create_archive(source, dump, archive) == archive

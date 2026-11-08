@@ -100,8 +100,8 @@ class LiveAnalysisManager:
             if now >= verified_end:
                 status = "calendar_unverified"
                 detail = (
-                    "Showing the latest verified completed history. Live monitoring is unavailable "
-                    "because the trading calendar does not cover the current date."
+                    "Detector monitoring is unavailable because the trading calendar does not "
+                    "cover the current date. Provider prices load independently."
                 )
             else:
                 status = "ready" if calendar.derive(now).is_open else "market_closed"
