@@ -707,8 +707,8 @@ class AnalysisSessionManager:
     ) -> dict[str, Any]:
         with self._lock:
             session = self.current(session_id)
-            if start.tzinfo is None or end.tzinfo is None or start >= end or not 1 <= limit <= 500:
-                raise ValueError("view requires aware ordered bounds and limit 1..500")
+            if start.tzinfo is None or end.tzinfo is None or start >= end or not 1 <= limit <= 1440:
+                raise ValueError("view requires aware ordered bounds and limit 1..1440")
             cutoff = min(end, session.watermark)
             candles = session.candles[timeframe]
             displayed = [c for c in candles if c.available_at <= cutoff][-limit:]

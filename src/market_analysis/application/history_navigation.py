@@ -53,6 +53,7 @@ def plan_history_navigation(
     *,
     at: datetime,
     end: datetime | None = None,
+    price_bars: int = 90,
 ) -> dict[str, Any]:
     if target.tzinfo is None or target.second or target.microsecond:
         raise ValueError("navigation target must be an aware completed minute")
@@ -114,7 +115,7 @@ def plan_history_navigation(
             raise ValueError(
                 "choose a replay end after the start and within completed verified history"
             )
-        first = _preceding(calendar, timeframe, verified_start, target, 90, required=False)
+        first = _preceding(calendar, timeframe, verified_start, target, price_bars, required=False)
         initialization_end = target
     else:
         finish = min(bucket_bounds(target, timeframe, calendar)[1], latest)

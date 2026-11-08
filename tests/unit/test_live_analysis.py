@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -316,6 +316,10 @@ def test_first_live_connection_can_prepare_and_publish_history_without_a_selecte
     manager, _, historical, _, _ = attached
     engine, store, feed = historical
     _parent(historical, 120, 125)
+    # Supply enough real trading minutes across the weekend for the price buffer.
+    closed = tuple(i for i in range(-4500, 0)
+                   if not feed.calendar().derive(START + timedelta(minutes=i)).is_open)
+    _parent(historical, -4500, 0, missing=closed)
     selected = LiveAnalysisRequest(
         subscription_id=uuid4(),
         streams=[
@@ -326,6 +330,12 @@ def test_first_live_connection_can_prepare_and_publish_history_without_a_selecte
     )
     plan = manager.prepare(selected, feed)["plan"]
     assert plan["intent"] == "replay"
+    from market_analysis.application.history_prices import completed_buckets
+
+    assert len(list(completed_buckets(
+        feed.calendar(), Timeframe.M1, datetime.fromisoformat(plan["start"]),
+        datetime.fromisoformat(plan["end"]),
+    ))) == 1440
     with engine.begin() as connection:
         reviewed = {
             request_id: history_coverage(connection, store, request_id)["source_manifest_hash"]

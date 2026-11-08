@@ -105,6 +105,8 @@ class LiveAnalysisManager:
                             "replay",
                             at=now,
                             end=end,
+                            # The completed target candle is included in addition to this prefix.
+                            price_bars=1440 - 1,
                         )
                     }
             finally:
@@ -383,7 +385,7 @@ class LiveAnalysisManager:
             if finish <= session.bars[0].timestamp:
                 raise ValueError("view precedes initialized live history")
             view = self._analysis.view(
-                session.session_id, timeframe, session.bars[0].timestamp, finish
+                session.session_id, timeframe, session.bars[0].timestamp, finish, limit=1440
             )
             # Forming display aggregation never enters the analytical aggregator/runtime.
             state["forming"] = None
