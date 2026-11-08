@@ -1,0 +1,46 @@
+# Chart navigation investigation — 8 November 2026
+
+Investigation of the reported short initial live window, empty space after zooming out, unexplained `provider` marker and larger candles after loading older history. No production implementation was changed. Browser diagnostics used isolated temporary SQLite/Parquet data and a mocked feed; they did not use the installed application or contact OANDA.
+
+The main problem is that chart navigation operates by replacing a fixed candle window and focusing a target. It does not maintain a continuous, buffered timeline with stable zoom. The reported behaviour follows from that implementation rather than demonstrating a provider history limit.
+
+| Symptom | Cause and effect |
+| --- | --- |
+| Initially about 90 minutes are visible | The shared chart explicitly displays approximately the last 90 candles, regardless of viewport capacity. At 1m this is about 90 minutes. Live initialization also requests about 90 preceding M1 candles plus detector initialization requirements. Actual loaded history can exceed the visible amount, depending on enabled detector timeframes/warm-up and time already spent connected. Neither quantity is chosen to provide multiple screens of navigation buffer. |
+| Zooming out leaves blank space without loading older prices | The zoom buttons change candle spacing without marking the action as user navigation. Automatic history loading requires the separate user-navigation flag, following disabled, and a visible left index at or before 3. A fresh chart remains in following mode when these buttons are used, so revealing empty space does not request history. Mouse-wheel input does mark navigation, but uses the same one-window/target-focus path described below; it is not a general mechanism to fill the requested visible interval. |
+| `provider` appears at the oldest candle | This is the raw session name from the provider trading calendar, drawn as a session marker. It does not indicate the oldest data available, a fetch boundary or a required action. The marker builder starts without preceding session context and marks the first available session observation as well as subsequent session changes. Thus the left-edge marker can be an artifact of the loaded window rather than the actual opening of a trading session. There is no live-chart action or explanatory tooltip attached to that marker. |
+| Loading older data makes candles much larger | Live history navigation sets a focus target, and the shared chart responds by explicitly fitting roughly 25 candles either side of that target, clipped at the loaded edges. In the reproduced older-history publication path the target is at the right edge, leaving only a 25-index span visible. This overrides the zoom chosen by the user. Older candles replace the displayed window instead of extending it while preserving a time anchor. |
+
+Relevant implementation:
+
+- [Shared chart](../../web/src/CandlestickChart.tsx): line 125 gates automatic loading; lines 188–195 reset ranges when data first arrives or candle count falls; lines 223–225 implement the target-focus range; lines 237–240 adjust zoom without calling `navigate()`.
+- [Live navigation](../../web/src/LiveSession.tsx): lines 68–71 focus the target after historical data is ready; lines 150–162 choose between an earlier retained live window and historical preparation. Pointer/wheel navigation also freezes the display endpoint, removing a forming candle where present; this can enter the shared chart's count-decrease reset branch.
+- [History navigation](../../web/src/useHistoryNavigation.ts) replaces the displayed window through its `onReady` callback. [History reads](../../web/src/useHistoryWindow.ts) request a maximum of 500 candles, independent of chart width or requested zoom.
+- [Initialization planner](../../src/market_analysis/application/history_navigation.py) selects 90 preceding candles for replay/live initialization, then expands for detector warm-up. [Live preparation](../../src/market_analysis/application/live_analysis.py) uses that planner in M1. [Analysis views](../../src/market_analysis/application/analysis_sessions.py) return at most 500 displayed candles.
+- [Marker model](../../web/src/chartModel.ts) draws the raw `session_name` on the first observed session identity. [Calendar configuration](../../src/market_analysis/config/oanda_uk_calendars.py) calls the configured trading window `provider`.
+
+Browser evidence, captured from the actual chart time scale at 1440 × 900:
+
+| Stage | Loaded candles | Visible logical range | Candle spacing |
+| --- | ---: | --- | ---: |
+| Initial short live fixture | 96, including one forming candle | 6 to 100 | 10.88 px |
+| Four zoom-out button clicks | 96 | −170.33 to 100 | 3.81 px |
+| After explicitly loading earlier history | 500 | 474 to 499 | 39.77 px |
+
+The negative left index confirms empty space before the first loaded candle. No earlier-history preparation was requested by those zoom-out clicks. The explicit earlier action requested history at 09:59 UTC; once that history loaded, candle spacing increased more than tenfold relative to the selected zoom. The diagnostic asserts these observations.
+
+A comparison with 600 initialized live candles took the retained-window branch: its displayed count changed from 500 to 191. One observation preserved the selected spacing of 8.37 px, but another reset it to 20.27 px with a range of 75–125. Thus the jump also occurs without historical publication or provider acquisition, although retained-window observations varied. This path combines target focus, asynchronous live-view replacement and count-decrease resets; it needs a deterministic preservation regression rather than an assumption that all response sequences behave identically.
+
+The initial diagnostic's historical mock range accidentally permitted the local-history shortcut; correcting that fixture established the intended publication-path reproduction. Opposing strict assertions about the retained comparison each failed in separate runs: neither always-preserved nor always-reset spacing is established. The final diagnostic records that branch's geometry and verifies the older window was loaded, without claiming stable scale. These are investigative checks, not fixes. Final verification results are recorded below.
+
+Recommended work, in order:
+
+1. Preserve the user's candle spacing and visible time anchor across history fetches and data-window changes. Separate ordinary pan/zoom/history loading from explicit point focus. Prepending older prices must not invoke the target-focus zoom. Handle forming-candle removal and rolling-window eviction without treating either as a reason to reset zoom.
+2. Load prices according to the requested visible interval, with a buffer before the left edge. Use the same demand check for wheel zoom, zoom buttons, panning and resizing. Recheck after each page arrives until the visible interval is covered, loading has failed, or a known history boundary is reached. Read retained prices first, then fetch missing ranges; keep request coalescing, cancellation and bounded caching. Backend pages can remain bounded while the UI holds several pages.
+3. Separate initial display scale, price-history buffer and detector warm-up requirements. Showing 90 candles can remain an initial presentation choice, but it should not be the effective price-history navigation boundary. Loading more prices must not force all detectors to recalculate; retain their live/manual/always policies and required initialization.
+4. Remove the raw `provider` text from routine candle annotations. Present session meaning in user-facing terms with an explanation, and mark actual session boundaries using preceding context. Show history loading, errors and genuine limits as separate statuses. Keep authoritative calendar/session values unchanged for analytical lineage.
+5. Cover zoom-out-to-empty-space, automatic repeated filling, spacing and time-anchor preservation through cached/fetched history, forming-to-historical transitions, return to latest, timeframe changes, and replay cursor causality. Check both narrow and wide screens. Existing browser tests verify that older requests occur; they do not establish stable scale or that the visible interval is filled.
+
+This can be addressed in the chart/viewport/history integration. The evidence does not call for changing providers or replacing the candle storage design. Earlier descriptions of automatic loading were incomplete: panning can trigger one earlier-window request, but the current implementation does not guarantee continuous filling or zoom preservation.
+
+Final isolated diagnostic run: **2 passed** (10.9 seconds). The first asserts the missing zoom-button load and large post-fetch spacing increase. The second captures retained-window geometry and verifies navigation into older history; it does not assert stable zoom. That final retained capture again showed 20.27 px spacing after a selected 8.37 px zoom. Temporary diagnostic code is preserved at `/tmp/chart-navigation-investigation.spec.ts`; final output is `/tmp/chart-navigation-final-capture.log`. The temporary test was removed from the application test directory after capture. No production source, installed data, containers or provider connections were changed.
