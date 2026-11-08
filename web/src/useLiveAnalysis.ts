@@ -3,6 +3,8 @@ import { apiJson, type AnalysisStream, type Timeframe, type ReplaySource } from 
 import { validateLiveState, validateLiveView, type LiveState, type LiveView } from './live';
 import { isNavigationPlan, navigationCoverage, publishNavigation, waitForHistory } from './historyNavigation';
 import type { AnalysisTab } from './workspace';
+import { providerAnalysisSource } from './useProviderAnalysisSource';
+import { chartCalculation } from './chartCalculation';
 
 interface Callbacks {
   onError: (message: string) => void;
@@ -26,7 +28,7 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
   const callbacks = useRef(handlers); callbacks.current = handlers;
   const savedPlan = useRef(initialPlan);
   const params = JSON.stringify({ subscription_id: id, bootstrap_revision_id: bootstrap,
-    streams, chart_timeframe: '1m' });
+    streams, chart_timeframe: '1m', calendar_mode: bootstrap?.startsWith('provider-observed-') ? 'provider_observed' : 'verified' });
   useEffect(() => {
     const changed = () => setVisible(!document.hidden);
     document.addEventListener('visibilitychange', changed);
@@ -41,7 +43,7 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
       let plan = savedPlan.current?.key === params ? savedPlan.current.plan : undefined;
       if (!plan) {
         setStage('Preparing live initialization history…');
-        const prepared = await apiJson<{ state?: unknown; plan?: unknown }>(`/live/prepare/${instrument}`,
+        const prepared = await apiJson<{ state?: unknown; plan?: unknown; source?: ReplaySource }>(`/live/prepare/${instrument}`,
           { method: 'POST', body: params, signal: controller.signal });
         if (prepared.state) {
           const restored = validateLiveState(prepared.state, id, instrument);
@@ -52,22 +54,37 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
           }
           return restored;
         }
+        if (prepared.source) {
+          const source = prepared.source;
+          if (source.instrument_id !== instrument || !source.calendar_version.startsWith('provider-observed-v1:')) throw new Error('Invalid provider detector initialization.');
+          preparedSource = source; setBootstrapSource({ id, source });
+          setStage('Running detectors on provider candles; calendar coverage is unverified…');
+          return validateLiveState(await chartCalculation(`/live/analysis/${instrument}`,
+            JSON.stringify({ ...JSON.parse(params), bootstrap_revision_id: source.dataset_revision_id,
+              calendar_mode: 'provider_observed' })), id, instrument);
+        }
         if (!isNavigationPlan(prepared.plan) || prepared.plan.instrument_id !== instrument
           || prepared.plan.intent !== 'replay' || prepared.plan.timeframe !== '1m') throw new Error('Invalid live initialization plan.');
         plan = prepared.plan;
         savedPlan.current = { plan, key: params }; callbacks.current.onPlan(savedPlan.current);
       }
-      let coverage = await navigationCoverage(plan, controller.signal);
+      let observedSource: ReplaySource | undefined;
+      if (plan.live_status === 'calendar_unverified') {
+        setStage('Preparing provider candles for detectors; calendar coverage is unverified…');
+        try { observedSource = await providerAnalysisSource(instrument, undefined, true); }
+        catch { if (controller.signal.aborted) return; }
+      }
+      let coverage = observedSource ? { ready: true, completed: 0, requests: {} } : await navigationCoverage(plan, controller.signal);
       while (!coverage.ready) {
         setStage(`Waiting for live initialization history… ${coverage.completed} ranges ready.`);
         await waitForHistory(controller.signal);
         coverage = await navigationCoverage(plan, controller.signal);
       }
-      const source = await publishNavigation(plan, coverage.requests, controller.signal);
+      const source = observedSource ?? await publishNavigation(plan, coverage.requests, controller.signal);
       if (controller.signal.aborted) return;
       preparedSource = source;
       setBootstrapSource({ id, source });
-      if (plan.live_status === 'calendar_unverified') {
+      if (plan.live_status === 'calendar_unverified' && !observedSource) {
         initialized.current = id;
         setStage(plan.live_detail ?? 'Showing completed history; live calendar coverage is unavailable.');
         callbacks.current.onSource(source);
@@ -75,10 +92,10 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
         return null;
       }
       setStage(plan.live_detail || 'History ready; connecting live monitoring…');
-      const body = { ...JSON.parse(params), bootstrap_revision_id: source.dataset_revision_id };
-      const next = validateLiveState(await apiJson(`/live/analysis/${instrument}`, {
-        method: 'POST', body: JSON.stringify(body), signal: controller.signal,
-      }), id, instrument);
+      const body = { ...JSON.parse(params), bootstrap_revision_id: source.dataset_revision_id,
+        calendar_mode: source.calendar_version.startsWith('provider-observed-v1:') ? 'provider_observed' : 'verified' };
+      const next = validateLiveState(await chartCalculation(`/live/analysis/${instrument}`,
+        JSON.stringify(body)), id, instrument);
       preparedSource = source;
       return next;
     })().then((next) => {

@@ -3,20 +3,23 @@
 import os
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from market_analysis.application.browser_replay import _store
+from market_analysis.application.chart_tasks import chart_tasks
 from market_analysis.application.history_ranges import HistoryFeed
 from market_analysis.application.live_analysis import LiveAnalysisRequest, live_analysis
 from market_analysis.application.live_ingress import live_ingress
 from market_analysis.application.live_inputs import read_live_input
+from market_analysis.application.provider_analysis import observed_feed, publish_provider_source
 from market_analysis.application.provider_prices import provider_prices
 from market_analysis.config.oanda_uk_calendars import OANDA_UK_LIVE_PROFILES
-from market_analysis.domain import Timeframe
+from market_analysis.domain import SessionCalendarError, Timeframe
 
 router = APIRouter(prefix="/live", tags=["live"])
 
@@ -45,6 +48,29 @@ class LiveSnapshotRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start: datetime
     end: datetime
+
+
+class ProviderSourceRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    end: datetime | None = None
+    live: bool = False
+
+
+@router.post('/prices/{instrument_id}/source', status_code=201)
+def provider_analysis_source(instrument_id: Literal['US30', 'DAX'],
+                             request: ProviderSourceRequest) -> dict[str, object]:
+    feed = configured_feed(instrument_id)
+    engine = live_analysis._analysis.engine()
+    try:
+        return publish_provider_source(engine, provider_prices, feed, request.end,
+                                       live=request.live)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=503,
+                            detail='Provider analysis input is unavailable.') from error
+    finally:
+        engine.dispose()
 
 
 @router.get("/prices/{instrument_id}")
@@ -115,9 +141,17 @@ def disconnect(subscription_id: UUID) -> dict[str, str]:
 @router.post("/analysis/{instrument_id}", status_code=201)
 def connect_analysis(
     instrument_id: Literal["US30", "DAX"], request: LiveAnalysisRequest,
-) -> dict[str, object]:
+    prefer: str | None = Header(default=None),
+) -> Any:
     try:
-        return live_analysis.connect(request, configured_feed(instrument_id))
+        feed = configured_feed(instrument_id)
+        if request.calendar_mode == 'provider_observed':
+            feed = observed_feed(feed)
+        if prefer == 'respond-async':
+            return JSONResponse(status_code=202, content=chart_tasks.submit(
+                lambda: live_analysis.connect(request, feed),
+                lambda result: live_analysis.disconnect(result['subscription_id'])))
+        return live_analysis.connect(request, feed)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -127,6 +161,12 @@ def prepare_analysis(
     instrument_id: Literal["US30", "DAX"], request: LiveAnalysisRequest,
 ) -> dict[str, object]:
     feed = configured_feed(instrument_id)
+    try:
+        feed.calendar().derive(live_analysis.ingress.now())
+    except SessionCalendarError:
+        feed = observed_feed(feed)
+    if request.calendar_mode == 'provider_observed':
+        feed = observed_feed(feed)
     try:
         return live_analysis.prepare(request, feed)
     except ValueError as error:

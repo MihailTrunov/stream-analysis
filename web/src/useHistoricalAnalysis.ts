@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { mergeObservations } from './analysisEvidence';
+import { chartCalculation } from './chartCalculation';
 import { containsEnd, hasInitializedResult, coversWindow, type StreamCoverage } from './analysisCoverage';
 import { apiJson, type AnalysisStream, type ReplayDetectorEvent, type ReplayObservation, type ReplaySource, type ReplayState, type ReplayViewResponse, type Timeframe } from './replay';
 
@@ -40,12 +41,12 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
     setBusy(true);
     let id: string | undefined;
     try {
-      const state = await apiJson<ReplayState>('/analysis', { method: 'POST', body: JSON.stringify({
+      const state = await chartCalculation<ReplayState>('/analysis', JSON.stringify({
         dataset_revision_id: source.dataset_revision_id, instrument_id: source.instrument_id,
         selected_start: start < source.range_start ? source.range_start : start,
         selected_end: end > source.range_end ? source.range_end : end,
         chart_timeframe: timeframe, streams: selected, mode: 'history', automatic: auto,
-      }) });
+      }));
       id = state.run_id;
       const params = new URLSearchParams({ start, end, timeframe, limit: '500' });
       const result = await apiJson<ReplayViewResponse>(`/analysis/${id}/view?${params}`);

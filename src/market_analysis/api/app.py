@@ -32,6 +32,7 @@ from market_analysis.application.browser_replay import (
     published_source_bars,
     replay_sources,
 )
+from market_analysis.application.chart_tasks import chart_tasks
 from market_analysis.application.context_capture import load_detection_context
 from market_analysis.application.diagnostics import database_status, read_worker_heartbeat
 from market_analysis.application.history_inputs import (
@@ -324,6 +325,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        chart_tasks.close()
         live_analysis.close()
         live_ingress.close()
         provider_prices.close()

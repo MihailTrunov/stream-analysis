@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from hashlib import sha256
 from threading import RLock
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -56,6 +56,7 @@ class LiveAnalysisRequest(BaseModel):
     bootstrap_revision_id: str | None = None
     streams: tuple[StreamSettings, ...] = Field(min_length=1, max_length=7)
     chart_timeframe: Timeframe = Timeframe.M1
+    calendar_mode: Literal['verified', 'provider_observed'] = 'verified'
 
 
 @dataclass
@@ -90,6 +91,16 @@ class LiveAnalysisManager:
                 return {"state": self.state(client)}
             now = self.ingress.now()
             calendar = feed.calendar()
+            if calendar.observed_only:
+                from .provider_analysis import publish_provider_source
+                from .provider_prices import provider_prices
+
+                engine = self._analysis.engine()
+                try:
+                    return {'source': publish_provider_source(
+                        engine, provider_prices, feed, live=True)}
+                finally:
+                    engine.dispose()
             verified_start, verified_end = verified_history_bounds(feed)
             end = min(now.replace(second=0, microsecond=0), verified_end)
             if end <= verified_start:
@@ -564,7 +575,8 @@ class LiveAnalysisManager:
                         bars[-1].timestamp + MINUTE,
                         len(bars),
                         acquired,
-                        ValidationStatus.PASS,
+                        ValidationStatus.WARNING if attached.feed.calendar().observed_only
+                        else ValidationStatus.PASS,
                         encoded,
                         source_checksum,
                         checksum,

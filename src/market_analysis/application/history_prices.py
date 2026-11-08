@@ -81,7 +81,8 @@ def load_completed_candles(
         raise ValueError("history needs ordered aware bounds and limit 1..500")
     if start < lineage.requested_start or end > lineage.requested_end:
         raise ValueError("history lies outside the retained revision")
-    window = completed_source_window(calendar, timeframe, start, end, limit)
+    window = (start, end) if calendar.observed_only else completed_source_window(
+        calendar, timeframe, start, end, limit)
     if window is None:
         # Even an empty/partially elapsed view must authenticate its pinned input.
         store.read_range(

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 const stamp = (minute: number) => new Date(Date.UTC(2026, 0, 5, 10, minute)).toISOString().replace('.000Z', 'Z');
-async function fakeLive(page: Page, options = { prepare: false }) {
+async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean } = {}) {
   let count = 12;
   let historyReady = true;
   let retainedSource: Record<string, unknown>;
@@ -37,7 +37,7 @@ async function fakeLive(page: Page, options = { prepare: false }) {
     const request = connections.get(id)!;
     return { subscription_id: id, run_id: `session-${id}`, input_id: `live-input-${id}`,
       bootstrap_revision_id: request.bootstrap_revision_id, instrument_id: 'US30', streams: request.streams,
-      status: 'connected', detail: null, available_at: stamp(count), history_start: stamp(0),
+      status: 'connected', detail: options.observed ? 'Calendar/session coverage is unverified.' : null, available_at: stamp(count), history_start: stamp(0),
       forming: { timestamp: stamp(count), open: '100', high: '104', low: '99', close: '102', is_complete: false } };
   }
   await page.route('**/api/live/**', async (route) => {
@@ -49,6 +49,12 @@ async function fakeLive(page: Page, options = { prepare: false }) {
     if (url.pathname.includes('/prepare/')) {
       const body = request.postDataJSON();
       prepares.push(body.subscription_id);
+      if (options.observed && !connections.has(body.subscription_id)) {
+        publishedSource = { ...retainedSource, dataset_revision_id: 'provider-observed-live-fixture',
+          calendar_version: 'provider-observed-v1:fixture', range_start: stamp(0), range_end: stamp(12),
+          bar_count: 12, non_research_grade: false };
+        await route.fulfill({ json: { source: publishedSource } }); return;
+      }
       if (options.prepare && !connections.has(body.subscription_id)) {
         await route.fulfill({ json: { plan: { request_ids: ['live-history-one'], instrument_id: 'US30',
           target: stamp(11), start: stamp(0), end: stamp(12), timeframe: '1m', intent: 'replay', initialization: 'available' } } }); return;
@@ -65,7 +71,9 @@ async function fakeLive(page: Page, options = { prepare: false }) {
       if (url.pathname.endsWith('/history')) {
         await route.fulfill({ json: { ...retainedSource, non_research_grade: false } }); return;
       }
-      const body = request.postDataJSON(); connections.set(body.subscription_id, body);
+      const body = request.postDataJSON();
+      if (options.observed) expect(body.calendar_mode).toBe('provider_observed');
+      connections.set(body.subscription_id, body);
       await route.fulfill({ json: state(body.subscription_id) }); return;
     }
     reads.set(id, (reads.get(id) ?? 0) + 1);
@@ -227,4 +235,17 @@ test('disconnect prevents automatic reconnect and closing a live tab disconnects
   await page.locator('.workspace-tabs [role=tab]').nth(0).click();
   await page.locator('.workspace-tab').nth(0).getByRole('button', { name: 'Close US30 tab' }).click();
   await expect.poll(() => live.disconnected.length).toBe(3);
+});
+
+
+test('live detectors connect from provider candles without confirmed calendar coverage', async ({ page }) => {
+  const live = await fakeLive(page, { observed: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Live', exact: true }).click();
+  await expect(page.getByRole('img', { name: /13 visible bars/ })).toBeVisible();
+  await expect(page.getByText('Calendar/session coverage is unverified.', { exact: true })).toBeVisible();
+  live.advance();
+  await expect(page.getByRole('img', { name: /14 visible bars/ })).toBeVisible();
+  await expect(page.getByTestId('timeline-event')).toBeVisible();
+  expect(live.prepares).toHaveLength(1);
 });

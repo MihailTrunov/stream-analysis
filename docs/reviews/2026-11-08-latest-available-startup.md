@@ -1,5 +1,10 @@
 # Latest-available startup history correction
 
+> Superseded policy: the [provider-observed detector amendment](2026-11-08-calendar-independent-detectors.md)
+> removes the calendar-confirmation gate for chart detectors and replay when prices
+> are available. Statements below describing that gate document the earlier delivery.
+
+
 The user's installed application was running build c4e65bd with a healthy database/API/workers and configured provider credentials. Read-only logs showed POST /live/prepare/US30 returning 422. A local calendar reproduction confirmed that both configured instrument profiles reject 8 November because their verified analytical coverage ends on 6 November. Retained real US30 candles already include Friday's close, but the UI waited for successful live preparation/connection before displaying them.
 
 The correction separates price availability from live analytical availability. Startup immediately reads retained provider prices for the selected instrument where present. Freshly prepared history is also displayed before a live connection succeeds. Preparation selects the latest completed calendar candle across closed periods, rather than assuming a completed candle exists at the current clock minute. The initial target remains 1,440 completed M1 trading candles plus required initialization, reusing shared retained coverage before scheduling missing imports.

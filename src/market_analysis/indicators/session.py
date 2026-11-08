@@ -54,4 +54,5 @@ class SessionComponent(IncrementalMarketState):
             "is_break": False if state is None else state.is_break,
             "is_holiday": False if state is None else state.is_holiday,
             "is_open": False if state is None else state.is_open,
+            **({"calendar_verified": False} if self.calendar.observed_only else {}),
         }

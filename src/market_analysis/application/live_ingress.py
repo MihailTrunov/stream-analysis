@@ -196,8 +196,10 @@ class LiveIngress:
                             return
                         retain_completed_minute(engine, channel.feed, bar, at=now)
                     cursor = start
+                    detail: str | None
                     while cursor < end:
-                        if calendar.derive(cursor).is_open and cursor not in present:
+                        if (not calendar.observed_only and calendar.derive(cursor).is_open
+                            and cursor not in present):
                             status = "gap"
                             detail = f"Waiting for completed minute {stamp(cursor)}."
                             break
@@ -206,7 +208,9 @@ class LiveIngress:
                         status = "catching_up" if end < now.replace(
                             second=0, microsecond=0,
                         ) else "connected"
-                        detail = None
+                        detail = ("Detectors use provider candles; "
+                                  "calendar/session coverage is unverified."
+                                  if calendar.observed_only else None)
                     self._publish(channel, watermark=cursor, polled_at=now, forming=forming,
                                   status=status, detail=detail)
                 finally:

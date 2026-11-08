@@ -16,6 +16,8 @@ from datetime import UTC, date, datetime, time, timedelta
 from types import MappingProxyType
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+OBSERVED_CALENDAR_PREFIX = "provider-observed-v1:"
+
 
 class SessionCalendarError(ValueError):
     """Calendar identity, mapping, or local boundary is invalid."""
@@ -86,6 +88,7 @@ class TradingCalendar:
     trading_weekdays: frozenset[int] = frozenset(range(7))
     coverage_start: date | None = None
     coverage_end: date | None = None
+    observed_only: bool = False
     _exception_index: Mapping[date, CalendarException] = field(
         init=False, repr=False, compare=False, hash=False
     )
@@ -183,6 +186,12 @@ class TradingCalendar:
             local.date() if local.timetz().replace(tzinfo=None) >= self.trading_day_boundary
             else local.date() - timedelta(days=1)
         )
+        if self.observed_only:
+            return SessionState(
+                timestamp, local, trading_date, "provider_observed",
+                timestamp - self._instant(trading_date, self.trading_day_boundary),
+                self.calendar_id, self.version, False, False,
+            )
         if self.coverage_start is not None and self.coverage_end is not None:
             if not self.coverage_start <= trading_date <= self.coverage_end:
                 raise SessionCalendarError("trading date is outside verified calendar coverage")

@@ -2,14 +2,17 @@
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import JSONResponse
 
 from market_analysis.application.analysis_sessions import (
     AnalysisRequest,
     analysis_sessions,
     history_candles,
 )
+from market_analysis.application.chart_tasks import chart_tasks
 from market_analysis.domain import Timeframe
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -23,8 +26,23 @@ def checked(operation: Any, *args: Any) -> Any:
 
 
 @router.post("", status_code=201)
-def launch(request: AnalysisRequest) -> Any:
+def launch(request: AnalysisRequest, prefer: str | None = Header(default=None)) -> Any:
+    if prefer == 'respond-async':
+        return JSONResponse(status_code=202, content=checked(chart_tasks.submit,
+            lambda: analysis_sessions.launch(request),
+            lambda result: analysis_sessions.command(result['run_id'], 'stop')))
     return checked(analysis_sessions.launch, request)
+
+
+@router.get('/tasks/{task_id}')
+def task_state(task_id: UUID) -> Any:
+    return checked(chart_tasks.state, str(task_id))
+
+
+@router.delete('/tasks/{task_id}')
+def cancel_task(task_id: UUID) -> Any:
+    chart_tasks.cancel(str(task_id))
+    return {'status': 'cancelled'}
 
 
 @router.get("/active")

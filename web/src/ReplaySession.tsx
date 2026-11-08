@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { replayWatermark } from './replayWindow';
+import { chartCalculation } from './chartCalculation';
 import { useAnalysisEvidence } from './analysisEvidence';
 import { usePriceBuffer } from './priceBuffer';
 import { validateReplayState } from './validation';
@@ -15,13 +16,14 @@ import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventInspector } from './EventInspector';
 import { EventReview, MissedPatternReview } from './ReviewAnnotations';
-import { apiJson, TIMEFRAMES, type Timeframe, type ReplayBar,
+import { TIMEFRAMES, type Timeframe, type ReplayBar,
   type ReplayDetectorEvent, type ReplayObservation, type ReplaySource,
   type ReplayState, type ReviewPattern } from './replay';
 import { dateTimeInput, displayTime, inputInstant, type DisplayTimezone } from './time';
 import { preferredSource, type AnalysisTab } from './workspace';
 import { providerWindowEnd, type ProviderPriceWindow } from './providerPrices';
 import { useProviderPrices, useProviderNavigation } from './useProviderPrices';
+import { useProviderAnalysisSource } from './useProviderAnalysisSource';
 
 interface Props {
   tab: AnalysisTab;
@@ -130,7 +132,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       if (stateRef.current) return;
       setPricePreview(window); setHistoryEnd(window.end); setViewedPeriod(null); setError(null);
       onTabChange(tab.id, { priceOnly: true });
-      setNavigationNote('Provider prices loaded. Detector calculations and replay require validated calendar coverage and history.');
+      setNavigationNote('Provider candles loaded. Calendar/session coverage is unverified.');
       if (!extending.current) { setBufferVersion(value => value + 1); clearRunView(); setFocusTime(target); setFocusVersion(value => value + 1); }
       extending.current = false;
     },
@@ -147,7 +149,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const periodStart = viewedPeriod?.start ?? visible[0]?.timestamp ?? null;
   const periodEnd = viewedPeriod?.end ?? visible.at(-1)?.available_at
     ?? (visible.at(-1) ? new Date(Date.parse(visible.at(-1)!.timestamp) + 60000).toISOString() : null);
-  const historical = useHistoricalAnalysis(rawPrices ? undefined : selected, settings.applied, chartTimeframe,
+  const providerInput = useProviderAnalysisSource(tab.instrument, periodEnd ?? '',
+    active && rawPrices, onSourceAdded, setError);
+  const historical = useHistoricalAnalysis(rawPrices ? providerInput.source : selected, settings.applied, chartTimeframe,
     periodStart, periodEnd, active && !state, setError);
   const events = useMemo(() => state ? evidence.events.map((event, emission_order) => ({ ...event, emission_order })) : historical.events, [state, evidence.events, historical.events]);
   const selectedEvent = events.find((event) => event.event_id === selectedEventId);
@@ -212,21 +216,27 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     if (!settings.applied || stateRef.current) return;
     setBusy(true); setError(null);
     try {
-      const next = validateReplayState(await apiJson<ReplayState>('/analysis', { method: 'POST', body: JSON.stringify({
+      const next = validateReplayState(await chartCalculation<ReplayState>('/analysis', JSON.stringify({
         dataset_revision_id: source.dataset_revision_id, instrument_id: source.instrument_id, chart_timeframe: chartTimeframe,
         selected_start: target, selected_end: finish,
         streams: settings.applied,
-      }) }));
+      })));
+      onSourceAdded(source); setSelectedId(source.dataset_revision_id);
+      onTabChange(tab.id, { priceOnly: false });
       clearRunView(); setEnd(dateTimeInput(next.selected_end, tab.timezone)); setState(next);
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
 
   async function launch() {
-    if (!selected || settings.dirty || !settings.applied || state) return;
+    if (settings.dirty || !settings.applied || state) return;
     try {
       setError(null);
       const target = inputInstant(start, tab.timezone);
+      if (rawPrices && providerInput.source) {
+        await launchSource(providerInput.source, target, providerInput.source.range_end); return;
+      }
+      if (!selected) return;
       if (selected.non_research_grade) await launchSource(selected, target, inputInstant(end, tab.timezone));
       else await navigation.begin({ source: selected, target, timeframe: chartTimeframe, streams: settings.applied,
         intent: 'replay', end: endExplicit ? inputInstant(end, tab.timezone) : undefined });
@@ -432,7 +442,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         <span>{tab.timezone === 'Europe/London' ? 'UK time · GMT / BST' : 'UTC'}{selected?.non_research_grade ? ' · Not research-grade' : ''}</span></div>
     </div>
     <aside className="workspace-panel" aria-label="Analysis controls">
-      {rawPrices && <p role="status">Provider prices loaded independently of calendar validation. Detectors and replay require validated history.{chartTimeframe !== '1m' ? ' Higher timeframe candles are provisional display aggregates.' : ''}</p>}
+      {(rawPrices || selected?.calendar_version.startsWith('provider-observed-v1:')) && <p role="status">Provider prices loaded independently of calendar validation. Detectors can run on available completed candles; calendar/session coverage remains unverified.</p>}
       {rawPrices && rawWindow?.detail && <p role="status">{rawWindow.detail}</p>}
       <div className="panel-controls">
         <div className="panel-heading"><h2>{state ? 'Historical replay' : 'Historical exploration'}</h2><span className="connection-status">LOCAL</span></div>
@@ -442,7 +452,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           }}>Live</button></div>
         <label className="input-label">Go to date & time <input aria-label="Chart date and time" type="datetime-local" value={start} disabled={working} onChange={(event) => setStart(event.target.value)} /></label>
         <div className="navigation-actions"><button type="button" onClick={moveTo} disabled={working || !start}>Move to</button>
-          <button className="primary" type="button" onClick={() => void launch()} disabled={working || Boolean(state) || !selected || settings.dirty}>Start replay from</button></div>
+          <button className="primary" type="button" onClick={() => void launch()} disabled={working || providerInput.busy || Boolean(state) || (!selected && !providerInput.source) || settings.dirty}>Start replay from</button></div>
         <div className="transport" aria-label="Replay controls">
           <button type="button" aria-label="Play" title="Play" onClick={() => void control('play')} disabled={working || !state?.has_next || !replay.ready || state.status === 'running'}>▶</button>
           <button type="button" aria-label="Pause" title="Pause" onClick={() => void control('pause')} disabled={working || state?.status !== 'running'}>Ⅱ</button>
@@ -494,7 +504,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           <AnalysisSettings streams={settings.drafts} patterns={patterns} onAddDetector={settings.addDetector} disabled={Boolean(state) || working || historical.busy}
             dirty={settings.dirty} onChange={settings.setDrafts} onAdd={settings.add} onApply={() => { setError(null); void settings.apply(); }}
             onCalculate={(tf, pattern) => {
-              if (rawPrices) { setError('Prices are available; detector calculations require validated calendar coverage and history.'); return; }
+              if (rawPrices && !providerInput.source) { setError('Preparing provider candles for detectors. Please try again shortly.'); return; }
               if (!periodStart || !periodEnd) { setError('No completed candles are available in this view. Select a shorter chart timeframe or load more history.'); return; }
               setError(null); void historical.calculate(tf, pattern);
             }} />

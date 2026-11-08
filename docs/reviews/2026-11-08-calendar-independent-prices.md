@@ -1,5 +1,10 @@
 # Calendar-independent chart price acquisition
 
+> Superseded policy: the [provider-observed detector amendment](2026-11-08-calendar-independent-detectors.md)
+> removes the calendar-confirmation gate for chart detectors and replay when prices
+> are available. Statements below describing that gate document the earlier delivery.
+
+
 The previous startup fix, commit 316798a, displayed the last verified history but still prevented current provider requests beyond finite calendar coverage. The user explicitly requires a price attempt for both live and historical chart windows even when calendar information is unavailable.
 
 ## Implemented boundary

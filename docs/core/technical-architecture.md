@@ -34,7 +34,9 @@ adds pinned live-input manifests/receipts, ordinary detector-session attachment,
 lazy tab restoration, suspended hidden rendering and independent historical calculation.
 The [provider acceptance follow-up](../plans/2026-11-06-scrum-137-provider-acceptance.md)
 verifies real US30/DAX ingestion and adds a finite calendar through 2026-11-06.
-Old calendar versions remain resolvable; future sessions require reviewed extensions.
+Old calendar versions remain resolvable. Reviewed extensions are required to claim
+verified session rules; chart detectors can run on provider-observed candles without
+confirmed calendar coverage, as amended below.
 The [SCRUM-110 parity suite](../plans/2026-11-06-scrum-110-parity-suite-design.md)
 checks replay, historical exploration, captured-live and real autonomous evaluation,
 including persisted event-time snapshots and outcome-plan-only invariance. It also
@@ -72,9 +74,17 @@ a distinct driver.
   This directory is included in portable backups. It contains no DatasetRevision,
   analytical watermark or assertion of calendar/gap validity. The existing validated
   journal, hourly publication and pinned detector/replay inputs remain separate.
-  Missing calendar coverage is an explicit response/UI state; provisional higher
-  timeframe display aggregates cannot enter analytical dispatch. A price-only live
-  subscription yields to validated live ingress once analytical connection succeeds.
+  Missing calendar coverage does not block chart detector/replay dispatch. Publish
+  actual completed M1 candles as immutable provider-observed inputs with warning
+  validation, unclassified intervals and a distinct pinned calendar/aggregation
+  version. Reuse the same runtime and live journal/receipt boundary; do not publish
+  observed hourly journals as validated PASS coverage. Higher-timeframe analytical
+  candles are rebuilt from M1, carrying uncertainty flags; provisional display
+  aggregates are never source inputs. A price-only subscription yields to analytical
+  live ingress once connection succeeds. Original verified paths remain strict.
+  Chart initialization uses bounded ephemeral tasks (`Prefer: respond-async`,
+  `/analysis/tasks/{id}` polling/cancellation), so detector warm-up does not hold an
+  HTTP request past the proxy timeout. Durable autonomous runs remain separate.
 - Source minutes remain canonical. Versioned aggregation creates 5m/15m/30m/1h/
   4h/1D analytical bars, not only chart display aggregates. Each analytical stream
   drives the same market-state/detector runtime on its completed bars; display
@@ -98,8 +108,9 @@ a distinct driver.
 - UK display conversion is presentation only. Candle alignment, calendar coverage,
   DST inputs, daily boundaries, partial/gapped buckets, source-live finalization,
   initialization anchors and cross-timeframe ordering require explicit contracts.
-  The current M1-only TrendLeg qualification and verified-calendar coverage limits
-  are real implementation constraints, not permission to remove validation.
+  M1-only TrendLeg qualification remains an implementation constraint. Verified
+  calendar claims retain their coverage limits; provider-observed chart inputs use
+  the separately versioned uncertainty policy above.
 - Extend semantic replay/exploration/captured-live/evaluation parity, causal guards,
   durable recovery tests and supported Chrome/Mac interaction/performance evidence.
   Do not use live-provider access in routine deterministic CI fixtures.

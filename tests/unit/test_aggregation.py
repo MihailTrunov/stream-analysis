@@ -124,3 +124,24 @@ def test_boundary_shortened_candle_is_labelled_and_observed_at_boundary() -> Non
     assert results[0].available_at == start + timedelta(hours=1)
     assert results[0].source_count == 60
     assert "boundary_shortened" in results[0].bar.quality_flags
+
+
+def test_provider_observed_aggregation_uses_actual_minutes_and_marks_uncertainty():
+    from dataclasses import replace
+
+    from market_analysis.domain.aggregation import OBSERVED_AGGREGATION_VERSION
+
+    start = datetime(2026, 11, 10, 10, tzinfo=UTC)
+    observed = replace(calendar(), observed_only=True, version='provider-observed-v1:1')
+    aggregator = CandleAggregator(Timeframe.M5, observed)
+    completed = tuple(
+        candle for index in (0, 2, 4)
+        for candle in aggregator.push(bar(start + index * timedelta(minutes=1), index))
+    )
+    assert len(completed) == 1
+    assert completed[0].source_count == 3
+    assert completed[0].available_at == start + timedelta(minutes=5)
+    assert completed[0].aggregation_version == OBSERVED_AGGREGATION_VERSION
+    assert completed[0].bar.quality_flags >= {
+        'calendar_unverified', 'source_coverage_unclassified',
+    }

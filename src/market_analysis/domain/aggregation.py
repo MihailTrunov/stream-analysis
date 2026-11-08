@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from .market_data import Bar, Timeframe
 from .session_calendar import TradingCalendar
 
 AGGREGATION_VERSION = "m1-aggregation-v1"
+OBSERVED_AGGREGATION_VERSION = "m1-provider-observed-aggregation-v1"
 MINUTES = {
     Timeframe.M1: 1,
     Timeframe.M5: 5,
@@ -83,7 +84,7 @@ class CandleAggregator:
                 if bar.timestamp <= self._previous:
                     raise AggregationError("source minutes must be strictly increasing")
                 missing = self._previous + MINUTE
-                while missing < bar.timestamp:
+                while not self.calendar.observed_only and missing < bar.timestamp:
                     if self.calendar.derive(missing).is_open:
                         raise AggregationError(
                             f"missing expected-open source minute {missing.isoformat()}"
@@ -112,17 +113,23 @@ class CandleAggregator:
                 continue
             expected = []
             minute = start
-            while minute < end:
+            while not self.calendar.observed_only and minute < end:
                 if self.calendar.derive(minute).is_open:
                     expected.append(minute)
                 minute += MINUTE
+            if self.calendar.observed_only:
+                expected = [bar.timestamp for bar in bars]
             del self._pending[start, end]
             if not expected or self._origin is None or expected[0] < self._origin:
                 continue
+            if self.calendar.observed_only and start < self._origin:
+                continue  # A truncated first higher-timeframe bucket is not initialized.
             if [bar.timestamp for bar in bars] != expected:
                 self._failed = True
                 raise AggregationError(f"incomplete source coverage for bucket {start.isoformat()}")
             flags = frozenset().union(*(bar.quality_flags for bar in bars))
+            if self.calendar.observed_only:
+                flags |= {"calendar_unverified", "source_coverage_unclassified"}
             if (
                 self.timeframe is not Timeframe.D1
                 and end - start != MINUTES[self.timeframe] * MINUTE
@@ -137,7 +144,8 @@ class CandleAggregator:
             )
             completed.append(
                 AnalyticalCandle(
-                    bars[0]
+                    (replace(bars[0], quality_flags=flags)
+                     if self.calendar.observed_only else bars[0])
                     if self.timeframe is Timeframe.M1
                     else Bar(
                         bars[0].instrument_id,
@@ -155,6 +163,8 @@ class CandleAggregator:
                     bars[0].timestamp,
                     bars[-1].timestamp + MINUTE,
                     len(bars),
+                    OBSERVED_AGGREGATION_VERSION if self.calendar.observed_only
+                    else AGGREGATION_VERSION,
                 )
             )
         return tuple(completed)

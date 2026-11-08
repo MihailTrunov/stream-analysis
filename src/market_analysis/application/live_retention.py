@@ -187,6 +187,8 @@ def package_live_hour(
         ).order_by(live_candles.c.timestamp)).mappings().all()
         if not rows:
             return None
+        if calendar.observed_only:
+            return None  # Durable receipts remain available; do not publish a verified hour.
         connection.execute(update(live_segments).where(
             live_segments.c.feed_key == key, live_segments.c.hour_start == hour,
         ).values(attempted_at=at))

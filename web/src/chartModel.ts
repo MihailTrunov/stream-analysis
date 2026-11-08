@@ -117,7 +117,7 @@ export function buildChartModel(
     }
     if (layers.session) {
       const session = frame.components.session;
-      if (session) {
+      if (session && session.calendar_verified !== false) {
         const identity = `${session.trading_date}:${session.session_name}`;
         if (priorSession && identity !== priorSession) {
           model.markers.push({

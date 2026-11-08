@@ -27,6 +27,7 @@ from market_analysis.domain.aggregation import (
     AGGREGATION_VERSION,
     MINUTE,
     MINUTES,
+    OBSERVED_AGGREGATION_VERSION,
     AnalyticalCandle,
     CandleAggregator,
     bucket_bounds,
@@ -295,6 +296,7 @@ class AnalysisSession:
             "detection_config_hash": self.manifest_hash,
             "detection_config": first.model_dump(mode="json"),
             "calendar_version": self.calendar.version,
+            "calendar_status": "unverified" if self.calendar.observed_only else "verified",
             "warmup_required": 0,
             "warmup_processed": self.index + 1 - len(visible),
             "visible_bars": len(visible),
@@ -461,7 +463,8 @@ class AnalysisSessionManager:
                         "source_checksum": sequence.lineage.canonical_checksum,
                         **({"source_input_id": source_input_id} if source_input_id else {}),
                         "initialization_origin": stamp(bars[0].timestamp),
-                        "aggregation": AGGREGATION_VERSION,
+                        "aggregation": OBSERVED_AGGREGATION_VERSION if calendar.observed_only
+                        else AGGREGATION_VERSION,
                         "calendar_version": calendar.version,
                         "streams": [
                             {
@@ -759,6 +762,7 @@ class AnalysisSessionManager:
                 "available_at": stamp(session.watermark),
                 "history_start": stamp(candles[0].bar.timestamp) if candles else None,
                 "timeframe": timeframe.value,
+                "calendar_status": "unverified" if session.calendar.observed_only else "verified",
                 "bars": [
                     {**bar_payload(item.bar), "available_at": stamp(item.available_at)}
                     for item in displayed

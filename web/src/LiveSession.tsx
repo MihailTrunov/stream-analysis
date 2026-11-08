@@ -17,6 +17,7 @@ import { readHistoryWindow } from './useHistoryWindow';
 import { useProviderPrices, useProviderNavigation } from './useProviderPrices';
 import { providerWindowEnd, type ProviderPriceWindow } from './providerPrices';
 import { preferredSource, type AnalysisTab } from './workspace';
+import { useProviderAnalysisSource } from './useProviderAnalysisSource';
 
 interface Props {
   tab: AnalysisTab; active: boolean; sources: ReplaySource[]; patterns: ReviewPattern[];
@@ -118,18 +119,19 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   const start = bars[left]?.timestamp ?? '';
   const finish = bars[right]?.available_at ?? (bars[right]?.is_complete === false ? view?.view_end ?? ''
     : bars[right] ? new Date(Date.parse(bars[right].timestamp) + 60_000).toISOString() : '');
-  const historySource = external?.source ?? (!rawPrices && !live.connected && !live.connecting ? initialSource : undefined);
+  const providerInput = useProviderAnalysisSource(tab.instrument, finish,
+    active && rawPrices && !live.connecting, onSourceAdded, setError);
+  const historySource = rawPrices ? providerInput.source : external?.source ?? (!live.connected && !live.connecting ? initialSource : undefined);
   const historical = useLiveHistory(connectionId, settings.applied, timeframe, start, finish,
-    active && !rawPrices && (live.connected || Boolean(historySource)), Boolean(end) || Boolean(historySource && !live.connected), setError, historySource);
+    active && (live.connected || Boolean(historySource)), Boolean(end) || Boolean(historySource && !live.connected), setError, historySource);
   const evidence = useAnalysisEvidence(`${connectionId}:${timeframe}:${rawPrices ? 'provider' : 'validated'}`, rawPrices ? emptyObservations : view?.observations ?? emptyObservations, rawPrices ? emptyEvents : view?.events ?? emptyEvents, completed);
-  const observations = useMemo(() => rawPrices ? emptyObservations : mergeObservations(evidence.observations, historical.observations), [rawPrices, evidence.observations, historical.observations]);
+  const observations = useMemo(() => mergeObservations(evidence.observations, historical.observations), [evidence.observations, historical.observations]);
   const events = useMemo(() => {
-    if (rawPrices) return emptyEvents;
     const calculated = new Set(historical.calculatedKeys);
     return [...evidence.events.filter((event) => !calculated.has(`${event.timeframe}:${event.pattern_id}`)),
       ...historical.events].sort((a, b) => Date.parse(a.available_at ?? a.detection_time) - Date.parse(b.available_at ?? b.detection_time))
       .map((event, emission_order) => ({ ...event, emission_order }));
-  }, [rawPrices, evidence.events, historical.events, historical.calculatedKeys]);
+  }, [evidence.events, historical.events, historical.calculatedKeys]);
   const selectedOrder = events.find((event) => event.event_id === selectedId)?.emission_order ?? null;
   const visibleEvents = useMemo(() => events.filter((event) => (event.timeframe === timeframe || event.emission_order === selectedOrder)
     && Date.parse(event.available_at ?? event.detection_time) <= Date.parse(finish)), [events, timeframe, selectedOrder, finish]);
@@ -290,7 +292,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
           save.current = setTimeout(() => onTabChange(tab.id, { viewport: next }), 200);
         }} />
       <div className="source-footer"><span>{tab.instrument} · {timeframe} · {completed.length} {rawPrices ? 'provider price' : 'completed'} candles</span>
-        <span>{rawPrices ? 'Provider prices · detector analysis unavailable for this input' : live.state?.forming && !end ? 'Forming candle: display only' : live.connected ? 'Detectors evaluate candle close' : 'Completed history · live monitoring unavailable'}</span></div>
+        <span>{rawPrices ? 'Provider candles · detectors evaluate completed bars' : live.state?.forming && !end ? 'Forming candle: display only' : live.connected ? 'Detectors evaluate candle close' : 'Completed history · live monitoring unavailable'}</span></div>
     </div>
     <aside className="workspace-panel" aria-label="Analysis controls">
       <div className="panel-controls">
@@ -302,7 +304,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
         {live.state?.detail && <p role="status">{live.state.detail}</p>}
         {live.state && <p role="status">Confirmed through: {displayTime(live.state.available_at, tab.timezone)}</p>}
         {live.stage && <p role="status">{live.stage}</p>}
-        {rawPrices && <p role="status">Provider prices loaded independently of calendar validation. {rawWindow?.calendar_status === 'unverified' ? 'Calendar coverage is unavailable. ' : ''}Detectors and replay require validated history.{timeframe !== '1m' ? ' Higher timeframe candles are provisional display aggregates.' : ''}</p>}
+        {rawPrices && <p role="status">Provider prices loaded independently of calendar validation. Detectors can run on available completed candles; calendar/session coverage remains unverified.</p>}
         {rawPrices && rawWindow?.detail && <p role="status">{rawWindow.detail}</p>}
         {prices.error && !completed.length && <p role="alert">{prices.error}</p>}
         {navigation.failed && <button type="button" onClick={() => { setError(null); void navigation.retry(); }}>Retry history loading</button>}
@@ -319,12 +321,12 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
             ? `Historical calculations: ${historical.coverage}. Live detections are shown as of the viewed period.`
             : 'Live policies evaluate completed candles. Manual detectors require Calculate current view.'}</p>
           <PatternGroups events={events} start={start} end={finish} timeframe={timeframe}
-          loaded={!rawPrices && ((view?.coverage === 'calculated' && Boolean(live.state && Date.parse(start) >= Date.parse(live.state.history_start))) || historical.loaded || historical.status === 'partial')} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
+          loaded={(view?.coverage === 'calculated' && Boolean(live.state && Date.parse(start) >= Date.parse(live.state.history_start))) || historical.loaded || historical.status === 'partial'} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
           onInspect={(event, pin) => { setDetails(event); setPinned(pin); }} onDismiss={() => { if (!pinned) setDetails(null); }} /></>
           : <AnalysisSettings streams={settings.drafts} patterns={patterns} onAddDetector={settings.addDetector}
-            disabled={live.connecting || reinitializing || settings.busy || historical.busy} dirty={settings.dirty} onChange={settings.setDrafts}
+            disabled={live.connecting || reinitializing || settings.busy || historical.busy || providerInput.busy} dirty={settings.dirty} onChange={settings.setDrafts}
             onAdd={settings.add} onApply={() => void apply()} onCalculate={(tf, pattern) => {
-              if (rawPrices) { setError('Prices are available; detector calculations require validated calendar coverage and history.'); return; }
+              if (rawPrices && !providerInput.source) { setError('Preparing provider candles for detectors. Please try again shortly.'); return; }
               if (!start || !finish || settings.dirty) { setError('Apply settings and select completed history before calculating.'); return; }
               if (!end && live.state) setEnd(live.state.available_at);
               historical.calculate(tf, pattern);

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, Literal
@@ -17,6 +17,7 @@ from market_analysis.config.oanda_uk_calendars import (
     oanda_uk_profile,
 )
 from market_analysis.domain import Bar, Timeframe, TradingCalendar
+from market_analysis.domain.session_calendar import OBSERVED_CALENDAR_PREFIX
 from market_analysis.persistence.dataset_store import DatasetStore
 from market_analysis.persistence.history_ranges import (
     HistoryRange,
@@ -69,24 +70,28 @@ class HistoryFeed(BaseModel):
         return json.dumps(self.model_dump(), sort_keys=True, separators=(",", ":"))
 
     def calendar(self) -> TradingCalendar:
-        profile = oanda_uk_profile(self.provider_symbol, self.calendar_version)
+        observed = self.calendar_version.startswith(OBSERVED_CALENDAR_PREFIX)
+        version = self.calendar_version.removeprefix(OBSERVED_CALENDAR_PREFIX)
+        profile = oanda_uk_profile(self.provider_symbol, version)
         if (
             profile is None
             or profile.instrument_id != self.instrument_id
-            or self.calendar_version != profile.version
+            or version != profile.version
             or self.normalization_version != NORMALIZATION_VERSION
             or len(self.account_fingerprint) != 64
             or any(c not in "0123456789abcdef" for c in self.account_fingerprint)
         ):
             raise ValueError("history feed has no exact supported provenance/calendar mapping")
-        return build_oanda_uk_calendar(
+        calendar = build_oanda_uk_calendar(
             provider=self.provider,
             region="UK",
             environment=self.environment,
             account="retained-history",
             provider_symbol=self.provider_symbol,
-            calendar_version=self.calendar_version,
+            calendar_version=version,
         )
+        return replace(calendar, version=self.calendar_version, observed_only=True,
+                       coverage_start=None, coverage_end=None) if observed else calendar
 
 
 def request_history(

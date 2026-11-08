@@ -84,12 +84,22 @@ maps work to Jira and defines implementation prerequisites.
   root. Raw cache identity excludes calendar version; OHLC/source/account identity,
   completion, checksums and conflicting-redelivery checks still apply. Include this
   cache in portable backups; do not publish it as a validated research revision.
-- Calendar status and analysis availability are distinct from price availability.
-  Missing coverage prevents validated detector/replay dispatch, never a provider
-  price attempt. Historical detector policies still apply to validated inputs.
-  Do not invent verified open-session rules or extrapolate calendar versions.
-  Higher-timeframe raw price previews are provisional M1 display aggregates using
-  configured alignment metadata, explicitly incomplete and unavailable to detectors.
+- Calendar confirmation must not block chart detector calculation or replay when
+  completed provider candles are available. Publish a pinned provider-observed
+  snapshot and run the existing detector runtime with normal warm-up, close-only
+  evaluation and per-detector policies. Live advances incrementally; replay advances
+  on candle progression. Label calendar/session coverage unverified. Keep original
+  verified profiles unchanged; use `provider-observed-v1:<base-version>` and
+  `m1-provider-observed-aggregation-v1` identities for this explicit mode.
+- Provider-observed inputs carry warning validation status and unclassified missing
+  intervals. Do not fabricate candles, infer holiday/session closures or display
+  unverified session-boundary markers. Higher-timeframe analytical candles are
+  rebuilt from actual M1 inputs and carry calendar/coverage uncertainty flags;
+  provisional display aggregates never become analytical source inputs.
+- Initialize longer chart calculations through `Prefer: respond-async` and poll
+  `/analysis/tasks/{id}`. Polling must remain responsive during detector warm-up;
+  cancellation cleans up an abandoned initialized session. These bounded ephemeral
+  chart tasks are separate from durable autonomous analysis runs.
 - Price-only live subscriptions share acquisition per feed, begin lazily on first
   tab focus, retain completed candles with atomic daily-cache replacement, and
   continue acquisition for connected hidden tabs without polling/rendering their DOM.
@@ -236,8 +246,8 @@ work can proceed against existing deterministic one-minute fixtures.
 
 1. Intraday bucket anchors, partial sessions, 1D instrument trading-day boundary,
    DST and missing/partial bucket policies. UK display timezone is not an answer
-   to analytical alignment. Existing calendar coverage must be extended through
-   a new verified version for later source dates.
+   to analytical alignment. Verified session rules for later dates require a reviewed new calendar version;
+   provider-observed chart calculation remains available without that extension.
 2. Multi-timeframe initialization anchors, cross-timeframe event tie-breaking,
    supported detector/timeframe combinations and parameter semantics. Do not
    silently remove the existing M1-only TrendLeg qualification restriction.

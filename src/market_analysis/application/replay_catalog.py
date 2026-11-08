@@ -123,6 +123,12 @@ def resolve_replay_calendar(
     instrument_id: str, calendar_id: str, version: str,
 ) -> TradingCalendar:
     """Resolve only the pinned UK/live profile, offline and without credentials."""
+    from dataclasses import replace
+
+    from market_analysis.domain.session_calendar import OBSERVED_CALENDAR_PREFIX
+
+    observed = version.startswith(OBSERVED_CALENDAR_PREFIX)
+    base_version = version.removeprefix(OBSERVED_CALENDAR_PREFIX)
     profile = next(
         (item for item in OANDA_UK_LIVE_PROFILES.values()
          if item.instrument_id == instrument_id),
@@ -131,16 +137,18 @@ def resolve_replay_calendar(
     if profile is None or profile.calendar_id != calendar_id:
         raise ReplayCatalogError("dataset has no matching verified replay calendar version")
     try:
-        oanda_uk_profile(profile.provider_symbol, version)
+        oanda_uk_profile(profile.provider_symbol, base_version)
     except ValueError as error:
         raise ReplayCatalogError(
             "dataset has no matching verified replay calendar version",
         ) from error
-    return build_oanda_uk_calendar(
+    calendar = build_oanda_uk_calendar(
         provider="oanda", region="UK", environment="live",
         account="offline-replay", provider_symbol=profile.provider_symbol,
-        calendar_version=version,
+        calendar_version=base_version,
     )
+    return replace(calendar, version=version, observed_only=True,
+                   coverage_start=None, coverage_end=None) if observed else calendar
 
 
 def calendar_resolver(instrument_id: str) -> Callable[[str, str], TradingCalendar]:
