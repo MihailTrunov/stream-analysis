@@ -3,11 +3,13 @@ import { type ReplayBar, type ReplaySource } from './replay';
 import { localWindowEnd, navigationCoverage, prepareNavigation, publishNavigation, waitForHistory,
   type NavigationOptions, type NavigationPlan } from './historyNavigation';
 import { readHistoryWindow } from './useHistoryWindow';
+import { readProviderPrices, providerWindowEnd, type ProviderPriceWindow } from './providerPrices';
 
 interface Callbacks {
   onPersist: (plan: NavigationPlan | undefined) => void;
   onReady: (source: ReplaySource, bars: ReplayBar[], target: string, end: string, intent: 'move' | 'replay', initialization?: string) => Promise<void> | void;
   onError: (message: string) => void;
+  onPrices?: (prices: ProviderPriceWindow, target: string) => void;
 }
 export function useHistoryNavigation(active: boolean, initialPlan: NavigationPlan | undefined, callbacks: Callbacks) {
   const current = useRef(callbacks); current.current = callbacks;
@@ -32,6 +34,14 @@ export function useHistoryNavigation(active: boolean, initialPlan: NavigationPla
     const abort = new AbortController(); controller.current = abort;
     setBusy(true); setFailed(false); phase.current = 'loading';
     const valid = () => !abort.signal.aborted && ownGeneration === generation.current;
+    // Start price acquisition before analytical calendar preparation can reject the period.
+    const priceOptions = options && !options.source.non_research_grade && current.current.onPrices
+      && (options.intent === 'replay' || Date.parse(options.target) < Date.parse(options.source.range_start)
+        || Date.parse(options.target) >= Date.parse(options.source.range_end))
+      ? { instrument: options.source.instrument_id, timeframe: options.timeframe, target: options.target }
+      : undefined;
+    const prices = priceOptions ? readProviderPrices(priceOptions.instrument, priceOptions.timeframe,
+      providerWindowEnd(priceOptions.target, priceOptions.timeframe), abort.signal).catch(() => null) : null;
     try {
       if (options?.intent === 'move' && Date.parse(options.target) >= Date.parse(options.source.range_start)
         && Date.parse(options.target) < Date.parse(options.source.range_end)) {
@@ -71,7 +81,12 @@ export function useHistoryNavigation(active: boolean, initialPlan: NavigationPla
       plan.current = undefined; current.current.onPersist(undefined);
       phase.current = 'idle'; setMessage(null);
     } catch (error) {
-      if (valid()) { phase.current = 'failed'; setFailed(true); setMessage('Chart navigation could not finish.'); current.current.onError(error instanceof Error ? error.message : String(error)); }
+      const preview = await prices;
+      if (valid() && preview?.bars.length && priceOptions) {
+        plan.current = undefined; current.current.onPersist(undefined); phase.current = 'idle';
+        setFailed(false); setMessage(null);
+        current.current.onPrices?.(preview, priceOptions.target);
+      } else if (valid()) { phase.current = 'failed'; setFailed(true); setMessage('Chart navigation could not finish.'); current.current.onError(error instanceof Error ? error.message : String(error)); }
     } finally { if (valid()) { setBusy(false); controller.current = null; } }
   }
   const actions = useRef({ run, cancel }); actions.current = { run, cancel };

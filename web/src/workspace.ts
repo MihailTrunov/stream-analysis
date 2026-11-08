@@ -18,6 +18,7 @@ export interface AnalysisTab {
   appliedStreams?: AnalysisStream[];
   chartTimeframe?: Timeframe;
   historyEnd?: string;
+  priceOnly?: boolean;
   navigationPlan?: NavigationPlan;
   replayEndExplicit?: boolean;
   replayWindow?: ReplayWindow;
@@ -59,6 +60,7 @@ export function restoreWorkspace(raw: string | null): Workspace {
         appliedStreams: validStreams(tab.appliedStreams) ? tab.appliedStreams : undefined,
         chartTimeframe: ['1m', '5m', '15m', '30m', '1h', '4h', '1d'].includes(tab.chartTimeframe ?? '') ? tab.chartTimeframe : '1m' as Timeframe,
         historyEnd: typeof tab.historyEnd === 'string' && Number.isFinite(Date.parse(tab.historyEnd)) ? tab.historyEnd : undefined,
+        priceOnly: tab.priceOnly === true,
         navigationPlan: isNavigationPlan(tab.navigationPlan) && tab.navigationPlan.instrument_id === tab.instrument ? tab.navigationPlan : undefined,
         replayEndExplicit: tab.replayEndExplicit === true,
         mode: tab.mode === 'live' ? 'live' as const : 'history' as const,
@@ -113,7 +115,7 @@ export function restoreLiveWorkspace(raw: string | null, sources: ReplaySource[]
   const unknownDemo = (id: string) => !sources.some((source) => source.dataset_revision_id === id)
     && id.startsWith('offline-replay-');
   const tabs = restored.tabs.filter((tab) => tab.mode === 'live'
-    || Boolean(tab.sourceId) && !synthetic.has(tab.sourceId) && !unknownDemo(tab.sourceId))
+    || tab.priceOnly || Boolean(tab.sourceId) && !synthetic.has(tab.sourceId) && !unknownDemo(tab.sourceId))
     .map((tab) => {
       if (tab.mode !== 'live' || !synthetic.has(tab.sourceId) && !unknownDemo(tab.sourceId)) return tab;
       return { ...tab, sourceId: '', liveHistorySourceId: undefined, liveWindowEnd: undefined,

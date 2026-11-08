@@ -43,6 +43,9 @@ async function fakeLive(page: Page, options = { prepare: false }) {
   await page.route('**/api/live/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname.includes('/prices/') || url.pathname.includes('/price-subscriptions')) {
+      await route.fulfill({ status: 503, json: { detail: 'Price fallback disabled in this analytical-feed fixture.' } }); return;
+    }
     if (url.pathname.includes('/prepare/')) {
       const body = request.postDataJSON();
       prepares.push(body.subscription_id);

@@ -20,6 +20,8 @@ import { apiJson, TIMEFRAMES, type Timeframe, type ReplayBar,
   type ReplayState, type ReviewPattern } from './replay';
 import { dateTimeInput, displayTime, inputInstant, type DisplayTimezone } from './time';
 import { preferredSource, type AnalysisTab } from './workspace';
+import { providerWindowEnd, type ProviderPriceWindow } from './providerPrices';
+import { useProviderPrices, useProviderNavigation } from './useProviderPrices';
 
 interface Props {
   tab: AnalysisTab;
@@ -50,6 +52,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     : tab.end ?? (selected ? dateTimeInput(selected.suggested_end, tab.timezone) : ''));
   const [chartTimeframe, setChartTimeframe] = useState<Timeframe>(tab.chartTimeframe ?? '1m');
   const [historyEnd, setHistoryEnd] = useState<string | undefined>(tab.historyEnd);
+  const [pricePreview, setPricePreview] = useState<ProviderPriceWindow | null>(null);
   const [endExplicit, setEndExplicit] = useState(tab.replayEndExplicit ?? false);
   const [navigationNote, setNavigationNote] = useState<string | null>(null);
   const extending = useRef(false);
@@ -95,6 +98,11 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     }, setError, selected?.range_start, tab.replayWindow);
   const restoredReplayWindow = useRef(replay.window);
   const { state, stateRef, setState, control, annotations, setAnnotations } = replay;
+  const provider = useProviderPrices(tab.instrument, chartTimeframe, active,
+    !state && !selected?.non_research_grade && (!selected || tab.priceOnly === true), historyEnd, false);
+  const rawWindow = pricePreview?.timeframe === chartTimeframe ? pricePreview : provider.window;
+  const rawPrices = !state && Boolean(rawWindow?.bars.length && (pricePreview || tab.priceOnly || !selected));
+  const priceNavigation = useProviderNavigation(tab.instrument, chartTimeframe, active, setError);
   const chartBars = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.bars ?? emptyBars : emptyBars;
   const snapshotObservations = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.observations ?? emptyObservations : emptyObservations;
   const snapshotEvents = replay.snapshot?.run_id === state?.run_id && (!state?.analysis_session || replay.snapshot?.timeframe === chartTimeframe) ? replay.snapshot?.events ?? emptyEvents : emptyEvents;
@@ -105,6 +113,8 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
     onError: setError,
     onReady: async (source, bars, target, windowEnd, intent, initialization) => {
       if (stateRef.current) return;
+      setPricePreview(null);
+      onTabChange(tab.id, { priceOnly: false });
       onSourceAdded(source); setSelectedId(source.dataset_revision_id);
       setHistoryEnd(windowEnd); setHistory(bars); setViewedPeriod(null);
       if (!extending.current) { setBufferVersion((value) => value + 1); clearRunView(); }
@@ -116,12 +126,20 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       if (!extending.current) { setFocusTime(candle.timestamp); setFocusVersion((version) => version + 1); }
       extending.current = false; setError(null);
     },
+    onPrices: (window, target) => {
+      if (stateRef.current) return;
+      setPricePreview(window); setHistoryEnd(window.end); setViewedPeriod(null); setError(null);
+      onTabChange(tab.id, { priceOnly: true });
+      setNavigationNote('Provider prices loaded. Detector calculations and replay require validated calendar coverage and history.');
+      if (!extending.current) { setBufferVersion(value => value + 1); clearRunView(); setFocusTime(target); setFocusVersion(value => value + 1); }
+      extending.current = false;
+    },
   });
-  const working = busy || replay.busy || settings.busy || navigation.busy;
+  const working = busy || replay.busy || settings.busy || navigation.busy || priceNavigation.busy;
   const visibleHistory = useMemo(() => state ? history.filter((bar) => bar.timestamp < state.selected_start) : history,
     [history, state]);
-  const incomingPrices = useMemo(() => state ? state.analysis_session ? chartBars : [...visibleHistory, ...chartBars].slice(-500) : history, [state, visibleHistory, chartBars, history]);
-  const buffered = usePriceBuffer(`${selected?.instrument_id}:${state?.run_id ?? 'history'}:${chartTimeframe}:${bufferVersion}`, incomingPrices, Boolean(historyEnd || replay.window), viewport.current);
+  const incomingPrices = useMemo(() => state ? state.analysis_session ? chartBars : [...visibleHistory, ...chartBars].slice(-500) : rawPrices ? rawWindow!.bars : history, [state, visibleHistory, chartBars, history, rawPrices, rawWindow]);
+  const buffered = usePriceBuffer(`${selected?.instrument_id ?? tab.instrument}:${state?.run_id ?? 'history'}:${chartTimeframe}:${bufferVersion}:${rawPrices ? 'provider' : 'validated'}`, incomingPrices, Boolean(historyEnd || replay.window), viewport.current);
   const visible = useMemo(() => state ? buffered.filter((bar) => Date.parse(bar.available_at ?? new Date(Date.parse(bar.timestamp) + 60000).toISOString()) <= replayWatermark(state)) : buffered, [buffered, state]);
   const cursor = visible.at(-1)?.timestamp ?? null;
   const evidence = useAnalysisEvidence(`${state?.run_id ?? selectedId}:${chartTimeframe}`, snapshotObservations, snapshotEvents, visible);
@@ -129,7 +147,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const periodStart = viewedPeriod?.start ?? visible[0]?.timestamp ?? null;
   const periodEnd = viewedPeriod?.end ?? visible.at(-1)?.available_at
     ?? (visible.at(-1) ? new Date(Date.parse(visible.at(-1)!.timestamp) + 60000).toISOString() : null);
-  const historical = useHistoricalAnalysis(selected, settings.applied, chartTimeframe,
+  const historical = useHistoricalAnalysis(rawPrices ? undefined : selected, settings.applied, chartTimeframe,
     periodStart, periodEnd, active && !state, setError);
   const events = useMemo(() => state ? evidence.events.map((event, emission_order) => ({ ...event, emission_order })) : historical.events, [state, evidence.events, historical.events]);
   const selectedEvent = events.find((event) => event.event_id === selectedEventId);
@@ -137,6 +155,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const chartEvents = useMemo(() => events.filter((event) => (event.timeframe === chartTimeframe || event.emission_order === selectedOrder) && (!periodEnd || Date.parse(event.available_at ?? event.detection_time) <= Date.parse(periodEnd))), [events, chartTimeframe, selectedOrder, periodEnd]);
 
   const startupRun = useRef(initialRun);
+  useEffect(() => {
+    if (rawPrices && !tab.priceOnly) onTabChange(tab.id, { priceOnly: true });
+  }, [rawPrices, tab.priceOnly, onTabChange, tab.id]);
   useEffect(() => {
     if (restored.current.runId && !startupRun.current) onTabChange(tab.id, { runId: null });
   }, [onTabChange, tab.id]);
@@ -221,7 +242,16 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         if (state) {
           setBufferVersion((value) => value + 1); replay.browse(instant); setFocusTime(null); setNavigationNote(null); setError(null); return;
         }
-        if (!selected) throw new Error('Choose a published source for this instrument.');
+        if (!selected || rawPrices) {
+          const window = await priceNavigation.load(providerWindowEnd(instant, chartTimeframe));
+          if (window) {
+            if (!window.bars.length) { setError('No provider prices were returned for this period.'); return; }
+            setPricePreview(window); setHistoryEnd(window.end); setViewedPeriod(null);
+            onTabChange(tab.id, { priceOnly: true });
+            setBufferVersion(value => value + 1); setFocusTime(instant); setFocusVersion(value => value + 1); setError(null);
+          }
+          return;
+        }
         setError(null); setNavigationNote(null);
         await navigation.begin({ source: selected, target: instant, timeframe: chartTimeframe,
           streams: settings.applied ?? [], intent: 'move' });
@@ -240,6 +270,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   function chooseSource(id: string) {
+    priceNavigation.cancel();
+    setPricePreview(null);
+    onTabChange(tab.id, { priceOnly: false });
     setBufferVersion((value) => value + 1);
     navigation.cancel(); setHistoryEnd(undefined); setEndExplicit(false); setNavigationNote(null); edgeAttempts.current.clear();
     if (saveViewport.current) clearTimeout(saveViewport.current);
@@ -253,11 +286,18 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   function loadEarlier(automatic = false) {
-    if (!selected || working || loadingHistory || !visible.length || state && !replay.ready) return;
+    if (working || loadingHistory || !visible.length || state && !replay.ready) return;
     const first = visible[0].timestamp;
     const key = `${selectedId}:${chartTimeframe}:${first}`;
     if (automatic && edgeAttempts.current.has(key)) return;
     edgeAttempts.current.add(key);
+    if (rawPrices || !selected) {
+      void priceNavigation.load(first).then(window => {
+        if (window?.bars.length) { setPricePreview(window); setHistoryEnd(window.end); setViewedPeriod(null); setError(null); onTabChange(tab.id, { priceOnly: true }); }
+        else if (window) setNavigationNote('No earlier provider prices were returned.');
+      });
+      return;
+    }
     if (state) {
       try {
         extending.current = true;
@@ -349,7 +389,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           navigation.cancel(); edgeAttempts.current.clear(); setNavigationNote(null);
           setChartTimeframe(event.target.value as Timeframe); setViewedPeriod(null); setHistory([]);
         }}>{TIMEFRAMES.map((tf) => <option key={tf} value={tf} disabled={Boolean(state && !state.analysis_session && tf !== '1m')}>{tf === '1d' ? '1D' : tf}</option>)}</select>
-        <span className={`source-badge ${selected?.non_research_grade ? 'synthetic' : ''}`}>{selected?.non_research_grade ? 'Synthetic data' : 'Local history'}</span>
+        <span className={`source-badge ${selected?.non_research_grade ? 'synthetic' : ''}`}>{selected?.non_research_grade ? 'Synthetic data' : rawPrices ? 'Provider history' : 'Local history'}</span>
       </div>
       {loadingHistory && <span className="history-loading" role="status">Loading candles…</span>}
       <CandlestickChart key={`${selected?.instrument_id}:${state?.run_id ?? 'history'}:${chartTimeframe}:${bufferVersion}`} resetKey={`${selected?.instrument_id}:${state?.run_id ?? 'history'}:${chartTimeframe}:${bufferVersion}`}
@@ -361,6 +401,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           setFocusTime(null);
           if (state) returnToCursor();
           if (!state) {
+            priceNavigation.cancel();
+            setPricePreview(null);
+            onTabChange(tab.id, { priceOnly: false });
             navigation.cancel(); setHistoryEnd(undefined); setViewedPeriod(null); setNavigationNote(null);
             const latest = preferredSource(sources, selected?.instrument_id ?? tab.instrument);
             if (latest && latest.dataset_revision_id !== selectedId) {
@@ -370,7 +413,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
         }} onLoadEarlier={loadEarlier} earlierDisabled={working || loadingHistory || !visible.length || Boolean(state && !replay.ready)}
         autoLoadEarlier={!navigation.failed && !error && !navigationNote}
         historyStatus={navigation.message ?? navigationNote ?? (loadingHistory ? 'Loading candles…' : null)}
-        canReturnLatest={state ? Boolean(replay.window) : Boolean(historyEnd && selected && Date.parse(historyEnd) < Date.parse(selected.range_end))}
+        canReturnLatest={state ? Boolean(replay.window) : Boolean(pricePreview || historyEnd && selected && Date.parse(historyEnd) < Date.parse(selected.range_end))}
         initialRange={viewport.current?.origin === visible[0]?.timestamp ? viewport.current : null}
         onRangeChange={(value) => {
           if (!visible.length) return;
@@ -385,10 +428,12 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           if (saveViewport.current) clearTimeout(saveViewport.current);
           saveViewport.current = setTimeout(() => onTabChange(tab.id, { viewport: saved }), 200);
         }} />
-      <div className="source-footer"><span>{selected?.instrument_id} · {chartTimeframe} · {state ? `${state.visible_bars} replay bars revealed` : `${history.length} local candles`}</span>
+      <div className="source-footer"><span>{selected?.instrument_id} · {chartTimeframe} · {state ? `${state.visible_bars} replay bars revealed` : `${visible.length} ${rawPrices ? 'provider' : 'local'} candles`}</span>
         <span>{tab.timezone === 'Europe/London' ? 'UK time · GMT / BST' : 'UTC'}{selected?.non_research_grade ? ' · Not research-grade' : ''}</span></div>
     </div>
     <aside className="workspace-panel" aria-label="Analysis controls">
+      {rawPrices && <p role="status">Provider prices loaded independently of calendar validation. Detectors and replay require validated history.{chartTimeframe !== '1m' ? ' Higher timeframe candles are provisional display aggregates.' : ''}</p>}
+      {rawPrices && rawWindow?.detail && <p role="status">{rawWindow.detail}</p>}
       <div className="panel-controls">
         <div className="panel-heading"><h2>{state ? 'Historical replay' : 'Historical exploration'}</h2><span className="connection-status">LOCAL</span></div>
         <div className="mode-control" aria-label="Analysis mode"><button type="button" className="selected">History</button>
@@ -449,6 +494,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           <AnalysisSettings streams={settings.drafts} patterns={patterns} onAddDetector={settings.addDetector} disabled={Boolean(state) || working || historical.busy}
             dirty={settings.dirty} onChange={settings.setDrafts} onAdd={settings.add} onApply={() => { setError(null); void settings.apply(); }}
             onCalculate={(tf, pattern) => {
+              if (rawPrices) { setError('Prices are available; detector calculations require validated calendar coverage and history.'); return; }
               if (!periodStart || !periodEnd) { setError('No completed candles are available in this view. Select a shorter chart timeframe or load more history.'); return; }
               setError(null); void historical.calculate(tf, pattern);
             }} />
