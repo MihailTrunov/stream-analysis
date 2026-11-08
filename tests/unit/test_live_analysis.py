@@ -609,3 +609,50 @@ def test_old_selected_bootstrap_prepares_a_new_feed_without_relabeling_retained_
         for request_id in prepared["plan"]["request_ids"]:
             coverage = history_coverage(connection, store, request_id)
             assert coverage["status"] == "pending"
+
+
+@pytest.mark.parametrize(
+    "instrument,symbol,expected",
+    [("US30", "US30_USD", "2026-11-06T21:59:00Z"),
+     ("DAX", "DE30_EUR", "2026-11-06T20:59:00Z")],
+)
+def test_prepare_after_calendar_expiry_still_plans_latest_verified_history(
+    attached, instrument, symbol, expected
+):
+    manager, hub, (engine, _, original), _, now = attached
+    now[0] = datetime.fromisoformat("2026-11-08T15:00:00+00:00")
+    feed = original.model_copy(update={"instrument_id": instrument, "provider_symbol": symbol})
+    with engine.begin() as connection:
+        register_instrument(connection, build_oanda_uk_instrument(symbol))
+    selected = LiveAnalysisRequest(
+        subscription_id=uuid4(), streams=[{"config": demo_detection_config(instrument)}]
+    )
+    plan = manager.prepare(selected, feed)["plan"]
+    assert plan["live_status"] == "calendar_unverified"
+    assert "does not cover" in plan["live_detail"]
+    assert plan["target"] == expected
+    assert datetime.fromisoformat(plan["end"]) < now[0]
+    assert feed.calendar().derive(datetime.fromisoformat(plan["target"])).is_open
+    assert hub._clients == {}  # Planning history must not start provider acquisition.
+
+
+@pytest.mark.parametrize(
+    "instrument,symbol,at,expected",
+    [("US30", "US30_USD", "2026-11-07T18:00:00+00:00", "2026-11-06T21:59:00Z"),
+     ("DAX", "DE30_EUR", "2026-04-06T12:00:00+00:00", "2026-04-02T19:59:00Z")],
+)
+def test_closed_market_preparation_targets_last_trading_candle(
+    attached, instrument, symbol, at, expected
+):
+    manager, _, (engine, _, original), _, now = attached
+    now[0] = datetime.fromisoformat(at)
+    feed = original.model_copy(update={"instrument_id": instrument, "provider_symbol": symbol})
+    with engine.begin() as connection:
+        register_instrument(connection, build_oanda_uk_instrument(symbol))
+    selected = LiveAnalysisRequest(
+        subscription_id=uuid4(), streams=[{"config": demo_detection_config(instrument)}]
+    )
+    plan = manager.prepare(selected, feed)["plan"]
+    assert plan["live_status"] == "market_closed"
+    assert plan["target"] == expected
+    assert plan["end"] == at.replace("+00:00", "Z")

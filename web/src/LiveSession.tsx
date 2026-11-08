@@ -57,6 +57,19 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
       onSource: (source) => { onSourceAdded(source); onTabChange(tab.id, { sourceId: source.dataset_revision_id }); },
       onPlan: (livePreparation) => onTabChange(tab.id, { livePreparation }),
     });
+  const initialSource = live.bootstrapSource ?? selected;
+  const initialKey = `${connectionId}:${timeframe}:${initialSource?.dataset_revision_id}`;
+  const [initialError, setInitialError] = useState<{ key: string; message: string } | null>(null);
+  const [initialHistory, setInitialHistory] = useState<{ key: string; bars: ReplayBar[] } | null>(null);
+  useEffect(() => {
+    if (!active || !initialSource || live.connected) return;
+    let cancelled = false;
+    setInitialError(null);
+    void readHistoryWindow(initialSource, initialSource.range_end, timeframe).then((prices) => {
+      if (!cancelled) setInitialHistory({ key: initialKey, bars: prices });
+    }).catch((reason: unknown) => { if (!cancelled) setInitialError({ key: initialKey, message: `Could not load retained prices: ${String(reason)}` }); });
+    return () => { cancelled = true; };
+  }, [active, initialSource, initialKey, timeframe, live.connected]);
   useEffect(() => {
     const source = sources.find((item) => item.dataset_revision_id === tab.liveHistorySourceId);
     if (!active || !source || !end || (external?.source.dataset_revision_id === source.dataset_revision_id
@@ -69,7 +82,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   }, [active, sources, tab.liveHistorySourceId, timeframe, end, external]);
   const view = live.view;
   const externalBars = external?.timeframe === timeframe ? external.bars : [];
-  const completed = usePriceBuffer(`${connectionId}:${timeframe}:${bufferVersion}`, external ? externalBars : view?.bars ?? emptyPrices, Boolean(end), viewport.current);
+  const completed = usePriceBuffer(`${connectionId}:${timeframe}:${bufferVersion}`, external ? externalBars : view?.bars ?? (initialHistory?.key === initialKey ? initialHistory.bars : emptyPrices), Boolean(end), viewport.current);
   const navigation = useHistoryNavigation(active, tab.navigationPlan, {
     onPersist: (navigationPlan) => onTabChange(tab.id, { navigationPlan }),
     onError: (message) => { earlierRequest.current = null; setError(message); },
@@ -89,10 +102,11 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   const left = logicalRange ? Math.max(0, Math.min(bars.length - 1, Math.floor(logicalRange.from))) : 0;
   const right = logicalRange ? Math.max(0, Math.min(bars.length - 1, Math.ceil(logicalRange.to))) : bars.length - 1;
   const start = bars[left]?.timestamp ?? '';
-  const finish = bars[right]?.available_at ?? (external && bars[right]
-    ? new Date(Date.parse(bars[right].timestamp) + 60_000).toISOString() : view?.view_end ?? '');
+  const finish = bars[right]?.available_at ?? (bars[right]?.is_complete === false ? view?.view_end ?? ''
+    : bars[right] ? new Date(Date.parse(bars[right].timestamp) + 60_000).toISOString() : '');
+  const historySource = external?.source ?? (!live.connected && !live.connecting ? initialSource : undefined);
   const historical = useLiveHistory(connectionId, settings.applied, timeframe, start, finish,
-    active && live.connected, Boolean(end), setError, external?.source);
+    active && (live.connected || Boolean(historySource)), Boolean(end) || Boolean(historySource && !live.connected), setError, historySource);
   const evidence = useAnalysisEvidence(`${connectionId}:${timeframe}`, view?.observations ?? emptyObservations, view?.events ?? emptyEvents, completed);
   const observations = useMemo(() => mergeObservations(evidence.observations, historical.observations), [evidence.observations, historical.observations]);
   const events = useMemo(() => {
@@ -143,8 +157,13 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   function moveTo() {
     extending.current = false;
     try {
-      if (!live.state || !selected) return;
       const target = inputInstant(date, tab.timezone);
+      if (!live.state) {
+        if (initialSource) void navigation.begin({ source: external?.source ?? initialSource, target, timeframe,
+          streams: settings.applied ?? [], intent: 'move' });
+        return;
+      }
+      if (!selected) return;
       if (Date.parse(target) >= Date.parse(live.state.available_at)) throw new Error('Choose a completed candle.');
       if (Date.parse(target) < Date.parse(live.state.history_start) || external) {
         void navigation.begin({ source: external?.source ?? selected, target, timeframe,
@@ -164,7 +183,16 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
     setFocusVersion((value) => value + 1); onTabChange(tab.id, { viewport: undefined, liveHistorySourceId: undefined });
   }
   function earlier() {
-    if (!live.state || !selected || !completed.length || navigation.busy) return;
+    if (!completed.length || navigation.busy) return;
+    if (!live.state) {
+      if (!initialSource) return;
+      extending.current = true;
+      void navigation.begin({ source: external?.source ?? initialSource,
+        target: new Date(Date.parse(completed[0].timestamp) - 60_000).toISOString(),
+        timeframe, streams: settings.applied ?? [], intent: 'move' });
+      return;
+    }
+    if (!selected) return;
     const key = `${timeframe}:${completed[0].timestamp}`;
     if (earlierRequest.current === key) return;
     earlierRequest.current = key;
@@ -199,7 +227,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
           viewport.current = undefined; onTabChange(tab.id, { viewport: undefined });
           setTimeframe(event.target.value as Timeframe); setLogicalRange(null);
         }}>{TIMEFRAMES.map((tf) => <option key={tf}>{tf}</option>)}</select>
-        <span className="source-badge">Live provider</span>
+        <span className="source-badge">{end ? 'Provider history' : live.connected ? 'Live provider' : 'Latest available history'}</span>
       </div>
       <CandlestickChart key={timeframe} bars={bars} observations={observations}
         events={visibleEvents} selectedEventOrder={selectedOrder}
@@ -221,7 +249,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
           save.current = setTimeout(() => onTabChange(tab.id, { viewport: next }), 200);
         }} />
       <div className="source-footer"><span>{tab.instrument} · {timeframe} · {completed.length} completed candles</span>
-        <span>{live.state?.forming && !end ? 'Forming candle: display only' : 'Detectors evaluate candle close'}</span></div>
+        <span>{live.state?.forming && !end ? 'Forming candle: display only' : live.connected ? 'Detectors evaluate candle close' : 'Completed history · live monitoring unavailable'}</span></div>
     </div>
     <aside className="workspace-panel" aria-label="Analysis controls">
       <div className="panel-controls">
@@ -235,14 +263,15 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
         {live.stage && <p role="status">{live.stage}</p>}
         {navigation.failed && <button type="button" onClick={() => { setError(null); void navigation.retry(); }}>Retry history loading</button>}
         <label className="input-label">Go to date & time<input aria-label="Chart date and time" type="datetime-local" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-        <button type="button" onClick={moveTo} disabled={!live.state || !date}>Move to</button>
+        <button type="button" onClick={moveTo} disabled={(!live.state && !initialSource) || !date}>Move to</button>
         {focus && <p className="focus-notice">Viewing {displayTime(focus, tab.timezone)}</p>}
+        {!completed.length && !live.connecting && initialError?.key === initialKey && <p role="alert">{initialError.message}</p>}
         {error && <p role="alert" className="inline-error">{error}<button type="button" onClick={() => setError(null)} aria-label="Dismiss error">×</button></p>}
       </div>
       <PanelTabs id={tab.id} panel={panel} count={projectOccurrences(events, start, finish).length} onChange={setPanel} />
       <div className="panel-body" id={`panel-${tab.id}`} role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
         {panel === 'patterns' ? <>
-          <p role="status">{historical.busy ? 'Calculating historical detectors…' : end
+          <p role="status">{historical.busy ? 'Calculating historical detectors…' : end || !live.connected && completed.length
             ? `Historical calculations: ${historical.coverage}. Live detections are shown as of the viewed period.`
             : 'Live policies evaluate completed candles. Manual detectors require Calculate current view.'}</p>
           <PatternGroups events={events} start={start} end={finish} timeframe={timeframe}

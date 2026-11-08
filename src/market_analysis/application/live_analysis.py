@@ -42,7 +42,7 @@ from .analysis_sessions import (
 )
 from .browser_replay import _store
 from .history_inputs import read_history_input
-from .history_navigation import plan_history_navigation
+from .history_navigation import plan_history_navigation, verified_history_bounds
 from .history_prices import completed_source_window
 from .history_ranges import HistoryFeed, stamp
 from .live_ingress import LiveIngress, live_ingress
@@ -89,26 +89,43 @@ class LiveAnalysisManager:
                     raise ValueError("disconnect before replacing live analytical settings")
                 return {"state": self.state(client)}
             now = self.ingress.now()
-            feed.calendar().derive(now)
-            end = now.replace(second=0, microsecond=0)
+            calendar = feed.calendar()
+            verified_start, verified_end = verified_history_bounds(feed)
+            end = min(now.replace(second=0, microsecond=0), verified_end)
+            if end <= verified_start:
+                raise ValueError("no completed verified history is available")
+            last = completed_source_window(calendar, Timeframe.M1, verified_start, end, 1)
+            if last is None:
+                raise ValueError("no completed verified history is available")
+            if now >= verified_end:
+                status = "calendar_unverified"
+                detail = (
+                    "Showing the latest verified completed history. Live monitoring is unavailable "
+                    "because the trading calendar does not cover the current date."
+                )
+            else:
+                status = "ready" if calendar.derive(now).is_open else "market_closed"
+                detail = ("Market closed; showing the latest completed candles."
+                          if status == "market_closed" else "")
             engine = self._analysis.engine()
             try:
                 with engine.begin() as connection:
-                    return {
-                        "plan": plan_history_navigation(
-                            connection,
-                            feed,
-                            request.bootstrap_revision_id,
-                            end - MINUTE,
-                            Timeframe.M1,
-                            request.streams,
-                            "replay",
-                            at=now,
-                            end=end,
-                            # The completed target candle is included in addition to this prefix.
-                            price_bars=1440 - 1,
-                        )
-                    }
+                    plan = plan_history_navigation(
+                        connection,
+                        feed,
+                        request.bootstrap_revision_id,
+                        last[0],
+                        Timeframe.M1,
+                        request.streams,
+                        "replay",
+                        at=now,
+                        end=end,
+                        # The completed target candle is included in addition to this prefix.
+                        price_bars=1440 - 1,
+                    )
+                    plan["live_status"] = status
+                    plan["live_detail"] = detail
+                    return {"plan": plan}
             finally:
                 engine.dispose()
 

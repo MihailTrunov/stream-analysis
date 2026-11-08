@@ -14,6 +14,8 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
   streams: AnalysisStream[] | null, active: boolean, wanted: boolean, timeframe: Timeframe,
   end: string | undefined, initialPlan: AnalysisTab['livePreparation'], handlers: Callbacks) {
   const [state, setState] = useState<LiveState | null>(null);
+  const [bootstrapSource, setBootstrapSource] = useState<{ id: string; source: ReplaySource } | null>(null);
+  const initialized = useRef<string | null>(null);
   const [view, setView] = useState<LiveView | null>(null);
   const [readKey, setReadKey] = useState('');
   const identity = JSON.stringify([id, timeframe, end]);
@@ -31,7 +33,7 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
     return () => document.removeEventListener('visibilitychange', changed);
   }, []);
   useEffect(() => {
-    if (!active || !wanted || !streams || connection.current === id) return;
+    if (!active || !wanted || !streams || connection.current === id || initialized.current === id) return;
     const controller = new AbortController();
     setConnecting(true);
     let preparedSource: ReplaySource | undefined;
@@ -63,6 +65,16 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
       }
       const source = await publishNavigation(plan, coverage.requests, controller.signal);
       if (controller.signal.aborted) return;
+      preparedSource = source;
+      setBootstrapSource({ id, source });
+      if (plan.live_status === 'calendar_unverified') {
+        initialized.current = id;
+        setStage(plan.live_detail ?? 'Showing completed history; live calendar coverage is unavailable.');
+        callbacks.current.onSource(source);
+        savedPlan.current = undefined; callbacks.current.onPlan(undefined);
+        return null;
+      }
+      setStage(plan.live_detail || 'History ready; connecting live monitoring…');
       const body = { ...JSON.parse(params), bootstrap_revision_id: source.dataset_revision_id };
       const next = validateLiveState(await apiJson(`/live/analysis/${instrument}`, {
         method: 'POST', body: JSON.stringify(body), signal: controller.signal,
@@ -72,11 +84,18 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
     })().then((next) => {
         if (controller.signal.aborted) return;
         if (!next) return;
-        connection.current = id; setState(next);
+        connection.current = id; initialized.current = id; setState(next);
         if (preparedSource) callbacks.current.onSource(preparedSource);
         savedPlan.current = undefined; callbacks.current.onPlan(undefined);
         setConnecting(false); setStage(null);
-      }).catch((error: unknown) => { if (!controller.signal.aborted) callbacks.current.onError(String(error)); })
+      }).catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (preparedSource) {
+          initialized.current = id; callbacks.current.onSource(preparedSource);
+          setStage('Showing completed history; live monitoring is unavailable.');
+        } else setStage(null);
+        callbacks.current.onError(String(error));
+      })
       .finally(() => { if (!controller.signal.aborted) setConnecting(false); });
     return () => { controller.abort(); setConnecting(false); };
   }, [id, active, wanted, bootstrap, streams, instrument, params]);
@@ -100,12 +119,13 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
     return () => { controller.abort(); clearTimeout(timer); };
   }, [id, active, visible, connected, timeframe, end, instrument, identity]);
   async function disconnect() {
-    connection.current = null; setState(null); setView(null); setConnecting(false);
+    connection.current = null; initialized.current = null; setState(null); setView(null); setConnecting(false); setStage(null);
     await apiJson(`/live/subscriptions/${id}`, { method: 'DELETE' });
   }
   return { state: state?.subscription_id === id ? state : null,
     view: connected && (readKey === identity || end === undefined && view?.view_end === view?.live.available_at || Boolean(end && view?.view_end
       && Date.parse(view.view_end) === Date.parse(end))) && view?.timeframe === timeframe
       && view.live.subscription_id === id ? view : null,
+    bootstrapSource: bootstrapSource?.id === id ? bootstrapSource.source : undefined,
     connecting, connected, disconnect, stage };
 }

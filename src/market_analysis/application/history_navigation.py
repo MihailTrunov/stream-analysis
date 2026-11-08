@@ -42,6 +42,18 @@ def _preceding(
     return start
 
 
+def verified_history_bounds(feed: HistoryFeed) -> tuple[datetime, datetime]:
+    profile = oanda_uk_profile(feed.provider_symbol, feed.calendar_version)
+    zone = ZoneInfo(profile.timezone_name)
+    verified_start = datetime.combine(
+        profile.coverage_start, profile.trading_day_boundary, zone
+    ).astimezone(UTC)
+    verified_end = datetime.combine(
+        profile.coverage_end + timedelta(days=1), profile.trading_day_boundary, zone
+    ).astimezone(UTC)
+    return verified_start, verified_end
+
+
 def plan_history_navigation(
     connection: Connection,
     feed: HistoryFeed,
@@ -92,14 +104,7 @@ def plan_history_navigation(
             )
     calendar = feed.calendar()
     calendar.derive(target)
-    profile = oanda_uk_profile(feed.provider_symbol, feed.calendar_version)
-    zone = ZoneInfo(profile.timezone_name)
-    verified_start = datetime.combine(
-        profile.coverage_start, profile.trading_day_boundary, zone
-    ).astimezone(UTC)
-    verified_end = datetime.combine(
-        profile.coverage_end + timedelta(days=1), profile.trading_day_boundary, zone
-    ).astimezone(UTC)
+    verified_start, verified_end = verified_history_bounds(feed)
     latest = min(at.astimezone(UTC).replace(second=0, microsecond=0), verified_end)
     if target > latest:
         raise ValueError("navigation target is later than completed verified history")

@@ -65,6 +65,15 @@ maps work to Jira and defines implementation prerequisites.
 - Retained history is shared across tabs, historical replay and autonomous
   evaluation. Reuse fetched history after restart; preserve source provenance,
   validation, gaps, checksums and immutable revisions referenced by runs.
+- Startup loads the selected instrument's last completed trading candles rather
+  than assuming the wall-clock minute has a candle. Show retained provider prices
+  while missing startup history is prepared, independently of live connection
+  success. Weekends and holidays must not leave the chart blank.
+- When the current date is outside verified calendar coverage, display the latest
+  verified completed history and clearly report the live limitation. Do not invent
+  calendar rules, imply those prices are a current live quote, or start an
+  unverified live analytical session. Historical navigation/calculation remains
+  available under the existing detector policies.
 - Live monitoring receives current provider data. The forming candle may update
   on the chart, but detectors evaluate only completed candles. Do not generate
   provisional intrabar detector signals.

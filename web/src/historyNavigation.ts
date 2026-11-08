@@ -3,6 +3,8 @@ import { apiJson, type AnalysisStream, type ReplayBar, type ReplaySource, type T
 export interface NavigationPlan {
   request_ids: string[]; instrument_id: string; target: string; start: string; end: string;
   timeframe: Timeframe; intent: 'move' | 'replay'; initialization: string;
+  live_status?: 'ready' | 'market_closed' | 'calendar_unverified';
+  live_detail?: string;
 }
 export interface NavigationInput {
   dataset_revision_id: string; source_dataset_id: string; instrument_id: string;
@@ -28,6 +30,8 @@ export function isNavigationPlan(value: unknown): value is NavigationPlan {
   return Array.isArray(plan.request_ids) && plan.request_ids.length > 0 && plan.request_ids.length <= 32
     && plan.request_ids.every((id) => typeof id === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(id))
     && ['US30', 'DAX'].includes(plan.instrument_id) && TIMEFRAMES.includes(plan.timeframe)
+    && (plan.live_status === undefined || ['ready', 'market_closed', 'calendar_unverified'].includes(plan.live_status))
+    && (plan.live_detail === undefined || typeof plan.live_detail === 'string')
     && ['move', 'replay'].includes(plan.intent) && [plan.start, plan.end, plan.target].every((time) => typeof time === 'string' && Number.isFinite(Date.parse(time)))
     && Date.parse(plan.start) < Date.parse(plan.end) && Date.parse(plan.start) <= Date.parse(plan.target) && Date.parse(plan.target) <= Date.parse(plan.end);
 }
