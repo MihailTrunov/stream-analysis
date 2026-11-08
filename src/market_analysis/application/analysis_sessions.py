@@ -46,6 +46,7 @@ from .analysis_clock import verify_closed_interval
 from .analysis_coverage import coverage_status
 from .analytical_step import process_detector_candle
 from .browser_replay import ReplayReviewScope, _store
+from .chart_observations import RecordedFrame
 from .history_prices import load_completed_candles
 from .history_ranges import HistoryFeed
 from .live_retention import _decode, _lock_feed
@@ -136,7 +137,7 @@ class DetectorStream:
     store: ReplayEventStore
     snapshot: RunSnapshotRecord
     policy: Policy
-    frames: list[dict[str, Any]] = field(default_factory=list)
+    frames: list[RecordedFrame] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     processed: int = 0
     valid_from: datetime | None = None
@@ -150,16 +151,7 @@ class DetectorStream:
             self.available_from = candle.available_at
         result = process_detector_candle(connection, candle, self.runtime, self.store)
         self.processed += 1
-        frame = json.loads(result.frame.debug_json())
-        self.frames.append(
-            {
-                "timestamp": stamp(candle.bar.timestamp),
-                "available_at": stamp(candle.available_at),
-                "availability": frame["availability"],
-                "components": frame["components"],
-                "market_events": frame["market_events_this_bar"],
-            }
-        )
+        self.frames.append(RecordedFrame(result.frame, candle.available_at))
         for event in result.events:
             event_id, instance_id = self.store.identity(event)
             definition = PATTERN_DEFINITIONS[event.pattern_id, event.pattern_version]
@@ -772,7 +764,8 @@ class AnalysisSessionManager:
                     for item in displayed
                 ],
                 "observations": [
-                    frame for frame in observations if frame["timestamp"] in visible_times
+                    frame.chart_payload() for frame in observations
+                    if frame["timestamp"] in visible_times
                 ],
                 "events": events,
                 "coverage": (

@@ -322,7 +322,7 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
           loaded={!rawPrices && ((view?.coverage === 'calculated' && Boolean(live.state && Date.parse(start) >= Date.parse(live.state.history_start))) || historical.loaded || historical.status === 'partial')} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
           onInspect={(event, pin) => { setDetails(event); setPinned(pin); }} onDismiss={() => { if (!pinned) setDetails(null); }} /></>
           : <AnalysisSettings streams={settings.drafts} patterns={patterns} onAddDetector={settings.addDetector}
-            disabled={live.connecting || reinitializing || settings.busy} dirty={settings.dirty} onChange={settings.setDrafts}
+            disabled={live.connecting || reinitializing || settings.busy || historical.busy} dirty={settings.dirty} onChange={settings.setDrafts}
             onAdd={settings.add} onApply={() => void apply()} onCalculate={(tf, pattern) => {
               if (rawPrices) { setError('Prices are available; detector calculations require validated calendar coverage and history.'); return; }
               if (!start || !finish || settings.dirty) { setError('Apply settings and select completed history before calculating.'); return; }

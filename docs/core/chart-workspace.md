@@ -54,6 +54,12 @@ maps work to Jira and defines implementation prerequisites.
   analysis or advance/rewind a replay. Bound individual pages, request cache and
   displayed candles (currently 500 per historical page, 16 cached windows and
   6,000 displayed prices per tab).
+- Chart observation responses carry bounded overlay values and per-candle marker
+  summaries, not a copy of accumulated swing/structure histories for each bar.
+  Preserve complete canonical frames and detector evidence for audit separately;
+  materialize debug serialization only when explicitly consumed. Historical view
+  calculations allow one request in flight per tab and reconsider the latest
+  viewport when it completes, instead of queuing duplicate server calculations.
 - Retain known detector hits and component observations alongside loaded prices.
   Panning or adding older prices must not discard calculated markers. Historical
   calculations supply their own chart observations; periods without results remain

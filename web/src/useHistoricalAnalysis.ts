@@ -9,6 +9,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   const currentResults = useRef(results);
   currentResults.current = results;
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const generation = useRef(0);
   const sessionIds = useRef(new Set<string>());
   const keySessions = useRef(new Map<string, string>());
@@ -16,12 +17,13 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   const identityRef = useRef(identity);
   identityRef.current = identity;
   useEffect(() => {
-    generation.current += 1; setResults({}); setBusy(false); keySessions.current.clear();
+    generation.current += 1; setResults({}); setBusy(inFlight.current); keySessions.current.clear();
     for (const id of sessionIds.current) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined);
     sessionIds.current.clear();
   }, [identity]);
   const calculate = useCallback(async (targetTimeframe?: string, targetPattern?: string, auto = false) => {
     if (!source || !streams || !start || !end || Date.parse(start) >= Date.parse(end)) return;
+    if (inFlight.current) return;
     const requestIdentity = identity;
     const selected = streams.map((stream) => ({ ...stream, config: { ...stream.config,
       patterns: stream.config.patterns.map((pattern) => ({ ...pattern,
@@ -34,6 +36,7 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
       return cached?.identity === requestIdentity && containsEnd(cached.bounds, end);
     })) return;
     const requestGeneration = ++generation.current;
+    inFlight.current = true;
     setBusy(true);
     let id: string | undefined;
     try {
@@ -62,14 +65,14 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
         return bounds ? [[key, { events: result.events.filter((event) => `${event.timeframe}:${event.pattern_id}` === key), observations: result.observations ?? [], bounds, identity: requestIdentity }]] : [];
       });
       setResults((current) => ({ ...current, ...Object.fromEntries(entries) }));
-    } catch (error) { onError(String(error)); if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); }
-    finally { if (requestGeneration === generation.current) setBusy(false); }
+    } catch (error) { if (requestIdentity === identityRef.current && requestGeneration === generation.current) onError(String(error)); if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); }
+    finally { inFlight.current = false; setBusy(false); }
   }, [source, streams, start, end, timeframe, identity, onError]);
   useEffect(() => {
-    if (!automatic) return;
+    if (!automatic || busy) return;
     const timer = setTimeout(() => void calculate(undefined, undefined, true), 300);
     return () => clearTimeout(timer);
-  }, [automatic, calculate]);
+  }, [automatic, calculate, busy]);
   useEffect(() => {
     const ids = sessionIds.current;
     return () => { generation.current += 1; for (const id of ids) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); };
