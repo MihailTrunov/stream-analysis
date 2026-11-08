@@ -6,4 +6,10 @@ Use a shared viewport controller to preserve candle spacing and a time anchor wh
 
 Keep replay price visibility causally bounded and never change replay progress when browsing. Retain focused-tab connection/rendering policy. Replace raw provider session markers with contextual session information and show loading, failure and history limits near navigation.
 
+The later reported loss of markers is part of this scope: preserve already calculated detector events and component observations for loaded candles while navigating. Historical calculations must expose observations for indicator overlays. Mark uncalculated or partially calculated periods explicitly; do not run manual detectors merely because more prices were loaded. Keep evidence scoped to the analysis identity/timeframe and revealed availability, without changing immutable event IDs.
+
+Implementation choices: historical pages remain bounded at 500 candles, the shared request cache retains 16 windows, and each displayed price buffer is bounded at 6,000 candles. Eviction preserves the visible interval. At capacity, fill actual exposed history without repeatedly trying to obtain an impossible extra buffer. Preserve pending Fit actions through forming-candle removal, avoid replacing unchanged price series during polling, and retain the original navigation intent when retrying a failed load.
+
+Delivered in master commits `106171b` and `0d8e9ec`. The current product contract is [chart workspace](../core/chart-workspace.md); implementation and test evidence are in the [verification report](../reviews/2026-11-08-chart-navigation-buffer-verification.md).
+
 Implementation and verification cover price paging/merge, calendar-aware initialization, shared viewport geometry, live/history/replay integration, loading failure/retry, session markers and isolated browser regressions. Continue on master; do not restart the installed stack or contact a real provider during verification.

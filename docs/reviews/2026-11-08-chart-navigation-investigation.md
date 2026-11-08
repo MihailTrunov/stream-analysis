@@ -1,5 +1,7 @@
 # Chart navigation investigation — 8 November 2026
 
+Implementation follow-up: the corrections below and the later marker-retention addition were delivered in `106171b` and `0d8e9ec`. See the [approved design](../plans/2026-11-08-chart-navigation-buffer-design.md), [current workspace contract](../core/chart-workspace.md) and [implementation verification](2026-11-08-chart-navigation-buffer-verification.md). The investigation below records the behaviour before those corrections.
+
 Investigation of the reported short initial live window, empty space after zooming out, unexplained `provider` marker and larger candles after loading older history. No production implementation was changed. Browser diagnostics used isolated temporary SQLite/Parquet data and a mocked feed; they did not use the installed application or contact OANDA.
 
 The main problem is that chart navigation operates by replacing a fixed candle window and focusing a target. It does not maintain a continuous, buffered timeline with stable zoom. The reported behaviour follows from that implementation rather than demonstrating a provider history limit.
