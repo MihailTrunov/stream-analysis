@@ -29,7 +29,7 @@ def checked(operation: Any, *args: Any) -> Any:
 def launch(request: AnalysisRequest, prefer: str | None = Header(default=None)) -> Any:
     if prefer == 'respond-async':
         return JSONResponse(status_code=202, content=checked(chart_tasks.submit,
-            lambda: analysis_sessions.launch(request),
+            lambda task: analysis_sessions.launch(request, checkpoint=task.checkpoint),
             lambda result: analysis_sessions.command(result['run_id'], 'stop')))
     return checked(analysis_sessions.launch, request)
 

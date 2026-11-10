@@ -1,17 +1,23 @@
 """Offline independent-session, lineage, scheduling and availability checks."""
 
+from concurrent.futures import CancelledError
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 
 from market_analysis.api.app import app
-from market_analysis.application.analysis_sessions import AnalysisSessionManager, automatic_policy
+from market_analysis.application.analysis_sessions import (
+    AnalysisRequest,
+    AnalysisSessionManager,
+    automatic_policy,
+)
 from market_analysis.application.replay_catalog import demo_detection_config
 from market_analysis.demo.replay_seed import seed_replay_datasets
 from market_analysis.domain import Timeframe
 from market_analysis.persistence.analysis_sessions import analysis_session_revisions
 from market_analysis.persistence.dataset_store import DatasetStore
-from market_analysis.persistence.runs import metadata
+from market_analysis.persistence.runs import metadata, run_snapshots
 
 
 @pytest.fixture
@@ -65,6 +71,31 @@ def test_two_tabs_have_independent_cursors_and_stop(client: TestClient) -> None:
     assert client.get(f"/analysis/{two['run_id']}").json()["visible_bars"] == 0
     assert client.post(f"/analysis/{one['run_id']}/stop").status_code == 200
     assert client.post(f"/analysis/{two['run_id']}/step").status_code == 200
+
+
+def test_cancelled_chart_initialization_rolls_back_before_replay_can_start(client: TestClient):
+    from market_analysis.api.analysis import analysis_sessions
+
+    payload = request()
+
+    def cancel_during_warmup(processed, total):
+        if processed == 7:
+            assert total == 300
+            raise CancelledError
+
+    with pytest.raises(CancelledError):
+        analysis_sessions.launch(
+            AnalysisRequest.model_validate({**payload, "mode": "history"}),
+            checkpoint=cancel_during_warmup,
+        )
+    engine = analysis_sessions.engine()
+    try:
+        with engine.connect() as connection:
+            assert connection.execute(select(run_snapshots)).first() is None
+            assert connection.execute(select(analysis_session_revisions)).first() is None
+    finally:
+        engine.dispose()
+    assert launch(client, payload)["status"] == "paused"
 
 
 def test_five_minute_step_processes_every_source_and_closed_stream(client: TestClient) -> None:

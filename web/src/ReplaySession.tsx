@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { replayWatermark } from './replayWindow';
-import { chartCalculation } from './chartCalculation';
+import { chartCalculation, type CalculationProgress } from './chartCalculation';
 import { useAnalysisEvidence } from './analysisEvidence';
 import { usePriceBuffer } from './priceBuffer';
 import { validateReplayState } from './validation';
@@ -16,14 +16,14 @@ import { useReplayController } from './useReplayController';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
 import { EventInspector } from './EventInspector';
 import { EventReview, MissedPatternReview } from './ReviewAnnotations';
-import { TIMEFRAMES, type Timeframe, type ReplayBar,
+import { apiJson, TIMEFRAMES, type Timeframe, type ReplayBar,
   type ReplayDetectorEvent, type ReplayObservation, type ReplaySource,
   type ReplayState, type ReviewPattern } from './replay';
 import { dateTimeInput, displayTime, inputInstant, type DisplayTimezone } from './time';
 import { preferredSource, type AnalysisTab } from './workspace';
 import { providerWindowEnd, type ProviderPriceWindow } from './providerPrices';
 import { useProviderPrices, useProviderNavigation } from './useProviderPrices';
-import { useProviderAnalysisSource } from './useProviderAnalysisSource';
+import { providerAnalysisSource, useProviderAnalysisSource } from './useProviderAnalysisSource';
 
 interface Props {
   tab: AnalysisTab;
@@ -71,6 +71,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const [panel, setPanel] = useState<'patterns' | 'settings'>('patterns');
   const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [startingReplay, setStartingReplay] = useState(false);
+  const [replayProgress, setReplayProgress] = useState<CalculationProgress | null>(null);
+  const launchController = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(tab.runId && !initialRun
     ? 'The previous replay is no longer active. Its saved chart settings are restored; start a new replay to continue.' : null);
   const settings = useAnalysisSettings(selected?.instrument_id ?? tab.instrument,
@@ -128,16 +131,23 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       if (!extending.current) { setFocusTime(candle.timestamp); setFocusVersion((version) => version + 1); }
       extending.current = false; setError(null);
     },
-    onPrices: (window, target) => {
+    onPrices: async (window, target, options, signal) => {
       if (stateRef.current) return;
       setPricePreview(window); setHistoryEnd(window.end); setViewedPeriod(null); setError(null);
       onTabChange(tab.id, { priceOnly: true });
       setNavigationNote('Provider candles loaded. Calendar/session coverage is unverified.');
       if (!extending.current) { setBufferVersion(value => value + 1); clearRunView(); setFocusTime(target); setFocusVersion(value => value + 1); }
       extending.current = false;
+      if (options.intent === 'replay') {
+        try {
+          const source = await providerAnalysisSource(window.instrument_id, window.end);
+          if (signal.aborted) return;
+          await launchSource(source, target, options.end ?? source.range_end);
+        } catch (reason) { if (!signal.aborted) setError(errorMessage(reason)); }
+      }
     },
   });
-  const working = busy || replay.busy || settings.busy || navigation.busy || priceNavigation.busy;
+  const working = startingReplay || busy || replay.busy || settings.busy || navigation.busy || priceNavigation.busy;
   const visibleHistory = useMemo(() => state ? history.filter((bar) => bar.timestamp < state.selected_start) : history,
     [history, state]);
   const incomingPrices = useMemo(() => state ? state.analysis_session ? chartBars : [...visibleHistory, ...chartBars].slice(-500) : rawPrices ? rawWindow!.bars : history, [state, visibleHistory, chartBars, history, rawPrices, rawWindow]);
@@ -150,9 +160,9 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   const periodEnd = viewedPeriod?.end ?? visible.at(-1)?.available_at
     ?? (visible.at(-1) ? new Date(Date.parse(visible.at(-1)!.timestamp) + 60000).toISOString() : null);
   const providerInput = useProviderAnalysisSource(tab.instrument, periodEnd ?? '',
-    active && rawPrices, onSourceAdded, setError);
+    active && rawPrices && !startingReplay && !busy, onSourceAdded, setError);
   const historical = useHistoricalAnalysis(rawPrices ? providerInput.source : selected, settings.applied, chartTimeframe,
-    periodStart, periodEnd, active && !state, setError);
+    periodStart, periodEnd, active && !state, setError, startingReplay || busy || Boolean(state));
   const events = useMemo(() => state ? evidence.events.map((event, emission_order) => ({ ...event, emission_order })) : historical.events, [state, evidence.events, historical.events]);
   const selectedEvent = events.find((event) => event.event_id === selectedEventId);
   const selectedOrder = selectedEvent?.emission_order ?? null;
@@ -202,6 +212,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }
 
   useEffect(() => () => {
+    launchController.current?.abort();
     if (closePreview.current) clearTimeout(closePreview.current);
     if (saveViewport.current) clearTimeout(saveViewport.current);
   }, []);
@@ -213,34 +224,52 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
   }, [pinned, details?.event_id]);
 
   async function launchSource(source: ReplaySource, target: string, finish: string) {
-    if (!settings.applied || stateRef.current) return;
-    setBusy(true); setError(null);
+    if (!settings.applied || stateRef.current || launchController.current) return;
+    if (Date.parse(target) < Date.parse(source.range_start) || Date.parse(finish) > Date.parse(source.range_end)
+      || Date.parse(target) >= Date.parse(finish)) {
+      setError('The retained candles do not cover the requested replay interval.');
+      return;
+    }
+    const controller = new AbortController();
+    launchController.current = controller;
+    setBusy(true); setReplayProgress(null); setError(null);
     try {
       const next = validateReplayState(await chartCalculation<ReplayState>('/analysis', JSON.stringify({
         dataset_revision_id: source.dataset_revision_id, instrument_id: source.instrument_id, chart_timeframe: chartTimeframe,
         selected_start: target, selected_end: finish,
         streams: settings.applied,
-      })));
+      }), controller.signal, setReplayProgress));
+      if (controller.signal.aborted) {
+        void apiJson(`/analysis/${next.run_id}/stop`, { method: 'POST' }).catch(() => undefined);
+        return;
+      }
       onSourceAdded(source); setSelectedId(source.dataset_revision_id);
       onTabChange(tab.id, { priceOnly: false });
       clearRunView(); setEnd(dateTimeInput(next.selected_end, tab.timezone)); setState(next);
-    } catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
+    } catch (reason) { if (!controller.signal.aborted) setError(errorMessage(reason)); }
+    finally { launchController.current = null; setBusy(false); }
   }
 
   async function launch() {
-    if (settings.dirty || !settings.applied || state) return;
+    if (working || settings.dirty || !settings.applied || state) return;
+    setStartingReplay(true);
     try {
       setError(null);
       const target = inputInstant(start, tab.timezone);
-      if (rawPrices && providerInput.source) {
-        await launchSource(providerInput.source, target, providerInput.source.range_end); return;
+      const requestedEnd = endExplicit ? inputInstant(end, tab.timezone) : undefined;
+      const candidate = rawPrices ? providerInput.source : selected;
+      if (rawPrices && candidate
+        && Date.parse(target) >= Date.parse(candidate.range_start) && Date.parse(target) < Date.parse(candidate.range_end)
+        && (!requestedEnd || Date.parse(requestedEnd) <= Date.parse(candidate.range_end))) {
+        await launchSource(candidate, target, requestedEnd ?? candidate.range_end); return;
       }
-      if (!selected) return;
-      if (selected.non_research_grade) await launchSource(selected, target, inputInstant(end, tab.timezone));
-      else await navigation.begin({ source: selected, target, timeframe: chartTimeframe, streams: settings.applied,
-        intent: 'replay', end: endExplicit ? inputInstant(end, tab.timezone) : undefined });
+      const source = candidate ?? selected;
+      if (!source) return;
+      if (source.non_research_grade) await launchSource(source, target, inputInstant(end, tab.timezone));
+      else await navigation.begin({ source, target, timeframe: chartTimeframe, streams: settings.applied,
+        intent: 'replay', end: requestedEnd });
     } catch (reason) { setError(errorMessage(reason)); }
+    finally { setStartingReplay(false); }
   }
 
   async function moveTo() {
@@ -447,7 +476,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       <div className="panel-controls">
         <div className="panel-heading"><h2>{state ? 'Historical replay' : 'Historical exploration'}</h2><span className="connection-status">LOCAL</span></div>
         <div className="mode-control" aria-label="Analysis mode"><button type="button" className="selected">History</button>
-          <button type="button" disabled={Boolean(state) || busy || replay.busy || settings.busy} onClick={() => {
+          <button type="button" disabled={Boolean(state) || startingReplay || busy || replay.busy || settings.busy} onClick={() => {
             navigation.cancel(); onTabChange(tab.id, { mode: 'live', liveConnect: true, liveConnectionId: crypto.randomUUID() });
           }}>Live</button></div>
         <label className="input-label">Go to date & time <input aria-label="Chart date and time" type="datetime-local" value={start} disabled={working} onChange={(event) => setStart(event.target.value)} /></label>
@@ -469,7 +498,11 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
           <button type="button" onClick={() => {
             if (state) returnToCursor(); else { setFocusTime(null); setNavigationNote(null); }
           }}>{state ? 'Return to replay cursor' : 'Clear chart focus'}</button></div>}
-        {navigation.busy && <button type="button" onClick={navigation.cancel}>Cancel navigation</button>}
+        {navigation.busy && !busy && <button type="button" onClick={navigation.cancel}>Cancel navigation</button>}
+        {busy && <button type="button" onClick={() => launchController.current?.abort()}>Cancel replay startup</button>}
+        {!state && (startingReplay || busy) && <p role="status">{replayProgress?.total && busy
+          ? `Initializing replay detectors… ${replayProgress.processed} of ${replayProgress.total} source candles processed.`
+          : 'Preparing replay…'}</p>}
         {navigation.failed && <button type="button" onClick={() => { setError(null); void navigation.retry(); }}>Retry navigation</button>}
         {state && !replay.ready && <p role="status">{replay.window ? 'Loading recorded replay history…' : 'Updating chart to replay position…'}</p>}
         {state && replay.window && !focusTime && <button type="button" onClick={returnToCursor}>Return to replay cursor</button>}
@@ -481,7 +514,7 @@ export function ReplaySession({ tab, active, sources, patterns, activeRun, onTab
       <PanelTabs id={tab.id} panel={panel} count={projectOccurrences(events, periodStart ?? '', periodEnd ?? '').length} onChange={setPanel} />
       <div className="panel-body" id={`panel-${tab.id}`} role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
         {panel === 'patterns' ? <>
-          {!state && <p role="status">{historical.busy ? 'Calculating historical detections…' : historical.loaded ? 'Historical detections loaded for this view.' : historical.status === 'partial' ? 'Partially calculated: earlier candles lack sufficient initialization history.' : historical.status === 'initialization_unavailable' ? 'Insufficient initialization history for this analytical timeframe.' : `Use Detector settings to calculate this view. ${historical.coverage}`}</p>}
+          {!state && !startingReplay && !busy && <p role="status">{historical.busy ? 'Calculating historical detections…' : historical.loaded ? 'Historical detections loaded for this view.' : historical.status === 'partial' ? 'Partially calculated: earlier candles lack sufficient initialization history.' : historical.status === 'initialization_unavailable' ? 'Insufficient initialization history for this analytical timeframe.' : `Use Detector settings to calculate this view. ${historical.coverage}`}</p>}
           <PatternGroups events={events} start={periodStart ?? ''} end={periodEnd ?? ''} timeframe={chartTimeframe}
             loaded={Boolean(state) || historical.loaded} selected={selectedOrder} annotations={annotations} timezone={tab.timezone}
             onSelect={selectEvent} onInspect={inspect} onDismiss={dismissPreview} />

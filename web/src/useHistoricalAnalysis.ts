@@ -5,12 +5,14 @@ import { containsEnd, hasInitializedResult, coversWindow, type StreamCoverage } 
 import { apiJson, type AnalysisStream, type ReplayDetectorEvent, type ReplayObservation, type ReplaySource, type ReplayState, type ReplayViewResponse, type Timeframe } from './replay';
 
 export function useHistoricalAnalysis(source: ReplaySource | undefined, streams: AnalysisStream[] | null,
-  timeframe: Timeframe, start: string | null, end: string | null, automatic: boolean, onError: (message: string) => void) {
+  timeframe: Timeframe, start: string | null, end: string | null, automatic: boolean, onError: (message: string) => void,
+  suspended = false) {
   const [results, setResults] = useState<Record<string, { events: ReplayDetectorEvent[]; observations: ReplayObservation[]; bounds: StreamCoverage; identity: string }>>({});
   const currentResults = useRef(results);
   currentResults.current = results;
   const [busy, setBusy] = useState(false);
-  const inFlight = useRef(false);
+  const inFlight = useRef<AbortController | null>(null);
+  const failedAutomatic = useRef<string | null>(null);
   const generation = useRef(0);
   const sessionIds = useRef(new Set<string>());
   const keySessions = useRef(new Map<string, string>());
@@ -18,14 +20,17 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
   const identityRef = useRef(identity);
   identityRef.current = identity;
   useEffect(() => {
-    generation.current += 1; setResults({}); setBusy(inFlight.current); keySessions.current.clear();
+    generation.current += 1; inFlight.current?.abort(); setResults({}); keySessions.current.clear();
     for (const id of sessionIds.current) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined);
     sessionIds.current.clear();
   }, [identity]);
+  useEffect(() => { if (suspended) inFlight.current?.abort(); }, [suspended]);
   const calculate = useCallback(async (targetTimeframe?: string, targetPattern?: string, auto = false) => {
     if (!source || !streams || !start || !end || Date.parse(start) >= Date.parse(end)) return;
-    if (inFlight.current) return;
+    if (inFlight.current || suspended) return;
     const requestIdentity = identity;
+    const automaticKey = JSON.stringify([requestIdentity, start, end, timeframe]);
+    if (auto && failedAutomatic.current === automaticKey) return;
     const selected = streams.map((stream) => ({ ...stream, config: { ...stream.config,
       patterns: stream.config.patterns.map((pattern) => ({ ...pattern,
         enabled: pattern.enabled !== false && (!targetPattern || stream.config.timeframe === targetTimeframe && pattern.pattern_id === targetPattern)
@@ -37,7 +42,8 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
       return cached?.identity === requestIdentity && containsEnd(cached.bounds, end);
     })) return;
     const requestGeneration = ++generation.current;
-    inFlight.current = true;
+    const controller = new AbortController();
+    inFlight.current = controller;
     setBusy(true);
     let id: string | undefined;
     try {
@@ -46,10 +52,10 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
         selected_start: start < source.range_start ? source.range_start : start,
         selected_end: end > source.range_end ? source.range_end : end,
         chart_timeframe: timeframe, streams: selected, mode: 'history', automatic: auto,
-      }));
+      }), controller.signal);
       id = state.run_id;
       const params = new URLSearchParams({ start, end, timeframe, limit: '500' });
-      const result = await apiJson<ReplayViewResponse>(`/analysis/${id}/view?${params}`);
+      const result = await apiJson<ReplayViewResponse>(`/analysis/${id}/view?${params}`, { signal: controller.signal });
       if (requestIdentity !== identityRef.current || requestGeneration !== generation.current) {
         await apiJson(`/analysis/${id}/stop`, { method: 'POST' }); return;
       }
@@ -66,17 +72,22 @@ export function useHistoricalAnalysis(source: ReplaySource | undefined, streams:
         return bounds ? [[key, { events: result.events.filter((event) => `${event.timeframe}:${event.pattern_id}` === key), observations: result.observations ?? [], bounds, identity: requestIdentity }]] : [];
       });
       setResults((current) => ({ ...current, ...Object.fromEntries(entries) }));
-    } catch (error) { if (requestIdentity === identityRef.current && requestGeneration === generation.current) onError(String(error)); if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); }
-    finally { inFlight.current = false; setBusy(false); }
-  }, [source, streams, start, end, timeframe, identity, onError]);
+    } catch (error) {
+      if (!controller.signal.aborted && requestIdentity === identityRef.current && requestGeneration === generation.current) {
+        if (auto) failedAutomatic.current = automaticKey;
+        onError(String(error));
+      }
+      if (id) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined);
+    } finally { inFlight.current = null; setBusy(false); }
+  }, [source, streams, start, end, timeframe, identity, onError, suspended]);
   useEffect(() => {
-    if (!automatic || busy) return;
+    if (!automatic || busy || suspended) return;
     const timer = setTimeout(() => void calculate(undefined, undefined, true), 300);
     return () => clearTimeout(timer);
-  }, [automatic, calculate, busy]);
+  }, [automatic, calculate, busy, suspended]);
   useEffect(() => {
     const ids = sessionIds.current;
-    return () => { generation.current += 1; for (const id of ids) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); };
+    return () => { generation.current += 1; inFlight.current?.abort(); for (const id of ids) void apiJson(`/analysis/${id}/stop`, { method: 'POST' }).catch(() => undefined); };
   }, []);
   const projection = useMemo(() => {
   const covered = Object.entries(results).filter(([, value]) => value.identity === identity && end && containsEnd(value.bounds, end));

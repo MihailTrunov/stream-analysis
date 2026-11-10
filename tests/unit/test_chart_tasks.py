@@ -19,7 +19,7 @@ def test_polling_and_cancellation_do_not_wait_for_detector_initialization():
     tasks = ChartTasks()
     entered, release, cleaned = Event(), Event(), Event()
 
-    def operation():
+    def operation(_):
         entered.set()
         assert release.wait(3)
         return {'run_id': 'created'}
@@ -41,13 +41,13 @@ def test_polling_and_cancellation_do_not_wait_for_detector_initialization():
 def test_ready_result_and_failure_are_reported_without_exposing_internal_errors():
     tasks = ChartTasks()
     try:
-        job = tasks.submit(lambda: {'run_id': 'ready'}, lambda _: None)['job_id']
+        job = tasks.submit(lambda _: {'run_id': 'ready'}, lambda _: None)['job_id']
         until(lambda: tasks.state(job)['status'] == 'ready')
         assert tasks.state(job)['result'] == {'run_id': 'ready'}
         for error, message in [(ValueError('No completed candles'), 'No completed candles'),
                                (RuntimeError('private connection details'),
                                 'Chart calculation failed')]:
-            def fail(error=error):
+            def fail(_, error=error):
                 raise error
             failed = tasks.submit(fail, lambda _: None)['job_id']
             until(lambda failed=failed: tasks.state(failed)['status'] == 'failed')
@@ -69,7 +69,8 @@ def test_analysis_http_async_protocol_returns_before_initialization(monkeypatch)
     tasks = ChartTasks()
     release = Event()
 
-    def launch(_):
+    def launch(_, *, checkpoint):
+        checkpoint(2, 5)
         assert release.wait(3)
         return {'run_id': 'ready'}
 
@@ -87,7 +88,10 @@ def test_analysis_http_async_protocol_returns_before_initialization(monkeypatch)
             })
             assert response.status_code == 202
             id = response.json()['job_id']
-            assert client.get(f'/analysis/tasks/{id}').json()['status'] in {'pending', 'running'}
+            until(lambda: tasks.state(id)['progress'] is not None)
+            progress = client.get(f'/analysis/tasks/{id}').json()
+            assert progress['status'] == 'running'
+            assert progress['progress'] == {'processed': 2, 'total': 5}
             release.set()
             until(lambda: tasks.state(id)['status'] == 'ready')
             assert client.get(f'/analysis/tasks/{id}').json()['result'] == {'run_id': 'ready'}

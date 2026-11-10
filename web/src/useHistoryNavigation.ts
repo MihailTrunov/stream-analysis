@@ -9,7 +9,7 @@ interface Callbacks {
   onPersist: (plan: NavigationPlan | undefined) => void;
   onReady: (source: ReplaySource, bars: ReplayBar[], target: string, end: string, intent: 'move' | 'replay', initialization?: string) => Promise<void> | void;
   onError: (message: string) => void;
-  onPrices?: (prices: ProviderPriceWindow, target: string) => void;
+  onPrices?: (prices: ProviderPriceWindow, target: string, options: NavigationOptions, signal: AbortSignal) => Promise<void> | void;
 }
 export function useHistoryNavigation(active: boolean, initialPlan: NavigationPlan | undefined, callbacks: Callbacks) {
   const current = useRef(callbacks); current.current = callbacks;
@@ -38,11 +38,15 @@ export function useHistoryNavigation(active: boolean, initialPlan: NavigationPla
     const priceOptions = options && !options.source.non_research_grade && current.current.onPrices
       && (options.intent === 'replay' || Date.parse(options.target) < Date.parse(options.source.range_start)
         || Date.parse(options.target) >= Date.parse(options.source.range_end))
-      ? { instrument: options.source.instrument_id, timeframe: options.timeframe, target: options.target }
+      ? options
       : undefined;
-    const prices = priceOptions ? readProviderPrices(priceOptions.instrument, priceOptions.timeframe,
-      providerWindowEnd(priceOptions.target, priceOptions.timeframe), abort.signal).catch(() => null) : null;
+    let prices: Promise<ProviderPriceWindow | null> | null = null;
     try {
+      if (priceOptions) {
+        const end = priceOptions.intent === 'replay' && priceOptions.end
+          ? priceOptions.end : providerWindowEnd(priceOptions.target, priceOptions.timeframe);
+        prices = readProviderPrices(priceOptions.source.instrument_id, priceOptions.timeframe, end, abort.signal).catch(() => null);
+      }
       if (options?.intent === 'move' && Date.parse(options.target) >= Date.parse(options.source.range_start)
         && Date.parse(options.target) < Date.parse(options.source.range_end)) {
         setMessage('Loading earlier chart candles…');
@@ -85,7 +89,7 @@ export function useHistoryNavigation(active: boolean, initialPlan: NavigationPla
       if (valid() && preview?.bars.length && priceOptions) {
         plan.current = undefined; current.current.onPersist(undefined); phase.current = 'idle';
         setFailed(false); setMessage(null);
-        current.current.onPrices?.(preview, priceOptions.target);
+        await current.current.onPrices?.(preview, priceOptions.target, priceOptions, abort.signal);
       } else if (valid()) { phase.current = 'failed'; setFailed(true); setMessage('Chart navigation could not finish.'); current.current.onError(error instanceof Error ? error.message : String(error)); }
     } finally { if (valid()) { setBusy(false); controller.current = null; } }
   }

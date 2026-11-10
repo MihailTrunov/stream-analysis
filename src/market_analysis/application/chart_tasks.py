@@ -2,9 +2,9 @@
 
 from collections import OrderedDict
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
-from threading import RLock
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
+from threading import Event, RLock
 from typing import Any
 from uuid import uuid4
 
@@ -16,6 +16,13 @@ class ChartTask:
     result: dict[str, Any] | None = None
     error: str | None = None
     future: Future[None] | None = None
+    cancelled: Event = field(default_factory=Event)
+    progress: tuple[int, int] | None = None
+
+    def checkpoint(self, processed: int, total: int) -> None:
+        if self.cancelled.is_set():
+            raise CancelledError
+        self.progress = processed, total
 
 
 class ChartTasks:
@@ -24,7 +31,7 @@ class ChartTasks:
         self.tasks: OrderedDict[str, ChartTask] = OrderedDict()
         self.executor: ThreadPoolExecutor | None = None
 
-    def submit(self, operation: Callable[[], dict[str, Any]],
+    def submit(self, operation: Callable[[ChartTask], dict[str, Any]],
                cleanup: Callable[[dict[str, Any]], object]) -> dict[str, str]:
         with self.lock:
             if len(self.tasks) >= 64:
@@ -38,17 +45,16 @@ class ChartTasks:
             id = str(uuid4())
             task = ChartTask(cleanup)
             self.tasks[id] = task
-            task.future = self.executor.submit(self._execute, id, operation)
+            task.future = self.executor.submit(self._execute, task, operation)
             return {'job_id': id, 'status': 'pending'}
 
-    def _execute(self, id: str, operation: Callable[[], dict[str, Any]]) -> None:
+    def _execute(self, task: ChartTask, operation: Callable[[ChartTask], dict[str, Any]]) -> None:
         with self.lock:
-            task = self.tasks[id]
             if task.status == 'cancelled':
                 return
             task.status = 'running'
         try:
-            result = operation()
+            result = operation(task)
         except Exception as error:
             with self.lock:
                 if task.status != 'cancelled':
@@ -75,7 +81,11 @@ class ChartTasks:
             if id not in self.tasks:
                 raise ValueError('Chart calculation is unavailable; retry it.')
             task = self.tasks[id]
-            return {'job_id': id, 'status': task.status, 'result': task.result, 'error': task.error}
+            progress = task.progress
+            return {
+                'job_id': id, 'status': task.status, 'result': task.result, 'error': task.error,
+                'progress': {'processed': progress[0], 'total': progress[1]} if progress else None,
+            }
 
     def cancel(self, id: str) -> None:
         with self.lock:
@@ -83,6 +93,7 @@ class ChartTasks:
             if task is None or task.status == 'cancelled':
                 return
             task.status = 'cancelled'
+            task.cancelled.set()
             if task.future:
                 task.future.cancel()
             if task.result is not None and self.executor is not None:

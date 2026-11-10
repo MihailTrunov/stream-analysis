@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -370,10 +370,13 @@ class AnalysisSessionManager:
         replacing: str | None = None,
         source_input_id: str | None = None,
         source_input_manifest: dict[str, Any] | None = None,
+        checkpoint: Callable[[int, int], None] | None = None,
     ) -> dict[str, Any]:
         if (source_input_id is None) != (source_input_manifest is None):
             raise ValueError("live input identity requires its complete manifest")
         with self._lock:
+            if checkpoint is not None:
+                checkpoint(0, 0)
             occupied = len(self._sessions) - int(replacing in self._sessions)
             if request.mode == "replay" and occupied >= self._replay_capacity:
                 raise ValueError("stop an analysis session before opening another")
@@ -409,6 +412,11 @@ class AnalysisSessionManager:
                                 raise ValueError("live bootstrap conflicts with retained feed")
                     if not bars or not any(bar.timestamp >= request.selected_start for bar in bars):
                         raise ValueError("analysis interval has no source candles")
+                    total = len(bars) if request.mode == "history" or source_input_id else sum(
+                        bar.timestamp < request.selected_start for bar in bars
+                    )
+                    if checkpoint is not None:
+                        checkpoint(0, total)
                     revision = load_dataset_revision(connection, request.dataset_revision_id)
                     if revision is None:
                         raise ValueError("source revision not found")
@@ -514,6 +522,8 @@ class AnalysisSessionManager:
                         and bars[session.index + 1].timestamp < request.selected_start
                     ):
                         session.consume(connection)
+                        if checkpoint is not None:
+                            checkpoint(session.index + 1, total)
                     session.advance_closed(connection, request.selected_start)
                     if request.mode == "replay":
                         if source_input_id is not None:
@@ -531,8 +541,12 @@ class AnalysisSessionManager:
                     else:
                         while session.index + 1 < len(bars):
                             session.consume(connection)
+                            if checkpoint is not None:
+                                checkpoint(session.index + 1, total)
                         session.advance_closed(connection, request.selected_end)
                         session.status = "completed"
+                    if checkpoint is not None:
+                        checkpoint(session.index + 1, total)
                     connection.execute(
                         analysis_session_revisions.insert().values(
                             session_id=session_id,

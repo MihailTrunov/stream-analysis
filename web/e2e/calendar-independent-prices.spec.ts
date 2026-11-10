@@ -1,8 +1,9 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import type { AnalysisStream } from '../src/replay';
 
 const key = 'stream-analysis.workspace.live.v1';
-async function priceOnly(page: Page, mode: 'live' | 'history' = 'live') {
+async function priceOnly(page: Page, mode: 'live' | 'history' = 'live', streams?: AnalysisStream[]) {
   const reads: string[] = [];
   const connections: string[] = [];
   await page.route('**/api/diagnostics', async route => {
@@ -50,14 +51,14 @@ async function priceOnly(page: Page, mode: 'live' | 'history' = 'live') {
     }
     await route.fulfill({ status: 422, json: { detail: 'trading date is outside verified calendar coverage' } });
   });
-  await page.addInitScript(({ key, mode }) => {
+  await page.addInitScript(({ key, mode, streams }) => {
     if (localStorage.getItem(key)) return;
     localStorage.setItem(key, JSON.stringify({ version: 3, activeId: 'one', tabs: [
       { id: 'one', instrument: 'US30', sourceId: mode === 'history' ? 'offline-replay-us30-v3' : '',
-        timezone: 'Europe/London', mode, liveConnect: true },
+        timezone: 'Europe/London', mode, liveConnect: true, streams, appliedStreams: streams },
       { id: 'two', instrument: 'DAX', sourceId: '', timezone: 'Europe/London', mode: 'live', liveConnect: true },
     ] }));
-  }, { key, mode });
+  }, { key, mode, streams });
   return { reads, connections };
 }
 
@@ -155,4 +156,51 @@ test('manual detector calculation uses provider candles despite unverified calen
   expect(calculations[0].mode).toBe('history');
   await expect(page.getByText('Calculating historical detectors…')).toHaveCount(0);
   await expect(page.getByText(/require validated calendar/)).toHaveCount(0);
+});
+
+test('one replay click cancels automatic history and uses provider candles when calendar validation fails', async ({ page }) => {
+  const config = (await (await page.request.get('/api/analysis-defaults?instrument_id=US30')).json()).detection_config;
+  await priceOnly(page, 'history', [{ config, policies: { RANGE_COMPRESSION_V1: 'always' } }]);
+  let historyStarted = false;
+  let historyCancelled = false;
+  let replayReady = false;
+  let result: unknown;
+  await page.route('**/api/analysis', async route => {
+    const body = route.request().postDataJSON();
+    if (body.mode === 'history') {
+      historyStarted = true;
+      await route.fulfill({ status: 202, json: { job_id: 'automatic-history', status: 'pending' } });
+      return;
+    }
+    expect(body.dataset_revision_id).toBe('provider-observed-fixture');
+    expect(Date.parse(body.selected_start)).toBe(Date.parse('2026-01-05T10:00:00Z'));
+    expect(Date.parse(body.selected_end)).toBe(Date.parse('2026-01-05T10:26:00Z'));
+    // Only acquisition is faked. Use the seeded API to execute a real replay of the requested period.
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), prefer: '' },
+      postData: { ...body, dataset_revision_id: 'offline-replay-us30-v3' },
+    });
+    expect(response.status()).toBe(201);
+    result = await response.json();
+    await route.fulfill({ status: 202, json: { job_id: 'replay-startup', status: 'pending' } });
+  });
+  await page.route('**/api/analysis/tasks/automatic-history', route => {
+    if (route.request().method() === 'DELETE') historyCancelled = true;
+    return route.fulfill({ json: { job_id: 'automatic-history', status: historyCancelled ? 'cancelled' : 'running' } });
+  });
+  await page.route('**/api/analysis/tasks/replay-startup', route => route.fulfill({ json: replayReady
+    ? { job_id: 'replay-startup', status: 'ready', result }
+    : { job_id: 'replay-startup', status: 'running', progress: { processed: 35, total: 60 } },
+  }));
+  await page.goto('/');
+  await expect.poll(() => historyStarted).toBe(true);
+  await page.getByLabel('Chart date and time').fill('2026-01-05T10:00');
+  await page.getByRole('button', { name: 'Start replay from', exact: true }).click();
+  await expect.poll(() => historyCancelled).toBe(true);
+  await expect(page.getByText('Initializing replay detectors… 35 of 60 source candles processed.')).toBeVisible();
+  replayReady = true;
+  await expect(page.getByText(/Replay paused/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Step one visible bar' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Step one visible bar' }).click();
+  await expect(page.getByText(/Replay paused.*cursor 60/)).toBeVisible();
 });

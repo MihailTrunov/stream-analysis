@@ -149,7 +149,7 @@ def connect_analysis(
             feed = observed_feed(feed)
         if prefer == 'respond-async':
             return JSONResponse(status_code=202, content=chart_tasks.submit(
-                lambda: live_analysis.connect(request, feed),
+                lambda _: live_analysis.connect(request, feed),
                 lambda result: live_analysis.disconnect(result['subscription_id'])))
         return live_analysis.connect(request, feed)
     except ValueError as error:
