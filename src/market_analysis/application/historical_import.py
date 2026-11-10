@@ -40,6 +40,7 @@ from market_analysis.persistence.market_data import (
     DatasetRevision,
     load_instrument,
 )
+from market_analysis.persistence.transactions import atomic_transaction
 
 NORMALIZATION_VERSION = "canonical-midpoint-bars-v1"
 _MINUTE = timedelta(minutes=1)
@@ -212,7 +213,7 @@ def _finalize(
     *,
     at: datetime,
 ) -> ImportJob:
-    with engine.begin() as connection:
+    with atomic_transaction(engine) as connection:
         job = load_import_job(connection, job_id)
         if job is None or job.status is not ImportStatus.RUNNING or not job.fetch_complete:
             raise ImportJobError("import is not ready for publication")
@@ -284,7 +285,7 @@ def advance_import(
                 raise ImportJobError("conflicting duplicate bar across source pages")
             bars = bars[1:]
     batch = batch_store.write_batch(job_id, job.pages_committed, bars) if bars else None
-    with engine.begin() as connection:
+    with atomic_transaction(engine) as connection:
         changed = checkpoint_import_page(
             connection,
             job_id,

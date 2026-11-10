@@ -23,6 +23,7 @@ from market_analysis.persistence.market_data import (
     DatasetRevision,
     register_instrument,
 )
+from market_analysis.persistence.transactions import atomic_transaction
 
 from .browser_replay import _store
 from .history_ranges import HistoryFeed, stamp
@@ -84,7 +85,7 @@ def publish_provider_source(engine: Engine, prices: ProviderPrices, feed: Histor
         checksum, checksum, BAR_CHECKSUM_VERSION, DATASET_FORMAT_VERSION,
     )
     store = _store()
-    with engine.begin() as connection:
+    with atomic_transaction(engine) as connection:
         register_instrument(connection, build_oanda_uk_instrument(feed.provider_symbol))
         from market_analysis.persistence.market_data import load_dataset_revision
         if load_dataset_revision(connection, revision_id) is None:

@@ -64,7 +64,7 @@ def _heartbeat_while_importing(
     while not stopped.wait(5):
         try:
             write_worker_heartbeat(data_root, "import")
-            with engine.begin() as connection:
+            with atomic_transaction(engine) as connection:
                 if not touch_import_heartbeat(connection, job_id, at=_clock()):
                     return
         except Exception:
@@ -121,15 +121,15 @@ def _run_import_job(
                 if job.status is ImportStatus.COMPLETED:
                     logger.info("import completed", extra={"bar_count": job.bar_count})
                     return
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             interrupt_running_imports(connection, at=_clock())
         logger.info("import interrupted by worker stop")
     except (ProviderError, ImportJobError, DatasetStoreError, SessionCalendarError) as exc:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             fail_import_job(connection, job.job_id, at=_clock(), reason=str(exc))
         logger.warning("import failed", extra={"reason": str(exc)})
     except Exception:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             fail_import_job(connection, job.job_id, at=_clock(), reason="unexpected import failure")
         logger.exception("unexpected import failure")
     finally:
@@ -143,7 +143,7 @@ def _run_import_worker(data_root: Path, should_stop: Callable[[], bool]) -> None
         raise RuntimeError("import worker needs STREAM_ANALYSIS_DATABASE_URL")
     engine = create_engine(database_url)
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             interrupt_running_imports(connection, at=_clock())
         while not should_stop():
             write_worker_heartbeat(data_root, "import")
@@ -155,7 +155,7 @@ def _run_import_worker(data_root: Path, should_stop: Callable[[], bool]) -> None
             if credentials is None:
                 time.sleep(1.0)
                 continue
-            with engine.begin() as connection:
+            with atomic_transaction(engine) as connection:
                 schedule_history_import(
                     connection, DatasetStore(data_root), account=credentials[1],
                     environment=credentials[2], at=_clock(),

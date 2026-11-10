@@ -20,6 +20,7 @@ from market_analysis.config.oanda_uk_calendars import build_oanda_uk_instrument
 from market_analysis.domain import HistoricalDataRequest, Timeframe
 from market_analysis.domain.live_data import LiveCandleSource
 from market_analysis.persistence.market_data import register_instrument
+from market_analysis.persistence.transactions import atomic_transaction
 from market_analysis.providers.oanda import OandaHistoricalDataSource
 
 from .history_ranges import HistoryFeed, stamp
@@ -128,7 +129,7 @@ class LiveIngress:
             if channel is None:
                 engine = self._engine()
                 try:
-                    with engine.begin() as connection:
+                    with atomic_transaction(engine) as connection:
                         register_instrument(
                             connection, build_oanda_uk_instrument(feed.provider_symbol),
                         )

@@ -89,6 +89,7 @@ from market_analysis.persistence.import_jobs import (
 )
 from market_analysis.persistence.market_data import MetadataConflictError, register_instrument
 from market_analysis.persistence.runs import metadata
+from market_analysis.persistence.transactions import atomic_transaction
 from market_analysis.persistence.validation_annotations import (
     AnnotationError,
     ValidationAnnotation,
@@ -316,7 +317,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 if not database_url.startswith("sqlite+"):
                     raise RuntimeError("smoke schema initialization requires SQLite")
                 metadata.create_all(engine)
-            with engine.begin() as connection:
+            with atomic_transaction(engine) as connection:
                 seed_replay_datasets(
                     connection, DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
                 )
@@ -701,7 +702,7 @@ def create_replay_annotation(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             try:
                 if request.target_kind == "event":
                     if (
@@ -809,7 +810,7 @@ def read_annotation(annotation_id: str) -> dict[str, object]:
 def edit_annotation(annotation_id: str, request: AnnotationEditRequest) -> dict[str, object]:
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             try:
                 changed = revise_annotation(
                     connection,
@@ -873,7 +874,7 @@ def create_import(request: ImportCreateRequest) -> ImportResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             try:
                 register_instrument(connection, instrument)
             except MetadataConflictError as exc:
@@ -909,7 +910,7 @@ def create_history_request(request: HistoryCreateRequest) -> dict[str, object]:
     )
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             register_instrument(connection, build_oanda_uk_instrument(profile.provider_symbol))
             selected = request_history(
                 connection, feed, request.start, request.end, at=datetime.now(UTC)
@@ -978,7 +979,7 @@ def prepare_history_navigation(request: HistoryNavigationRequest) -> dict[str, o
     )
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             return plan_history_navigation(
                 connection, feed, request.source_revision_id, request.target, request.timeframe,
                 request.streams, request.intent, at=datetime.now(UTC), end=request.end,
@@ -993,7 +994,7 @@ def prepare_history_navigation(request: HistoryNavigationRequest) -> dict[str, o
 def create_history_input(request: HistoryInputRequest) -> dict[str, object]:
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             store = DatasetStore(Path(os.getenv("STREAM_ANALYSIS_DATA_ROOT", "./data")))
             return publish_history_input(connection, store, request.requests)
     except HistoryInputConflict as error:
@@ -1049,7 +1050,7 @@ def resume_import(job_id: str) -> ImportResponse:
     account, _ = _import_config()
     engine = create_engine(_database_url())
     try:
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             original = load_import_job(connection, job_id)
             if original is None:
                 raise HTTPException(status_code=404, detail="import job not found")

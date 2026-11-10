@@ -42,6 +42,7 @@ from market_analysis.persistence.pattern_instances import (
     pattern_instances,
 )
 from market_analysis.persistence.runs import RunSnapshotRecord, create_run_snapshot
+from market_analysis.persistence.transactions import atomic_transaction
 
 from .analysis_clock import verify_closed_interval
 from .analysis_coverage import coverage_status
@@ -378,7 +379,7 @@ class AnalysisSessionManager:
                 raise ValueError("stop an analysis session before opening another")
             engine = self.engine()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     sequence = _store().load_sequence(
                         connection, request.dataset_revision_id, request.instrument_id, Timeframe.M1
                     )
@@ -605,7 +606,7 @@ class AnalysisSessionManager:
                 raise ValueError("playback is paused")
             engine = self.engine()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     previous_index = session.index
                     previous_watermark = session.watermark
                     previous_streams = [

@@ -28,6 +28,7 @@ from market_analysis.persistence.market_data import (
     load_dataset_lineage,
     load_instrument,
 )
+from market_analysis.persistence.transactions import atomic_transaction
 
 from .history_ranges import HistoryFeed, stamp
 
@@ -92,7 +93,7 @@ def retain_completed_minute(
     encoded = json.dumps(dict(bar.to_canonical_dict()), sort_keys=True, separators=(",", ":"))
     digest = sha256(encoded.encode()).hexdigest()
     hour = bar.timestamp.replace(minute=0)
-    with engine.begin() as connection:
+    with atomic_transaction(engine) as connection:
         if load_instrument(connection, feed.instrument_id) is None:
             raise ValueError("live retention instrument is not registered")
         key = _lock_feed(connection, feed)
@@ -172,7 +173,7 @@ def package_live_hour(
     if hour.minute or hour.second or hour.microsecond or hour + HOUR > at:
         raise ValueError("only elapsed aligned UTC hours can be packaged")
     calendar = feed.calendar()
-    with engine.begin() as connection:
+    with atomic_transaction(engine) as connection:
         key = _lock_feed(connection, feed)
         sealed = connection.scalar(select(live_segments.c.revision_id).where(
             live_segments.c.feed_key == key, live_segments.c.hour_start == hour,
@@ -251,7 +252,7 @@ def package_pending_live_hours(
     # Attempt timestamps rotate blocked hours behind unattempted/later work.
     for key, hour, encoded in pairs:
         # Persist scheduling fairness even if file publication raises/rolls back.
-        with engine.begin() as connection:
+        with atomic_transaction(engine) as connection:
             connection.execute(update(live_segments).where(
                 live_segments.c.feed_key == key, live_segments.c.hour_start == hour,
             ).values(attempted_at=at))

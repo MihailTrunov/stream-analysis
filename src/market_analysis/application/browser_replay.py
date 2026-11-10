@@ -45,6 +45,7 @@ from market_analysis.persistence.replay_runs import (
     load_replay_run,
     transition_replay_run,
 )
+from market_analysis.persistence.transactions import atomic_transaction
 
 
 class BrowserReplayError(ValueError):
@@ -268,7 +269,7 @@ class BrowserReplayManager:
                 raise BrowserReplayError("stop the active walkthrough before changing inputs")
             engine = self._connection()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     resolved, sequence, warmup = _preflight(
                         connection, revision_id, config, start, end
                     )
@@ -339,7 +340,7 @@ class BrowserReplayManager:
             session = self._current(run_id)
             engine = self._connection()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     record = load_replay_run(connection, UUID(run_id))
                     assert record is not None
                     if record.status in (
@@ -364,7 +365,7 @@ class BrowserReplayManager:
             failure: Exception | None = None
             result: dict[str, object] | None = None
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     try:
                         record = load_replay_run(connection, UUID(run_id))
                         assert record is not None
@@ -414,7 +415,7 @@ class BrowserReplayManager:
             session = self._current(run_id)
             engine = self._connection()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     record = load_replay_run(connection, UUID(run_id))
                     assert record is not None
                     if record.status is ReplayStatus.CREATED:
@@ -432,7 +433,7 @@ class BrowserReplayManager:
             session = self._current(run_id)
             engine = self._connection()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     record = load_replay_run(connection, UUID(run_id))
                     assert record is not None
                     if record.status is ReplayStatus.RUNNING:
@@ -460,7 +461,7 @@ class BrowserReplayManager:
             failure: Exception | None = None
             state: dict[str, object] | None = None
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     try:
                         outcome = session.pipeline.run_until_event(
                             connection, event_filter, at=datetime.now(UTC)
@@ -507,7 +508,7 @@ class BrowserReplayManager:
                 raise BrowserReplayError("seek target must lie inside the selected interval")
             engine = self._connection()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     resolved, sequence, warmup = _preflight(
                         connection,
                         old.revision_id,

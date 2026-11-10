@@ -32,6 +32,7 @@ from market_analysis.persistence.market_data import (
     load_dataset_lineage,
     load_dataset_revision,
 )
+from market_analysis.persistence.transactions import atomic_transaction
 
 from .analysis_clock import verify_closed_interval
 from .analysis_sessions import (
@@ -120,7 +121,7 @@ class LiveAnalysisManager:
                           if status == "market_closed" else "")
             engine = self._analysis.engine()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     plan = plan_history_navigation(
                         connection,
                         feed,
@@ -285,7 +286,7 @@ class LiveAnalysisManager:
                 ],
             )
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     # A shared acquisition can still have been behind the new seed at
                     # attachment. Reconcile its newly captured overlap before advancing.
                     bootstrap_end = session.request.selected_end
@@ -515,7 +516,7 @@ class LiveAnalysisManager:
             revision_id = f"live-capture-{source_checksum}"
             engine = self._analysis.engine()
             try:
-                with engine.begin() as connection:
+                with atomic_transaction(engine) as connection:
                     bootstrap_id = attached.request.bootstrap_revision_id
                     if bootstrap_id is None:
                         raise ValueError("live bootstrap identity is unavailable")
