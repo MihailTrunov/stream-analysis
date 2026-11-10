@@ -14,12 +14,15 @@ interface Callbacks {
 
 export function useLiveAnalysis(id: string, instrument: string, bootstrap: string | undefined,
   streams: AnalysisStream[] | null, active: boolean, wanted: boolean, timeframe: Timeframe,
-  end: string | undefined, initialPlan: AnalysisTab['livePreparation'], handlers: Callbacks) {
+  requestedEnd: string | undefined, initialPlan: AnalysisTab['livePreparation'], handlers: Callbacks) {
   const [state, setState] = useState<LiveState | null>(null);
   const [bootstrapSource, setBootstrapSource] = useState<{ id: string; source: ReplaySource } | null>(null);
   const initialized = useRef<string | null>(null);
   const [view, setView] = useState<LiveView | null>(null);
   const [readKey, setReadKey] = useState('');
+  // Keep live monitoring active while the chart browses prices before this run's input.
+  const end = requestedEnd && state?.subscription_id === id
+    && Date.parse(requestedEnd) <= Date.parse(state.history_start) ? undefined : requestedEnd;
   const identity = JSON.stringify([id, timeframe, end]);
   const [visible, setVisible] = useState(!document.hidden);
   const [connecting, setConnecting] = useState(false);

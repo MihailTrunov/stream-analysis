@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { coversWindow, hasInitializedResult } from './analysisCoverage';
 import { mergeObservations, useAnalysisEvidence } from './analysisEvidence';
 import { AnalysisSettings } from './AnalysisSettings';
 import { CandlestickChart, type OverlayVisibility } from './CandlestickChart';
@@ -61,11 +62,13 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
       onPlan: (livePreparation) => onTabChange(tab.id, { livePreparation }),
     });
   const initialSource = live.bootstrapSource ?? selected;
+  const beforeLiveHistory = Boolean(end && live.state && Date.parse(end) <= Date.parse(live.state.history_start));
   const prices = useProviderPrices(tab.instrument, timeframe, active,
-    (!live.connected || Boolean(end)) && tab.liveConnect !== false, end, !live.connected);
+    (!live.connected || beforeLiveHistory) && tab.liveConnect !== false, end, !live.connected);
   const [pricePreview, setPricePreview] = useState<ProviderPriceWindow | null>(null);
-  const rawWindow = pricePreview?.timeframe === timeframe ? pricePreview : !external ? prices.window : null;
-  const rawPrices = Boolean(rawWindow?.bars.length && (pricePreview || !live.connected) && !external);
+  const rawWindow = pricePreview?.timeframe === timeframe && end === pricePreview.end ? pricePreview : prices.window;
+  const view = live.view;
+  const rawPrices = Boolean(rawWindow?.bars.length && (!view || beforeLiveHistory) && !external);
   const priceNavigation = useProviderNavigation(tab.instrument, timeframe, active, setError);
   const initialKey = `${connectionId}:${timeframe}:${initialSource?.dataset_revision_id}`;
   const [initialError, setInitialError] = useState<{ key: string; message: string } | null>(null);
@@ -89,7 +92,6 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
     }).catch((reason: unknown) => { if (!cancelled) setError(String(reason)); });
     return () => { cancelled = true; };
   }, [active, sources, tab.liveHistorySourceId, timeframe, end, external]);
-  const view = live.view;
   const externalBars = external?.timeframe === timeframe ? external.bars : [];
   const completed = usePriceBuffer(`${connectionId}:${timeframe}:${bufferVersion}:${rawPrices ? 'provider' : 'validated'}`, external ? externalBars : rawPrices ? rawWindow!.bars : view?.bars ?? (initialHistory?.key === initialKey ? initialHistory.bars : emptyPrices), Boolean(end), viewport.current);
   const navigation = useHistoryNavigation(active, tab.navigationPlan, {
@@ -119,11 +121,15 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
   const start = bars[left]?.timestamp ?? '';
   const finish = bars[right]?.available_at ?? (bars[right]?.is_complete === false ? view?.view_end ?? ''
     : bars[right] ? new Date(Date.parse(bars[right].timestamp) + 60_000).toISOString() : '');
+  const liveCoverage = rawPrices ? undefined : view?.stream_coverage;
+  const initializedLiveStreams = liveCoverage?.filter((stream) => hasInitializedResult(stream, finish)).length ?? 0;
+  const liveCoversWindow = Boolean(liveCoverage?.length && liveCoverage.every((stream) => coversWindow(stream, start, finish)));
   const providerInput = useProviderAnalysisSource(tab.instrument, finish,
-    active && rawPrices && !live.connecting, onSourceAdded, setError);
+    active && rawPrices && !live.connecting && (!live.connected || beforeLiveHistory), onSourceAdded, setError);
   const historySource = rawPrices ? providerInput.source : external?.source ?? (!live.connected && !live.connecting ? initialSource : undefined);
   const historical = useLiveHistory(connectionId, settings.applied, timeframe, start, finish,
-    active && (live.connected || Boolean(historySource)), Boolean(end) || Boolean(historySource && !live.connected), setError, historySource);
+    active && (Boolean(historySource) || live.connected && !rawPrices),
+    !liveCoversWindow && (Boolean(end) || Boolean(historySource && !live.connected)), setError, historySource);
   const evidence = useAnalysisEvidence(`${connectionId}:${timeframe}:${rawPrices ? 'provider' : 'validated'}`, rawPrices ? emptyObservations : view?.observations ?? emptyObservations, rawPrices ? emptyEvents : view?.events ?? emptyEvents, completed);
   const observations = useMemo(() => mergeObservations(evidence.observations, historical.observations), [evidence.observations, historical.observations]);
   const events = useMemo(() => {
@@ -317,11 +323,14 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
       <PanelTabs id={tab.id} panel={panel} count={projectOccurrences(events, start, finish).length} onChange={setPanel} />
       <div className="panel-body" id={`panel-${tab.id}`} role="tabpanel" aria-labelledby={`${panel}-${tab.id}`}>
         {panel === 'patterns' ? <>
-          <p role="status">{historical.busy ? 'Calculating historical detectors…' : end || !live.connected && completed.length
-            ? `Historical calculations: ${historical.coverage}. Live detections are shown as of the viewed period.`
+          <p role="status">{historical.busy ? 'Calculating historical detectors…'
+            : historical.loaded || historical.status === 'partial' ? `Historical calculations: ${historical.coverage}.`
+            : initializedLiveStreams > 0 ? `Live detector results available for ${initializedLiveStreams} ${initializedLiveStreams === 1 ? 'stream' : 'streams'} in this view.`
+            : live.connecting ? 'Initializing live detectors…'
+            : end || !live.connected && completed.length ? 'Detector results are unavailable for this period. Use Calculate current view in Detector settings.'
             : 'Live policies evaluate completed candles. Manual detectors require Calculate current view.'}</p>
           <PatternGroups events={events} start={start} end={finish} timeframe={timeframe}
-          loaded={(view?.coverage === 'calculated' && Boolean(live.state && Date.parse(start) >= Date.parse(live.state.history_start))) || historical.loaded || historical.status === 'partial'} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
+          loaded={initializedLiveStreams > 0 || (!rawPrices && view?.coverage === 'calculated' && Boolean(live.state && Date.parse(start) >= Date.parse(live.state.history_start))) || historical.loaded || historical.status === 'partial'} selected={selectedOrder} annotations={[]} timezone={tab.timezone} onSelect={select}
           onInspect={(event, pin) => { setDetails(event); setPinned(pin); }} onDismiss={() => { if (!pinned) setDetails(null); }} /></>
           : <AnalysisSettings streams={settings.drafts} patterns={patterns} onAddDetector={settings.addDetector}
             disabled={live.connecting || reinitializing || settings.busy || historical.busy || providerInput.busy} dirty={settings.dirty} onChange={settings.setDrafts}

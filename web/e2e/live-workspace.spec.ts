@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 const stamp = (minute: number) => new Date(Date.UTC(2026, 0, 5, 10, minute)).toISOString().replace('.000Z', 'Z');
-async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean } = {}) {
+async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean; waitForPreparation?: Promise<void> } = {}) {
   let count = 12;
   let historyReady = true;
   let retainedSource: Record<string, unknown>;
@@ -49,6 +49,7 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
     if (url.pathname.includes('/prepare/')) {
       const body = request.postDataJSON();
       prepares.push(body.subscription_id);
+      await options.waitForPreparation;
       if (options.observed && !connections.has(body.subscription_id)) {
         publishedSource = { ...retainedSource, dataset_revision_id: 'provider-observed-live-fixture',
           calendar_version: 'provider-observed-v1:fixture', range_start: stamp(0), range_end: stamp(12),
@@ -86,7 +87,7 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
       open: '100', high: '103', low: '99', close: '101',
     })).filter((bar) => Date.parse(bar.available_at) <= end);
     const event = { event_id: 'live-compression', run_id: `detector-${id}`, dataset_revision_id: live.input_id,
-      instrument_id: 'US30', timeframe: '5m', detection_config_hash: 'hash', pattern_id: 'RANGE_COMPRESSION_V1',
+      instrument_id: 'US30', timeframe: options.waitForPreparation ? '1m' : '5m', detection_config_hash: 'hash', pattern_id: 'RANGE_COMPRESSION_V1',
       pattern_version: '1', pattern_name: 'Range compression', definition_fingerprint: 'fingerprint',
       build_id: 'test', code_revision: null, code_dirty: null, code_capture_status: 'unavailable',
       instance_id: 'occurrence', runtime_instance_id: 'runtime', sequence: 0, from_state: 'NONE', to_state: 'CANDIDATE',
@@ -95,6 +96,8 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
     await route.fulfill({ json: { run_id: live.run_id, cursor_index: count, cursor_time: stamp(count - 1),
       available_at: live.available_at, history_start: stamp(0), timeframe, bars, observations: [],
       events: !manual && end >= Date.parse(event.available_at) ? [event] : [], view_start: stamp(0), view_end: new Date(end).toISOString(),
+      stream_coverage: [{ run_id: event.run_id, pattern_id: event.pattern_id, timeframe: event.timeframe,
+        status: 'calculated', valid_from: stamp(0), available_from: stamp(1), valid_to: live.available_at, processed: count, required: 1 }],
       limit: 500, coverage: 'calculated', live: { ...live, forming: url.searchParams.has('end') ? null : {
         ...live.forming, timestamp: stamp(Math.floor(count / width) * width),
       } } } });
@@ -248,4 +251,28 @@ test('live detectors connect from provider candles without confirmed calendar co
   await expect(page.getByRole('img', { name: /14 visible bars/ })).toBeVisible();
   await expect(page.getByTestId('timeline-event')).toBeVisible();
   expect(live.prepares).toHaveLength(1);
+});
+
+test('a price preview navigated during startup shows live detections once analysis is ready', async ({ page }) => {
+  let release!: () => void;
+  const waitForPreparation = new Promise<void>(resolve => { release = resolve; });
+  await fakeLive(page, { observed: true, waitForPreparation });
+  await page.route('**/api/live/prices/US30?*', route => route.fulfill({ json: {
+    instrument_id: 'US30', timeframe: '1m', end: stamp(12), calendar_status: 'unverified',
+    analysis_ready: false, aggregation: 'display_only', detail: null,
+    bars: Array.from({ length: 12 }, (_, i) => ({
+      timestamp: stamp(i), available_at: stamp(i + 1), open: '100', high: '103', low: '99', close: '101',
+    })),
+  } }));
+  try {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Live', exact: true }).click();
+    await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await expect(page.getByText('Provider history', { exact: true })).toBeVisible();
+    release();
+    await expect(page.getByTestId('timeline-event')).toBeVisible();
+    await expect(page.getByText('Live detector results available for 1 stream in this view.')).toBeVisible();
+    await expect(page.getByText('Provider history', { exact: true })).toBeVisible();
+  } finally { release(); }
 });
