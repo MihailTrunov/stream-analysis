@@ -35,9 +35,14 @@ async function browseOld(page: Page) {
 test('active replay restores manually zoomed geometry without refocusing its saved target', async ({ page }) => {
   await smallRecordedViewport(page);
   await browseOld(page);
-  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
   const savedViewport = () => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport);
-  await expect.poll(async () => (await savedViewport())?.from).toBeGreaterThan(1);
+  await expect.poll(async () => Boolean(await savedViewport())).toBe(true);
+  const focused = await savedViewport();
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await expect.poll(async () => {
+    const range = await savedViewport();
+    return range.to - range.from;
+  }).toBeLessThan(focused.to - focused.from);
   const before = await savedViewport();
   const run = await current(page);
   await page.reload();

@@ -123,9 +123,26 @@ test('live mode shows forming data separately and pattern selection keeps the di
   await expect(page.getByRole('img', { name: /13 visible bars/ })).toBeVisible();
   await expect(page.getByText('Forming candle: display only')).toBeVisible();
   await expect(page.getByTestId('timeline-event').locator('.timeframe-label')).toHaveText('5m');
+  const viewport = () => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport);
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await expect.poll(async () => {
+    const range = await viewport();
+    return range ? range.to - range.from : 0;
+  }).toBeGreaterThan(94);
+  const before = await viewport();
   await page.getByTestId('timeline-event').click();
   await expect(page.getByLabel('Chart timeframe')).toHaveValue('1m');
   await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
+  await expect.poll(async () => {
+    const range = await viewport();
+    return range.to - range.from;
+  }).toBeCloseTo(before.to - before.from, 2);
+  await expect.poll(async () => {
+    const range = await viewport();
+    return (range.to + range.from) / 2;
+  }).toBeCloseTo(3, 1);
   await page.getByRole('button', { name: 'Pattern details', exact: true }).hover();
   await expect(page.getByRole('dialog', { name: 'Pattern evidence preview' })).toBeVisible();
   expect(live.prepares).toHaveLength(1);

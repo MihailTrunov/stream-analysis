@@ -269,9 +269,11 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       setIsFollowing(false);
       const index = model.candles.findIndex((bar) => model.timestamps.get(bar.time) === focusTime);
       if (index < 0) return;
+      const visible = instance.timeScale().getVisibleLogicalRange();
+      const span = visible ? Number(visible.to) - Number(visible.from) : 94;
       instance.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, index - 25),
-        to: Math.min(model.candles.length - 1, index + 25),
+        from: index - span / 2,
+        to: index + span / 2,
       });
     } else {
       following.current = true;

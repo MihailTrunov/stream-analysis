@@ -14,10 +14,21 @@ test('event timeline selection focuses chart without advancing replay', async ({
   await expect(event).toHaveCount(1);
   await expect(event).toContainText('persistence_confirmed');
   const cursor = await page.getByText(/Replay paused ·/).textContent();
+  const viewport = () => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport);
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await expect.poll(async () => {
+    const range = await viewport();
+    return range ? range.to - range.from : 0;
+  }).toBeGreaterThan(94);
+  const before = await viewport();
   await event.click();
   await expect(event).toHaveAttribute('aria-current', 'true');
   await expect(page.locator('.focus-notice')).toBeVisible();
   expect(await page.getByText(/Replay paused ·/).textContent()).toBe(cursor);
+  await expect.poll(async () => {
+    const range = await viewport();
+    return range.to - range.from;
+  }).toBeCloseTo(before.to - before.from, 2);
   await page.getByRole('button', { name: 'Return to replay cursor' }).click();
   await expect(page.locator('.focus-notice')).toHaveCount(0);
   await page.getByRole('button', { name: 'Stop replay' }).click();
