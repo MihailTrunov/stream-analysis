@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 const stamp = (minute: number) => new Date(Date.UTC(2026, 0, 5, 10, minute)).toISOString().replace('.000Z', 'Z');
-async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean; waitForPreparation?: Promise<void> } = {}) {
+async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean; waitForPreparation?: Promise<void>; task?: boolean } = {}) {
   let count = 12;
   let historyReady = true;
   let retainedSource: Record<string, unknown>;
@@ -12,6 +12,11 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
   const prepares: string[] = [];
   const reads = new Map<string, number>();
   const disconnected: string[] = [];
+  let initializationReady = false;
+  await page.route('**/api/analysis/tasks/live-initialization', route => route.fulfill({ json:
+    initializationReady ? { job_id: 'live-initialization', status: 'ready', result: state([...connections.keys()][0]) }
+      : { job_id: 'live-initialization', status: 'running', progress: { processed: 600, total: 1440 } },
+  }));
   await page.route('**/api/replay/sources', async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -75,6 +80,9 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
       const body = request.postDataJSON();
       if (options.observed) expect(body.calendar_mode).toBe('provider_observed');
       connections.set(body.subscription_id, body);
+      if (options.task) {
+        await route.fulfill({ status: 202, json: { job_id: 'live-initialization', status: 'pending' } }); return;
+      }
       await route.fulfill({ json: state(body.subscription_id) }); return;
     }
     reads.set(id, (reads.get(id) ?? 0) + 1);
@@ -103,7 +111,8 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
       } } } });
   });
   return { prepares, reads, disconnected, historyReads, advance: () => { count += 1; },
-    setHistoryReady: (value: boolean) => { historyReady = value; } };
+    setHistoryReady: (value: boolean) => { historyReady = value; },
+    finishInitialization: () => { initializationReady = true; } };
 }
 
 test('live mode shows forming data separately and pattern selection keeps the display timeframe', async ({ page }) => {
@@ -275,4 +284,14 @@ test('a price preview navigated during startup shows live detections once analys
     await expect(page.getByText('Live detector results available for 1 stream in this view.')).toBeVisible();
     await expect(page.getByText('Provider history', { exact: true })).toBeVisible();
   } finally { release(); }
+});
+
+test('live initialization shows candle progress and then plots detector results', async ({ page }) => {
+  const live = await fakeLive(page, { observed: true, task: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Live', exact: true }).click();
+  await expect(page.getByText('Initializing live detectors… 600 of 1440 source candles processed.')).toBeVisible();
+  live.finishInitialization();
+  await expect(page.getByTestId('timeline-event')).toBeVisible();
+  await expect(page.getByText(/Initializing live detectors/)).toHaveCount(0);
 });

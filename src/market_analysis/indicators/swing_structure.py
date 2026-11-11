@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime
 from decimal import Decimal, localcontext
 from enum import StrEnum
+from functools import lru_cache
+from typing import cast
 
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
 from market_analysis.config.component_registry import SWING_STRUCTURE_V1_PARAMETERS
 from market_analysis.domain import Bar, Timeframe
 from market_analysis.patterns import PatternDefinition
 
-from .incremental import IncrementalMarketState, MarketStateError
+from .incremental import FrozenStateValues, IncrementalMarketState, MarketStateError
 from .swing_point import SWING_POINT_DEFINITION_ID, SwingPoint, SwingPointState, SwingType
 
 SWING_STRUCTURE_DEFINITION_ID = "SWING_STRUCTURE_V1"
@@ -353,8 +355,15 @@ def _multiplier(parameters: Mapping[str, object], name: str) -> Decimal:
 
 def _values(value: object) -> object:
     if is_dataclass(value) and not isinstance(value, type):
+        return _record_values(cast(Hashable, value))
+    return value
+
+
+@lru_cache(maxsize=4096, typed=True)
+def _record_values(value: object) -> FrozenStateValues:
+    if is_dataclass(value) and not isinstance(value, type):
         result = {field.name: _values(getattr(value, field.name)) for field in fields(value)}
         if isinstance(value, SwingClassification | StructureBreak):
             result.update(event_time=value.event_time, detection_time=value.detection_time)
-        return result
-    return value
+        return FrozenStateValues(result)
+    raise TypeError("structural records must be frozen dataclass instances")

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,6 +24,35 @@ from market_analysis.domain import Bar
 
 class MarketStateError(ValueError):
     """An input bar or component declaration violates the incremental contract."""
+
+
+class FrozenStateValues(Mapping[str, object]):
+    """Validated immutable values that can be shared by successive observations."""
+
+    __slots__ = ("_values",)
+    _values: Mapping[str, object]
+
+    def __init__(self, values: Mapping[str, object]) -> None:
+        if any(not isinstance(key, str) for key in values):
+            raise MarketStateError("state mapping keys must be strings")
+        object.__setattr__(self, "_values", MappingProxyType({
+            key: _freeze(value) for key, value in values.items()
+        }))
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("observable state values are immutable")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("observable state values are immutable")
+
+    def __getitem__(self, key: str) -> object:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +178,8 @@ class IncrementalMarketState(ABC):
 
 
 def _freeze(value: object) -> object:
+    if isinstance(value, FrozenStateValues):
+        return value
     if isinstance(value, Mapping):
         if any(not isinstance(key, str) for key in value):
             raise MarketStateError("state mapping keys must be strings")

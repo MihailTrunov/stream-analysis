@@ -12,6 +12,20 @@ from pydantic import ValidationError
 from market_analysis.config import DetectionAnalysisConfig
 from market_analysis.domain import Bar, Timeframe
 from market_analysis.indicators import IncrementalMarketState, MarketStateError
+from market_analysis.indicators.incremental import FrozenStateValues
+
+
+def test_shared_observable_values_detach_inputs_and_reject_mutation() -> None:
+    original: dict[str, object] = {"prices": [Decimal("10")]}
+    values = FrozenStateValues({"nested": original})
+    original["prices"] = [Decimal("20")]
+    assert values["nested"] == {"prices": (Decimal("10"),)}
+    with pytest.raises(TypeError):
+        values["nested"]["prices"] = ()  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        del values._values
+    with pytest.raises(AttributeError):
+        values._values = {}
 
 
 class FakeComponent(IncrementalMarketState):

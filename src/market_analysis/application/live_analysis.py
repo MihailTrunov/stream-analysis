@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from bisect import bisect_left
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from hashlib import sha256
@@ -141,7 +142,10 @@ class LiveAnalysisManager:
             finally:
                 engine.dispose()
 
-    def connect(self, request: LiveAnalysisRequest, feed: HistoryFeed) -> dict[str, Any]:
+    def connect(
+        self, request: LiveAnalysisRequest, feed: HistoryFeed, *,
+        checkpoint: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
         client = str(request.subscription_id)
         with self._lock:
             if client in self._cancelled:
@@ -244,7 +248,8 @@ class LiveAnalysisManager:
                 )
                 input_id = f"live-input-{uuid4()}"
                 initialized = self._analysis.launch(
-                    bootstrap, source_input_id=input_id, source_input_manifest=manifest
+                    bootstrap, source_input_id=input_id, source_input_manifest=manifest,
+                    checkpoint=checkpoint,
                 )
                 attached = AttachedSession(request, initialized["run_id"], input_id, feed)
                 initialized_session = self._analysis.current(attached.session_id)

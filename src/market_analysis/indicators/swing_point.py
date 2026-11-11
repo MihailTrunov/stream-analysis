@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal, localcontext
 from enum import StrEnum
+from functools import lru_cache
 from types import MappingProxyType
 
 from market_analysis.config import DetectionAnalysisConfig, detection_config_hash
@@ -14,7 +15,7 @@ from market_analysis.domain import Bar
 from market_analysis.patterns import PatternDefinition
 
 from .atr import AtrState
-from .incremental import IncrementalMarketState, MarketStateError
+from .incremental import FrozenStateValues, IncrementalMarketState, MarketStateError
 
 SWING_POINT_DEFINITION_ID = "ATR_DIRECTIONAL_CHANGE_SWING_V1"
 SWING_POINT_PRECISION = 34
@@ -474,9 +475,10 @@ def _candidate_values(
     })
 
 
+@lru_cache(maxsize=4096)
 def _point_values(point: SwingPoint) -> Mapping[str, object]:
     previous = point.previous_swing
-    return MappingProxyType({
+    return FrozenStateValues({
         "status": "confirmed",
         "swing_index": point.swing_index,
         "swing_type": point.swing_type.value,

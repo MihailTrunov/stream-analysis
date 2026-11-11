@@ -41,6 +41,11 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
     if (!active || !wanted || !streams || connection.current === id || initialized.current === id) return;
     const controller = new AbortController();
     setConnecting(true);
+    const progress = ({ processed, total }: { processed: number; total: number }) => {
+      if (!controller.signal.aborted && total > 0) {
+        setStage(`Initializing live detectors… ${processed} of ${total} source candles processed.`);
+      }
+    };
     let preparedSource: ReplaySource | undefined;
     void (async () => {
       let plan = savedPlan.current?.key === params ? savedPlan.current.plan : undefined;
@@ -64,7 +69,7 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
           setStage('Running detectors on provider candles; calendar coverage is unverified…');
           return validateLiveState(await chartCalculation(`/live/analysis/${instrument}`,
             JSON.stringify({ ...JSON.parse(params), bootstrap_revision_id: source.dataset_revision_id,
-              calendar_mode: 'provider_observed' })), id, instrument);
+              calendar_mode: 'provider_observed' }), undefined, progress), id, instrument);
         }
         if (!isNavigationPlan(prepared.plan) || prepared.plan.instrument_id !== instrument
           || prepared.plan.intent !== 'replay' || prepared.plan.timeframe !== '1m') throw new Error('Invalid live initialization plan.');
@@ -98,7 +103,7 @@ export function useLiveAnalysis(id: string, instrument: string, bootstrap: strin
       const body = { ...JSON.parse(params), bootstrap_revision_id: source.dataset_revision_id,
         calendar_mode: source.calendar_version.startsWith('provider-observed-v1:') ? 'provider_observed' : 'verified' };
       const next = validateLiveState(await chartCalculation(`/live/analysis/${instrument}`,
-        JSON.stringify(body)), id, instrument);
+        JSON.stringify(body), undefined, progress), id, instrument);
       preparedSource = source;
       return next;
     })().then((next) => {
