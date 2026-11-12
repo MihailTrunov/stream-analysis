@@ -150,5 +150,6 @@ test('review older history keeps its cutoff and reloads the selected timeframe',
   await expect(page.getByRole('img',{name:/121 visible bars/})).toBeVisible();
   await page.getByRole('button',{name:'Fit candles',exact:true}).click();
   await page.waitForTimeout(700);
-  await expect(page.getByRole('img',{name:/120 visible bars/})).toBeVisible();
+  await expect(page.getByRole('img',{name:/121 visible bars/})).toBeVisible();
+  await expect(page.getByText('Forming candle: display only', { exact: true })).toBeVisible();
 });

@@ -34,13 +34,12 @@ interface Props {
   canReturnLatest?: boolean;
   historyStatus?: string | null;
   autoLoadEarlier?: boolean;
-  onNavigate?: () => void;
 }
 
 export function CandlestickChart({ bars, observations, events = [], selectedEventOrder = null,
   onSelectEvent, onSelectBar, reviewInterval = null, cursorTime, focusTime = null, overlays,
   timezone = 'Europe/London', resetKey = '', initialRange = null, onRangeChange,
-  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false, historyStatus, autoLoadEarlier = true, onNavigate }: Props) {
+  focusVersion = 0, onReturnLatest, onLoadEarlier, earlierDisabled = false, canReturnLatest = false, historyStatus, autoLoadEarlier = true }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const candles = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -51,6 +50,8 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
   const priorCount = useRef(0);
   const priorFocus = useRef<string | null>(null);
   const priorFocusVersion = useRef(0);
+  const focusPriceRange = useRef<{ time: string; version: number; from: number; to: number } | null>(null);
+  const focusAutoScale = useRef<boolean | null>(null);
   const [chartError, setChartError] = useState<string | null>(null);
   const callbacks = useRef({ onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier, earlierDisabled, autoLoadEarlier });
   const fitRequested = useRef(false);
@@ -65,6 +66,14 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
   requestedFocus.current = { focusTime, focusVersion };
   const timestamps = useRef(new Map<number, string>());
   callbacks.current = { onSelectEvent, onSelectBar, onRangeChange, onLoadEarlier, earlierDisabled, autoLoadEarlier };
+
+  function restorePriceScale() {
+    if (focusAutoScale.current !== null) {
+      chart.current?.priceScale('right').setAutoScale(focusAutoScale.current);
+      focusAutoScale.current = null;
+    }
+    focusPriceRange.current = null;
+  }
 
   function fillHistory() {
     if (fillFrame.current !== null) cancelAnimationFrame(fillFrame.current);
@@ -182,6 +191,11 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     }
     try {
       const before = instance.timeScale().getVisibleLogicalRange();
+      if (focusTime && (focusTime !== priorFocus.current || focusVersion !== priorFocusVersion.current)
+        && (focusPriceRange.current?.time !== focusTime || focusPriceRange.current.version !== focusVersion)) {
+        const prices = instance.priceScale('right').getVisibleRange();
+        if (prices) focusPriceRange.current = { time: focusTime, version: focusVersion, ...prices };
+      }
       if (before && geometry.current?.times.length) geometry.current.range = { from: Number(before.from), to: Number(before.to) };
       const saved = geometry.current;
       timestamps.current = model.timestamps;
@@ -250,7 +264,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     } catch (reason) {
       setChartError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [result, timezone, resetKey]);
+  }, [result, timezone, resetKey, focusTime, focusVersion]);
 
   useEffect(() => {
     const instance = chart.current;
@@ -271,14 +285,24 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
       if (index < 0) return;
       const visible = instance.timeScale().getVisibleLogicalRange();
       const span = visible ? Number(visible.to) - Number(visible.from) : 94;
+      const priceScale = instance.priceScale('right');
+      const prices = focusPriceRange.current ?? priceScale.getVisibleRange();
+      if (prices) {
+        if (focusAutoScale.current === null) focusAutoScale.current = priceScale.options().autoScale;
+        const candle = model.candles[index];
+        const shift = candle.high > prices.to || candle.low < prices.from
+          ? (candle.high + candle.low - prices.from - prices.to) / 2 : 0;
+        priceScale.setVisibleRange({ from: prices.from + shift, to: prices.to + shift });
+      }
       instance.timeScale().setVisibleLogicalRange({
         from: index - span / 2,
         to: index + span / 2,
       });
     } else {
+      restorePriceScale();
       following.current = true;
       setIsFollowing(true);
-      instance.timeScale().scrollToRealTime();
+      instance.timeScale().scrollToPosition(4, false);
     }
     priorFocus.current = focusTime;
     priorFocusVersion.current = focusVersion;
@@ -286,7 +310,7 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
 
   useEffect(() => { if (!earlierDisabled && autoLoadEarlier) fillHistory(); }, [earlierDisabled, autoLoadEarlier]);
 
-  function navigate() { fitRequested.current = false; userNavigation.current = true; following.current = false; setIsFollowing(false); onNavigate?.(); }
+  function navigate() { fitRequested.current = false; userNavigation.current = true; following.current = false; setIsFollowing(false); }
   function zoom(factor: number) {
     const scale = chart.current?.timeScale();
     if (!scale) return;
@@ -301,10 +325,11 @@ export function CandlestickChart({ bars, observations, events = [], selectedEven
     <div className="chart-navigation" aria-label="Chart navigation">
       <button type="button" aria-label="Zoom in" onClick={() => zoom(1.3)}>＋</button>
       <button type="button" aria-label="Zoom out" onClick={() => zoom(1 / 1.3)}>−</button>
-      <button type="button" onClick={() => { navigate(); fitRequested.current = true; userNavigation.current = false; chart.current?.timeScale().fitContent(); }}>Fit candles</button>
+      <button type="button" onClick={() => { restorePriceScale(); navigate(); fitRequested.current = true; userNavigation.current = false; chart.current?.timeScale().fitContent(); }}>Fit candles</button>
       {onLoadEarlier && <button type="button" onClick={() => { navigate(); onLoadEarlier(); }} disabled={earlierDisabled}>Load earlier candles</button>}
       <button type="button" onClick={() => {
-        following.current = true; setIsFollowing(true); chart.current?.timeScale().scrollToRealTime();
+        restorePriceScale();
+        following.current = true; setIsFollowing(true); chart.current?.timeScale().scrollToPosition(4, false);
         userNavigation.current = false;
         onReturnLatest?.();
       }} disabled={isFollowing && !focusTime && !canReturnLatest}>Return to latest</button>

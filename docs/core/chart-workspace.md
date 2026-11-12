@@ -115,8 +115,11 @@ maps work to Jira and defines implementation prerequisites.
   initial default. Recent records remain readable before packaging. Packaging
   failure must not lose acknowledged saved candles or mutate pinned revisions.
 - Panning a live chart back or selecting an older pattern suspends automatic
-  following. Preserve its viewport while ingestion/detection continue. Return
-  to latest restores the newest candle and resumes following.
+  following. Preserve its viewport while ingestion, detection and visible-chart
+  rendering continue. Clicking, panning, zooming and selecting a loaded event do
+  not fix the live data cutoff or remove the forming candle. The yellow candle
+  represents unfinished live price data. Return to latest restores the newest
+  candle and resumes following.
 - Loading, disconnection, unavailable source history and uncalculated analysis
   must be distinguishable. Never fabricate candles to fill an unexpected gap.
 
@@ -209,7 +212,8 @@ Display timezone never changes those analytical rules.
 - Chart annotations default to the displayed timeframe. Additionally show and
   highlight a selected occurrence from another analytical timeframe.
 - Selecting a pattern focuses/highlights it and pauses historical replay without
-  changing its cursor. Live ingestion/detection continue.
+  changing its cursor. Preserve candle spacing and price-scale zoom, shifting the
+  viewport to reveal the selected candle as needed. Live candles continue updating.
 - Details are a separate info-icon action. Hover previews a floating panel;
   click pins it for inspection/scrolling; keyboard focus accesses the same
   evidence. Do not replace the pattern lists or open details merely on selection.

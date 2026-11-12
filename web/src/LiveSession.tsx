@@ -260,7 +260,6 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
         streams: settings.applied, intent: 'move' }); return;
     }
     if (selected && live.state) {
-      setEnd(localWindowEnd({ ...selected, range_end: live.state.available_at }, event.event_time, timeframe));
       setFocus(event.event_time); setFocusVersion((value) => value + 1);
     }
   }
@@ -283,10 +282,6 @@ export function LiveSession({ tab, active, sources, patterns, onTabChange, onSou
         onLoadEarlier={earlier} earlierDisabled={navigation.busy || priceNavigation.busy || !completed.length || Boolean(end && !external && !view && !rawPrices)}
         autoLoadEarlier={!navigation.failed && !error}
         historyStatus={navigation.message ?? (navigation.failed ? error : historyNote && !view ? historyNote : null)}
-        onNavigate={() => {
-          if (!end && rawPrices && rawWindow) { setPricePreview(rawWindow); setEnd(rawWindow.end); }
-          else if (!end && live.state) setEnd(live.state.available_at);
-        }}
         initialRange={viewport.current?.origin === bars[0]?.timestamp ? viewport.current : null}
         onRangeChange={(range) => {
           if (!bars.length) return;

@@ -1,8 +1,9 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { chartGeometry } from './chart-geometry';
 
 const stamp = (minute: number) => new Date(Date.UTC(2026, 0, 5, 10, minute)).toISOString().replace('.000Z', 'Z');
-async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean; waitForPreparation?: Promise<void>; task?: boolean } = {}) {
+async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boolean; waitForPreparation?: Promise<void>; task?: boolean; volatilePast?: boolean } = {}) {
   let count = 12;
   let historyReady = true;
   let retainedSource: Record<string, unknown>;
@@ -92,7 +93,9 @@ async function fakeLive(page: Page, options: { prepare?: boolean; observed?: boo
     const end = Math.min(Date.parse(live.available_at), Date.parse(url.searchParams.get('end') ?? live.available_at));
     const bars = Array.from({ length: Math.floor(count / width) }, (_, index) => ({
       timestamp: stamp(index * width), available_at: stamp((index + 1) * width),
-      open: '100', high: '103', low: '99', close: '101',
+      ...(options.volatilePast && index < 6
+        ? { open: '145', high: '160', low: '130', close: '150' }
+        : { open: '100', high: '103', low: '99', close: '101' }),
     })).filter((bar) => Date.parse(bar.available_at) <= end);
     const event = { event_id: 'live-compression', run_id: `detector-${id}`, dataset_revision_id: live.input_id,
       instrument_id: 'US30', timeframe: options.waitForPreparation ? '1m' : '5m', detection_config_hash: 'hash', pattern_id: 'RANGE_COMPRESSION_V1',
@@ -125,8 +128,7 @@ test('live mode shows forming data separately and pattern selection keeps the di
   await expect(page.getByTestId('timeline-event').locator('.timeframe-label')).toHaveText('5m');
   const viewport = () => page.evaluate(() => JSON.parse(localStorage.getItem('stream-analysis.workspace.v1')!).tabs[0].viewport);
   await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
-  await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await expect(page.getByRole('img', { name: /13 visible bars/ })).toBeVisible();
   await expect.poll(async () => {
     const range = await viewport();
     return range ? range.to - range.from : 0;
@@ -134,7 +136,7 @@ test('live mode shows forming data separately and pattern selection keeps the di
   const before = await viewport();
   await page.getByTestId('timeline-event').click();
   await expect(page.getByLabel('Chart timeframe')).toHaveValue('1m');
-  await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /13 visible bars/ })).toBeVisible();
   await expect.poll(async () => {
     const range = await viewport();
     return range.to - range.from;
@@ -145,6 +147,8 @@ test('live mode shows forming data separately and pattern selection keeps the di
   }).toBeCloseTo(3, 1);
   await page.getByRole('button', { name: 'Pattern details', exact: true }).hover();
   await expect(page.getByRole('dialog', { name: 'Pattern evidence preview' })).toBeVisible();
+  live.advance();
+  await expect(page.getByRole('img', { name: /14 visible bars/ })).toBeVisible();
   expect(live.prepares).toHaveLength(1);
 });
 
@@ -219,7 +223,7 @@ test('live Apply creates a new connection and manual history uses an independent
   expect(live.prepares).toHaveLength(2);
 });
 
-test('live navigation suspends following while confirmed data keeps updating', async ({ page }) => {
+test('live navigation preserves the viewport while candles keep rendering', async ({ page }) => {
   const live = await fakeLive(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'Live', exact: true }).click();
@@ -234,17 +238,43 @@ test('live navigation suspends following while confirmed data keeps updating', a
   const before = await viewport();
   live.advance();
   await expect(page.getByText(/Confirmed through:.*10:13/)).toBeVisible();
+  await expect(page.getByRole('img', { name: /14 visible bars/ })).toBeVisible();
   const after = await viewport();
   expect(after.from).toBeCloseTo(before.from, 1);
   expect(after.to).toBeCloseTo(before.to, 1);
   await page.getByLabel('Chart navigation').getByRole('button', { name: 'Return to latest', exact: true }).click();
   await expect(page.getByText('US30 · 1m · 13 completed candles')).toBeVisible();
-  await expect.poll(async () => (await viewport())?.to ?? Infinity).toBeLessThan(25);
+  await expect.poll(async () => (await viewport())?.to ?? Infinity).toBeCloseTo(17, 1);
   const latest = await viewport();
   expect(latest.to).toBeGreaterThan(12);
   live.advance();
   await expect(page.getByText('US30 · 1m · 14 completed candles')).toBeVisible();
   await expect.poll(async () => (await viewport())?.to ?? -Infinity).toBeGreaterThan(latest.to);
+});
+
+test('event focus preserves both time and price zoom across a different price region', async ({ page }) => {
+  const live = await fakeLive(page, { volatilePast: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Live', exact: true }).click();
+  await expect(page.getByTestId('timeline-event')).toBeVisible();
+  await chartGeometry(page, { from: 7, to: 13 });
+  await expect.poll(async () => (await chartGeometry(page)).price?.to ?? Infinity).toBeLessThan(110);
+  const before = await chartGeometry(page);
+  await page.getByTestId('timeline-event').click();
+  await expect(page.locator('.focus-notice')).toBeVisible();
+  await expect.poll(async () => {
+    const after = await chartGeometry(page);
+    return after.price!.to - after.price!.from;
+  }).toBeCloseTo(before.price!.to - before.price!.from, 5);
+  const after = await chartGeometry(page);
+  expect(after.logical!.to - after.logical!.from).toBeCloseTo(before.logical!.to - before.logical!.from, 5);
+  expect((after.price!.to + after.price!.from) / 2).toBeCloseTo(145, 5);
+  live.advance();
+  await expect(page.getByRole('img', { name: /14 visible bars/ })).toBeVisible();
+  expect((await chartGeometry(page)).price!.to - (await chartGeometry(page)).price!.from)
+    .toBeCloseTo(before.price!.to - before.price!.from, 5);
+  await page.getByLabel('Chart navigation').getByRole('button', { name: 'Return to latest', exact: true }).click();
+  await expect.poll(async () => (await chartGeometry(page)).autoScale).toBe(before.autoScale);
 });
 
 test('disconnect prevents automatic reconnect and closing a live tab disconnects its consumer', async ({ page }) => {
@@ -295,11 +325,11 @@ test('a price preview navigated during startup shows live detections once analys
     await page.getByRole('button', { name: 'Live', exact: true }).click();
     await expect(page.getByRole('img', { name: /12 visible bars/ })).toBeVisible();
     await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
-    await expect(page.getByText('Provider history', { exact: true })).toBeVisible();
+    await expect(page.getByText('Live provider', { exact: true })).toBeVisible();
     release();
     await expect(page.getByTestId('timeline-event')).toBeVisible();
     await expect(page.getByText('Live detector results available for 1 stream in this view.')).toBeVisible();
-    await expect(page.getByText('Provider history', { exact: true })).toBeVisible();
+    await expect(page.getByText('Live provider', { exact: true })).toBeVisible();
   } finally { release(); }
 });
 
