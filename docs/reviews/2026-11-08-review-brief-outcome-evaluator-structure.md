@@ -1,8 +1,8 @@
 # Review brief: evaluate_outcome structure and decomposition
 
-Status: unassigned
-Reviewed by: —
-Expected verdict: `2026-11-XX-astra-outcome-evaluator-structure-review.md`
+Status: reviewed
+Reviewed by: [Claude outcome-evaluator-structure review](2026-11-08-claude-outcome-evaluator-structure-review.md) — refactor sketch produced; decompose with the next outcome family
+Verdict: `2026-11-08-claude-outcome-evaluator-structure-review.md`
 Priority: low — quality-scoped review of the single hottest shared function in
 the outcome framework; no defect is presumed.
 

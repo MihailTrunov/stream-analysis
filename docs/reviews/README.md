@@ -44,11 +44,11 @@ follow-ups. Approved product and architecture contracts live in
 | [Outcome-phase durability](2026-11-08-review-brief-outcome-phase-durability.md) | high | architecture, soundness | [reviewed (Claude)](2026-11-08-claude-outcome-phase-durability-review.md) |
 | [Structural inventory re-derivation](2026-11-08-review-brief-structural-inventory.md) | medium | architecture, soundness | [reviewed (Claude)](2026-11-08-claude-structural-inventory-review.md) |
 | [Transaction boundaries](2026-11-08-review-brief-transaction-boundaries.md) | high | soundness | [reviewed (Claude)](2026-11-08-claude-transaction-boundaries-review.md) — one P2 |
-| [Scale ceiling](2026-11-08-review-brief-scale-ceiling.md) | medium | architecture | unassigned |
-| [Outcome evaluator structure](2026-11-08-review-brief-outcome-evaluator-structure.md) | low | code structure quality | unassigned |
-| [Hot-path re-verification cost](2026-11-08-review-brief-hot-path-cost.md) | medium | code structure quality | unassigned |
+| [Scale ceiling](2026-11-08-review-brief-scale-ceiling.md) | medium | architecture | [reviewed (Claude)](2026-11-08-claude-scale-ceiling-review.md) |
+| [Outcome evaluator structure](2026-11-08-review-brief-outcome-evaluator-structure.md) | low | code structure quality | [reviewed (Claude)](2026-11-08-claude-outcome-evaluator-structure-review.md) |
+| [Hot-path re-verification cost](2026-11-08-review-brief-hot-path-cost.md) | medium | code structure quality | [reviewed (Claude)](2026-11-08-claude-hot-path-cost-review.md) |
 | [Context field-table drift](2026-11-08-review-brief-field-table-drift.md) | medium | code structure quality | [reviewed (Claude)](2026-11-08-claude-field-table-drift-review.md) |
-| [Evaluation doc structure](2026-11-08-review-brief-doc-structure.md) | low | code structure quality | unassigned |
+| [Evaluation doc structure](2026-11-08-review-brief-doc-structure.md) | low | code structure quality | [reviewed (Claude)](2026-11-08-claude-doc-structure-review.md) |
 
 Priorities reflect the 2026-11-08 stage assessment: unreviewed deliveries
 first, then cross-cutting soundness risks, then structure quality. Reassess

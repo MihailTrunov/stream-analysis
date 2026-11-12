@@ -1,8 +1,8 @@
 # Review brief: evaluation-stage scale ceiling
 
-Status: unassigned
-Reviewed by: —
-Expected verdict: `2026-11-XX-astra-scale-ceiling-review.md`
+Status: reviewed
+Reviewed by: [Claude scale-ceiling review](2026-11-08-claude-scale-ceiling-review.md) — no findings; ceiling measured and recommendation recorded
+Verdict: `2026-11-08-claude-scale-ceiling-review.md`
 Priority: medium — analysis and decision brief; no defect is presumed. It
 should produce an accepted ceiling before SCRUM-102 makes long source ranges
 attractive to select.

@@ -1,8 +1,8 @@
 # Review brief: evaluation documentation structure
 
-Status: unassigned
-Reviewed by: —
-Expected verdict: `2026-11-XX-astra-doc-structure-review.md`
+Status: reviewed
+Reviewed by: [Claude doc-structure review](2026-11-08-claude-doc-structure-review.md) — split proposal produced; two isolation-exposed ambiguities flagged for owner decision
+Verdict: `2026-11-08-claude-doc-structure-review.md`
 Priority: low — pure reorganization review; no contract change is proposed.
 
 ## Scope

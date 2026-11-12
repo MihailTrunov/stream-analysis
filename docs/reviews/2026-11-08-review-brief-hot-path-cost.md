@@ -1,8 +1,8 @@
 # Review brief: evaluation hot-path re-verification cost
 
-Status: unassigned
-Reviewed by: —
-Expected verdict: `2026-11-XX-astra-hot-path-cost-review.md`
+Status: reviewed
+Reviewed by: [Claude hot-path-cost review](2026-11-08-claude-hot-path-cost-review.md) — no findings; amortization deferred, gate query change recommended with SCRUM-102
+Verdict: `2026-11-08-claude-hot-path-cost-review.md`
 Priority: medium — correctness is not in question; the concern is quadratic
 per-run overhead that SCRUM-102's larger populations will amplify.
 
